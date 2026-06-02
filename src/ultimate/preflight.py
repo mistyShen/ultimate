@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from ultimate.config import enabled_modules, load_samples, output_dir
+from ultimate.bulk import BULK_MODULES, bulk_requirement_checks
 from ultimate.constants import MODULE_SPECS
 from ultimate.raw_qc import RAW_CONTRACTS
 
@@ -55,6 +56,7 @@ def _check_module(config: dict[str, Any], samples: pd.DataFrame, module_name: st
         "required_sample_columns": _missing_columns(samples, spec.required_columns),
         "optional_commands": _command_checks(spec.optional_commands, config),
         "optional_r_packages": _r_package_checks(spec.optional_r_packages, config, module_name),
+        "python_packages": bulk_requirement_checks(module_name) if module_name in BULK_MODULES else {},
     }
     raw_report = _raw_preflight(module_cfg, samples, module_name)
     checks["raw"] = raw_report
@@ -64,8 +66,11 @@ def _check_module(config: dict[str, Any], samples: pd.DataFrame, module_name: st
     if not checks["input_matrix"]["exists"]:
         warnings.append("input_matrix_missing_or_not_configured")
     missing_commands = [cmd for cmd, ok in checks["optional_commands"].items() if not ok]
+    missing_python = [pkg for pkg, ok in checks["python_packages"].items() if not ok]
     if missing_commands:
         warnings.append("optional_commands_missing:" + ",".join(missing_commands))
+    if missing_python:
+        warnings.append("python_packages_missing:" + ",".join(missing_python))
     if raw_report["raw_enabled"] and raw_report["missing_required_columns"]:
         warnings.append("raw_missing_required_columns:" + ",".join(raw_report["missing_required_columns"]))
     if raw_report["raw_enabled"] and raw_report["input_type"] not in raw_report["supported_input_types"]:

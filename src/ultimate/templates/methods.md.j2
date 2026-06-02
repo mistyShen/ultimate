@@ -9,7 +9,7 @@
 - 物种：`{{ manifest.project.organism }}`
 - 输出目录：`{{ manifest.output_dir }}`
 - Preflight 状态：`{{ preflight.status }}`
-- 出图风格：临床期刊版（白底、蓝灰主色、红蓝差异强调）；审阅图清单：`{{ manifest.style_review.figure_manifest }}`
+- 出图风格：`{{ manifest.figure_style.style_cn | default("临床期刊版") }}`（白底、柔彩主色、低饱和连续色条）；审阅图清单：`{{ manifest.style_review.figure_manifest }}`
 
 ## 分析模块
 
@@ -17,13 +17,15 @@
 ### {{ module.title_cn }} (`{{ module.module }}`)
 
 - 状态：`{{ module.status }}`
-- Raw QC 状态：`{{ module.raw_qc.status }}`
-- Raw QC manifest：`{{ module.raw_qc.manifest_path }}`
-- 特征数：{{ module.n_features }}
-- 样本数：{{ module.n_samples }}
-- 统计结果：`{{ module.artifacts.tables.differential_results }}`
-- 图表目录：`{{ module.artifacts.figures.pca }}`
-- R 后端入口：`{{ module.formal_backend.r_entrypoint }}`
+{% set raw_qc = module.get("raw_qc") or {} %}
+{% set artifacts = module.get("artifacts") or {"tables": {}, "figures": {}, "objects": {}} %}
+- Raw QC 状态：`{{ raw_qc.get("status", "not_recorded") }}`
+- Raw QC manifest：`{{ raw_qc.get("manifest_path", "not_recorded") }}`
+- 特征数：{{ module.get("n_features", "NA") }}
+- 样本数：{{ module.get("n_samples", "NA") }}
+- 统计结果：`{{ (artifacts.get("tables") or {}).get("differential_results", (artifacts.get("tables") or {}).get("top_features", "not_recorded")) }}`
+- 图表目录：`{{ (artifacts.get("figures") or {}).get("pca", (artifacts.get("figures") or {}).get("heatmap", "not_recorded")) }}`
+- R 后端入口：`{{ (module.get("formal_backend") or {}).get("r_entrypoint", "python/backend") }}`
 
 {% endfor %}
 

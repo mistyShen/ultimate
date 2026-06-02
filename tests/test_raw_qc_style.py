@@ -13,7 +13,8 @@ def test_style_review_generates_expected_figures(tmp_path: Path) -> None:
     assert manifest["status"] == "ready_for_review"
     assert Path(manifest["style_manifest"]).exists()
     assert Path(manifest["figure_manifest"]).exists()
-    assert len(manifest["figures"]) == 7
+    assert len(manifest["figures"]) >= 7
+    assert any(Path(figure).name == "qc_bar_review.png" for figure in manifest["figures"])
     for figure in manifest["figures"]:
         assert Path(figure).exists()
 
@@ -27,5 +28,6 @@ def test_raw_qc_manifests_for_all_modules(tmp_path: Path) -> None:
         assert raw_qc["status"] in {"ready", "ready_with_open_replacement_or_missing_optional_tools"}
         assert Path(raw_qc["manifest_path"]).exists()
         assert Path(raw_qc["artifacts"]["tables"]["raw_qc_summary"]).exists()
+        assert Path(raw_qc["artifacts"]["tables"]["external_command_plan"]).exists()
         assert Path(raw_qc["artifacts"]["objects"]["standard_matrix"]).exists()
         assert Path(raw_qc["artifacts"]["figures"]["raw_qc_overview"]).exists()

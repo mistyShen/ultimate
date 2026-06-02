@@ -44,7 +44,11 @@ def normalize_config(config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
 
     normalized.setdefault("design", {})
     normalized.setdefault("resources", {})
-    normalized.setdefault("report", {})
+    report = normalized.setdefault("report", {})
+    report.setdefault("style", "soft_color")
+    report.setdefault("layout", "clinical_report")
+    report.setdefault("figure_format", "png")
+    report.setdefault("dpi", 180)
     normalized.setdefault("samples", {})
     normalized.setdefault("modules", {})
 

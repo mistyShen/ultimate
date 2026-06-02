@@ -17,7 +17,7 @@
   <h1>{{ manifest.project.name }} - Ultimate 多组学生信分析报告</h1>
   <p>生成时间：{{ generated_at }}</p>
   <p>物种：{{ manifest.project.organism }}；输出目录：<code>{{ manifest.output_dir }}</code></p>
-  <p>出图风格：临床期刊版；审阅图清单：<code>{{ manifest.style_review.figure_manifest }}</code></p>
+  <p>出图风格：{{ manifest.figure_style.style_cn | default("临床期刊版") }}；审阅图清单：<code>{{ manifest.style_review.figure_manifest }}</code></p>
 
   <h2>运行概览</h2>
   <table>
@@ -27,10 +27,10 @@
       <tr>
         <td>{{ module.title_cn }} ({{ module.module }})</td>
         <td>{{ module.status }}</td>
-        <td>{{ module.raw_qc.status }}</td>
-        <td>{{ module.n_features }}</td>
-        <td>{{ module.n_samples }}</td>
-        <td>{{ module.formal_backend.r_entrypoint }}</td>
+        <td>{{ (module.get("raw_qc") or {}).get("status", "not_recorded") }}</td>
+        <td>{{ module.get("n_features", "NA") }}</td>
+        <td>{{ module.get("n_samples", "NA") }}</td>
+        <td>{{ (module.get("formal_backend") or {}).get("r_entrypoint", "python/backend") }}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -47,15 +47,17 @@
   {% for module in modules %}
     <h3>{{ module.title_cn }}</h3>
     <ul>
-      <li>Raw QC manifest：<code>{{ module.raw_qc.manifest_path }}</code></li>
-      <li>Raw QC 标准矩阵：<code>{{ module.raw_qc.artifacts.objects.standard_matrix }}</code></li>
-      {% for key, value in module.artifacts.tables.items() %}
+      {% set raw_qc = module.get("raw_qc") or {} %}
+      {% set artifacts = module.get("artifacts") or {"tables": {}, "figures": {}, "objects": {}} %}
+      <li>Raw QC manifest：<code>{{ raw_qc.get("manifest_path", "not_recorded") }}</code></li>
+      <li>Raw QC 标准矩阵：<code>{{ ((raw_qc.get("artifacts") or {}).get("objects") or {}).get("standard_matrix", "not_recorded") }}</code></li>
+      {% for key, value in (artifacts.get("tables") or {}).items() %}
         <li>表格 {{ key }}：<code>{{ value }}</code></li>
       {% endfor %}
-      {% for key, value in module.artifacts.figures.items() %}
+      {% for key, value in (artifacts.get("figures") or {}).items() %}
         <li>图表 {{ key }}：<code>{{ value }}</code></li>
       {% endfor %}
-      {% for key, value in module.artifacts.objects.items() %}
+      {% for key, value in (artifacts.get("objects") or {}).items() %}
         <li>对象 {{ key }}：<code>{{ value }}</code></li>
       {% endfor %}
     </ul>

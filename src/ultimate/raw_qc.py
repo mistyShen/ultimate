@@ -77,8 +77,9 @@ def run_raw_qc(*, module_name: str, config: dict[str, Any], output_dir: Path, sa
     qc_table_path = tables_dir / "raw_qc_summary.tsv"
     qc_table.to_csv(qc_table_path, sep="\t", index=False)
 
-    output_matrix = _write_standard_matrix(module_name, samples, raw_cfg, objects_dir)
+    output_matrix, matrix_source = _write_standard_matrix(module_name, samples, raw_cfg, input_rows, input_type, objects_dir)
     output_object = _write_standard_object(module_name, samples, raw_cfg, objects_dir, output_matrix)
+    command_plan = _write_command_plan(module_name, input_rows, raw_cfg, tables_dir)
     figure_paths = _write_raw_qc_figures(module_name, qc_table, figures_dir)
     skip_reasons = []
     if not enabled:
@@ -112,9 +113,10 @@ def run_raw_qc(*, module_name: str, config: dict[str, Any], output_dir: Path, sa
         "open_replacements": list(contract.open_replacements),
         "selected_toolchain": list(toolchain),
         "licensed_policy": "licensed tools are detected only; open replacements are preferred",
+        "matrix_source": matrix_source,
         "skip_reasons": skip_reasons,
         "artifacts": {
-            "tables": {"raw_input_contract": str(input_table_path), "raw_qc_summary": str(qc_table_path)},
+            "tables": {"raw_input_contract": str(input_table_path), "raw_qc_summary": str(qc_table_path), "external_command_plan": str(command_plan)},
             "figures": figure_paths,
             "objects": {"standard_matrix": str(output_matrix), "standard_object": str(output_object)},
         },
@@ -165,15 +167,28 @@ def _qc_summary(samples: pd.DataFrame, input_rows: pd.DataFrame, module_name: st
     )
 
 
-def _write_standard_matrix(module_name: str, samples: pd.DataFrame, raw_cfg: dict[str, Any], objects_dir: Path) -> Path:
+def _write_standard_matrix(
+    module_name: str,
+    samples: pd.DataFrame,
+    raw_cfg: dict[str, Any],
+    input_rows: pd.DataFrame,
+    input_type: str,
+    objects_dir: Path,
+) -> tuple[Path, str]:
     configured = raw_cfg.get("output_matrix")
     if configured:
         configured_path = Path(configured)
         if configured_path.exists():
-            return configured_path
+            return configured_path, "configured_existing_output_matrix"
         path = configured_path
     else:
         path = objects_dir / f"{module_name}_standard_matrix.tsv"
+    existing = _existing_matrix_input(raw_cfg, input_rows, input_type)
+    if existing is not None:
+        frame = pd.read_csv(existing, sep=None, engine="python")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        frame.to_csv(path, sep="\t", index=False)
+        return path, f"copied_existing_{input_type}:{existing}"
     sample_ids = list(samples["sample_id"].astype(str)) if "sample_id" in samples.columns else ["S1", "S2", "S3", "S4"]
     rng = np.random.default_rng(abs(hash(("raw", module_name))) % 2**32)
     values = rng.poisson(lam=80, size=(24, len(sample_ids))).astype(float)
@@ -181,7 +196,32 @@ def _write_standard_matrix(module_name: str, samples: pd.DataFrame, raw_cfg: dic
     frame.insert(0, "feature_id", [f"{module_name.upper()}_RAW_{idx:03d}" for idx in range(1, 25)])
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(path, sep="\t", index=False)
-    return path
+    return path, "demo_generated_standard_matrix"
+
+
+def _existing_matrix_input(raw_cfg: dict[str, Any], input_rows: pd.DataFrame, input_type: str) -> Path | None:
+    candidate_keys = ("matrix_path", "peak_matrix", "input_path", "clinical_table", "signature_matrix")
+    for key in candidate_keys:
+        value = raw_cfg.get(key)
+        if value and Path(value).is_file():
+            return Path(value)
+    matrix_like_types = {
+        "count_matrix",
+        "beta_matrix",
+        "abundance_table",
+        "downloaded_matrix",
+        "expression_matrix",
+        "matrix",
+        "clinical_table",
+    }
+    if input_type not in matrix_like_types:
+        return None
+    for _, row in input_rows.iterrows():
+        for key in candidate_keys:
+            value = str(row.get(key, "") or "")
+            if value and Path(value).is_file():
+                return Path(value)
+    return None
 
 
 def _write_standard_object(module_name: str, samples: pd.DataFrame, raw_cfg: dict[str, Any], objects_dir: Path, matrix_path: Path) -> Path:
@@ -209,7 +249,7 @@ def _write_raw_qc_figures(module_name: str, qc_table: pd.DataFrame, figures_dir:
     counts = qc_table[qc_table["metric"].isin(["sample_rows", "existing_input_paths"])].copy()
     counts["value_numeric"] = pd.to_numeric(counts["value"], errors="coerce").fillna(0)
     plt.figure(figsize=(5.2, 3.8))
-    sns.barplot(data=counts, x="metric", y="value_numeric", color=tokens["primary"])
+    sns.barplot(data=counts, x="metric", y="value_numeric", color=tokens["bar"])
     plt.title(f"{module_name} raw QC overview")
     plt.xlabel("")
     plt.ylabel("Count")
@@ -219,6 +259,43 @@ def _write_raw_qc_figures(module_name: str, qc_table: pd.DataFrame, figures_dir:
     save_figure(qc_bar, style=tokens)
 
     return {"raw_qc_overview": str(qc_bar)}
+
+
+def _write_command_plan(module_name: str, input_rows: pd.DataFrame, raw_cfg: dict[str, Any], tables_dir: Path) -> Path:
+    path = tables_dir / "external_command_plan.tsv"
+    rows = []
+    for _, row in input_rows.iterrows():
+        sample_id = str(row.get("sample_id") or row.get("cohort_id") or "sample")
+        rows.append(
+            {
+                "sample_id": sample_id,
+                "module": module_name,
+                "status": "planned_not_executed_by_default",
+                "command": _planned_command(module_name, row, raw_cfg),
+            }
+        )
+    pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
+    return path
+
+
+def _planned_command(module_name: str, row: pd.Series, raw_cfg: dict[str, Any]) -> str:
+    if module_name == "rnaseq":
+        fastq_1 = row.get("fastq_1", "<R1.fastq.gz>")
+        fastq_2 = row.get("fastq_2", "<R2.fastq.gz>")
+        return f"fastp -i {fastq_1} -I {fastq_2} --stdout | salmon quant --libType A --mates1 {fastq_1} --mates2 {fastq_2}"
+    if module_name == "methylation":
+        return "import beta matrix directly; IDAT processing uses optional methylation parser/minfi-compatible backend when configured"
+    if module_name == "proteomics":
+        return "import MaxQuant/Proteome Discoverer/generic abundance table and normalize to standard matrix"
+    if module_name == "publicdb":
+        return "download/cache public cohort expression and clinical tables, then merge by sample_id"
+    if module_name == "wgcna":
+        return "consume standardized expression matrix and compute module-trait correlation"
+    if module_name == "single_gene":
+        return "consume standardized expression matrix plus clinical table for gene-level association"
+    if module_name == "clinical_assoc":
+        return "consume standardized feature matrix plus clinical table for association testing"
+    return "consume declared raw input and write standard matrix/object handoff"
 
 
 def _tool_available(tool: str, config: dict[str, Any], output_dir: Path) -> bool:

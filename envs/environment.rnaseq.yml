@@ -3,6 +3,14 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - statsmodels
+  - matplotlib
+  - seaborn
   - fastqc
   - multiqc
   - fastp

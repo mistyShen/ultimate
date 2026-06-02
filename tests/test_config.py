@@ -12,3 +12,4 @@ def test_init_project_and_load_config(tmp_path: Path) -> None:
     assert loaded.raw["project"]["organism"] == "human"
     assert enabled_modules(loaded.raw) == ["rnaseq"]
     assert Path(loaded.raw["modules"]["rnaseq"]["input_matrix"]).exists()
+    assert (Path(manifest["output_dir"]) / "intake" / "customer_project_intake.tsv").exists()

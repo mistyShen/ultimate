@@ -15,7 +15,8 @@ import pandas as pd
 import seaborn as sns
 
 from ultimate.constants import MODULE_SPECS
-from ultimate.plot_style import apply_clinical_journal_style, save_figure
+from ultimate.bulk import is_bulk_module, run_bulk_module
+from ultimate.plot_style import apply_clinical_journal_style, continuous_cmap, save_figure
 
 
 def run_module(
@@ -25,6 +26,9 @@ def run_module(
     output_dir: Path,
     samples: pd.DataFrame,
 ) -> dict[str, Any]:
+    if is_bulk_module(module_name):
+        return run_bulk_module(module_name=module_name, config=config, output_dir=output_dir, samples=samples)
+
     module_dir = output_dir
     figures_dir = module_dir / "results" / "figures" / module_name
     tables_dir = module_dir / "results" / "tables" / module_name
@@ -268,7 +272,7 @@ def _plot_volcano(stats: pd.DataFrame, path: Path, title: str) -> None:
 def _plot_heatmap(matrix: pd.DataFrame, path: Path, title: str) -> None:
     tokens = apply_clinical_journal_style()
     plt.figure(figsize=(7, 5))
-    sns.heatmap(matrix, cmap=tokens["heatmap_cmap"], yticklabels=True, cbar_kws={"label": "Value"})
+    sns.heatmap(matrix, cmap=continuous_cmap(tokens), yticklabels=True, cbar_kws={"label": "Value"})
     plt.title(title)
     plt.tight_layout()
     save_figure(path, style=tokens)
@@ -277,7 +281,7 @@ def _plot_heatmap(matrix: pd.DataFrame, path: Path, title: str) -> None:
 def _plot_correlation(matrix: pd.DataFrame, path: Path, title: str) -> None:
     tokens = apply_clinical_journal_style()
     plt.figure(figsize=(5, 4))
-    sns.heatmap(matrix.T.corr().iloc[:15, :15], cmap=tokens["heatmap_cmap"], center=0)
+    sns.heatmap(matrix.T.corr().iloc[:15, :15], cmap=continuous_cmap(tokens), center=0)
     plt.title(title)
     plt.tight_layout()
     save_figure(path, style=tokens)

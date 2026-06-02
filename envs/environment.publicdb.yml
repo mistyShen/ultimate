@@ -3,6 +3,15 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - statsmodels
+  - lifelines
+  - matplotlib
+  - seaborn
   - r-base=4.4
   - r-ggplot2
   - r-survival

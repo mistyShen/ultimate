@@ -66,5 +66,7 @@ modules:
 report:
   title: Ultimate 多组学生信分析报告
   language: zh-CN
+  style: soft_color
+  layout: clinical_report
   figure_format: png
-  dpi: 160
+  dpi: 180

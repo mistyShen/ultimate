@@ -1,0 +1,16 @@
+field	required	example	note
+project_name	yes	NSCLC_scRNA_2026	项目名，用于输出目录和报告标题
+organism	yes	human	仅支持 human 或 mouse
+analysis_type	yes	scrna	可选 rnaseq/scrna/scatac/multiome/vdj/scdna/mtdna/scepi/cite_seq/spatial/methylation/proteomics/publicdb/wgcna/single_gene
+raw_input_type	yes	10x_h5	按模块 raw input contract 填写
+sample_sheet	yes	samples/raw_scrna.tsv	样本表路径
+group_column	yes	condition	分组列
+control_group	no	control	对照组名称
+case_group	no	tumor	实验组/疾病组名称
+batch_column	no	batch	批次列，没有可留空
+clinical_table	no	clinical.tsv	临床表路径
+reference_resource	no	default	默认 human=GRCh38, mouse=GRCm39，可自定义
+licensed_tools	no	none	Cell Ranger/Space Ranger/CIBERSORT 如用户提供则填写路径
+figure_style	yes	soft_color	soft_color/clean_clinical/warm_academic
+delivery_format	yes	html,md,png,pdf	交付格式
+notes	no		客户特殊要求

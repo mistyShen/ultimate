@@ -9,7 +9,7 @@ from typing import Any
 
 from ultimate.config import dump_yaml, enabled_modules, load_config, load_samples, output_dir
 from ultimate.modules import run_module
-from ultimate.plot_style import generate_style_review
+from ultimate.plot_style import generate_style_review, set_active_style_from_config
 from ultimate.preflight import run_preflight
 from ultimate.raw_qc import run_raw_qc
 from ultimate.report import build_report
@@ -25,6 +25,7 @@ def run_pipeline(config: dict[str, Any]) -> dict[str, Any]:
     out_dir = output_dir(config)
     for directory in ("results/figures", "results/tables", "objects", "reports", "logs", "raw_qc"):
         (out_dir / directory).mkdir(parents=True, exist_ok=True)
+    active_style = set_active_style_from_config(config)
     dump_yaml(config, out_dir / "config_snapshot.yaml")
     preflight = run_preflight(config, write=True)
     samples = load_samples(config)
@@ -56,6 +57,7 @@ def run_pipeline(config: dict[str, Any]) -> dict[str, Any]:
             "platform": platform.platform(),
         },
         "preflight": preflight,
+        "figure_style": active_style,
         "style_review": style_review,
         "modules": module_manifests,
         "artifacts_root": {

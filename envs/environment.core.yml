@@ -11,7 +11,12 @@ dependencies:
   - numpy
   - pandas
   - pyyaml
+  - scipy
   - seaborn
+  - scikit-learn
+  - statsmodels
+  - lifelines
+  - h5py
   - pytest
   - snakemake
   - r-base

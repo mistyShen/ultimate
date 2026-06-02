@@ -9,7 +9,9 @@ from ultimate.config import load_config
 from ultimate.constants import PROJECT_TYPES
 from ultimate.demo import init_project
 from ultimate.pipeline import run_pipeline_from_config
+from ultimate.plot_style import available_styles, generate_style_review, set_active_style
 from ultimate.preflight import run_preflight
+from ultimate.production_audit import run_production_audit
 from ultimate.report import build_report
 from ultimate.singlecell_audit import run_singlecell_audit
 
@@ -85,3 +87,34 @@ def report_command(run_dir: Path) -> None:
 def audit_singlecell_command(root: Path, output_dir: Path | None) -> None:
     manifest = run_singlecell_audit(root=root, output_dir=output_dir)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("audit-production")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    default=Path("/shared/shen/2026/ultimate"),
+    show_default=True,
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Where production-readiness audit artifacts should be written.",
+)
+def audit_production_command(root: Path, output_dir: Path | None) -> None:
+    manifest = run_production_audit(root=root, output_dir=output_dir)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("styles")
+@click.option("--style", "style_key", default="soft_color", show_default=True, help="Style key to render.")
+@click.option("--output-dir", type=click.Path(path_type=Path), default=None, help="Optional review output directory.")
+def styles_command(style_key: str, output_dir: Path | None) -> None:
+    styles = available_styles()
+    if output_dir is None:
+        click.echo(json.dumps(styles, indent=2, ensure_ascii=False))
+        return
+    tokens = set_active_style(style_key)
+    manifest = generate_style_review(output_dir, style=tokens)
+    click.echo(json.dumps({"selected": style_key, "available": list(styles), **manifest}, indent=2, ensure_ascii=False))

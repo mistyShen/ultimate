@@ -1,18 +1,24 @@
 ultimate_clinical_journal_tokens <- function() {
   list(
-    style_id = "clinical_journal_v1",
-    style_cn = "临床期刊版",
+    style_id = "clinical_journal_v3_soft_color",
+    style_cn = "临床期刊版-柔彩科研配色",
     background = "#FFFFFF",
-    text = "#1F2937",
-    axis = "#334155",
-    grid = "#E5E7EB",
-    muted = "#64748B",
-    primary = "#2F5D8C",
-    secondary = "#6F8FAF",
-    case = "#B42318",
-    control = "#1D4ED8",
-    accent = "#0F766E",
-    neutral = "#94A3B8"
+    text = "#3B4354",
+    axis = "#667085",
+    grid = "#ECEFF4",
+    muted = "#8A94A6",
+    primary = "#6C7BEF",
+    secondary = "#5EC4B6",
+    case = "#E36A6A",
+    control = "#4A90D9",
+    accent = "#D8A24A",
+    neutral = "#BAC3D0",
+    bar = "#5FAFC1",
+    bar_light = "#D8E7EC",
+    bar_highlight = "#E36A6A",
+    heatmap_low = "#5DA9C7",
+    heatmap_mid = "#F8FAFC",
+    heatmap_high = "#D96C75"
   )
 }
 
@@ -60,4 +66,16 @@ ultimate_scale_fill_condition <- function() {
 
 ultimate_save_plot <- function(filename, plot, width = 6, height = 4, dpi = 180) {
   ggplot2::ggsave(filename, plot = plot, width = width, height = height, dpi = dpi, bg = "white")
+}
+
+ultimate_scale_heatmap <- function(limits = c(-2, 2), midpoint = 0) {
+  tokens <- ultimate_clinical_journal_tokens()
+  ggplot2::scale_fill_gradient2(
+    low = tokens$heatmap_low,
+    mid = tokens$heatmap_mid,
+    high = tokens$heatmap_high,
+    midpoint = midpoint,
+    limits = limits,
+    oob = scales::squish
+  )
 }
