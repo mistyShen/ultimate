@@ -15,6 +15,9 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
     run_manifest = run_pipeline_from_config(Path(manifest["config_path"]))
     run_dir = Path(run_manifest["output_dir"])
     assert (run_dir / "run_manifest.json").exists()
+    assert run_manifest["status"] == "ready"
+    assert run_manifest["summary"]["module_count"] == len(run_manifest["modules"])
+    assert set(run_manifest["module_status"]) == {module["module"] for module in run_manifest["modules"]}
     assert (run_dir / "reports" / "report.html").exists()
     assert (run_dir / "reports" / "methods.md").exists()
     assert len(run_manifest["modules"]) >= 13
@@ -80,6 +83,8 @@ def test_validated_run_dir_is_imported_by_unified_run(tmp_path: Path) -> None:
     dump_yaml(config, config_path)
 
     run_manifest = run_pipeline_from_config(config_path)
+    assert run_manifest["status"] == "ready"
+    assert run_manifest["module_status"]["scrna"] == "complete_validated_run_backend"
     module = run_manifest["modules"][0]
     assert module["status"] == "complete_validated_run_backend"
     assert module["backend"]["primary"] == "validated_run"

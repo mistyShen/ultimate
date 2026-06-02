@@ -14,6 +14,7 @@ from ultimate.plot_style import available_styles, generate_style_review, set_act
 from ultimate.preflight import run_preflight
 from ultimate.production_audit import run_production_audit
 from ultimate.report import build_report
+from ultimate.scrna_smoke import create_demo_inputs, run_scrna_validation
 from ultimate.singlecell_audit import run_singlecell_audit
 from ultimate.tool_registry import available_tool_batches, run_audit_tools, run_prune_tools, run_trial_tools
 
@@ -200,3 +201,38 @@ def styles_command(style_key: str, render_all: bool, output_dir: Path | None) ->
     tokens = set_active_style(style_key)
     manifest = generate_style_review(output_dir, style=tokens)
     click.echo(json.dumps({"selected": style_key, "available": list(styles), **manifest}, indent=2, ensure_ascii=False))
+
+
+@main.command("create-scrna-demo-inputs")
+@click.option("--output-dir", type=click.Path(path_type=Path), required=True)
+@click.option("--n-cells", type=int, default=120, show_default=True)
+@click.option("--n-genes", type=int, default=90, show_default=True)
+@click.option("--seed", type=int, default=17, show_default=True)
+def create_scrna_demo_inputs_command(output_dir: Path, n_cells: int, n_genes: int, seed: int) -> None:
+    """Create tiny h5ad/10x h5/10x mtx inputs for scRNA smoke validation."""
+    manifest = create_demo_inputs(output_dir, n_cells=n_cells, n_genes=n_genes, seed=seed)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("validate-scrna")
+@click.option("--input-path", type=click.Path(path_type=Path, exists=True), required=True)
+@click.option("--input-type", type=click.Choice(["h5ad", "10x_h5", "10x_mtx"]), required=True)
+@click.option("--output-dir", type=click.Path(path_type=Path), required=True)
+@click.option("--samplesheet", type=click.Path(path_type=Path, exists=True), default=None)
+@click.option("--max-cells", type=int, default=3000, show_default=True)
+@click.option("--random-seed", type=int, default=7, show_default=True)
+def validate_scrna_command(input_path: Path, input_type: str, output_dir: Path, samplesheet: Path | None, max_cells: int, random_seed: int) -> None:
+    """Run the scRNA MVP smoke pipeline on h5ad, 10x H5, or 10x MTX input."""
+    manifest = run_scrna_validation(
+        input_path=input_path,
+        input_type=input_type,
+        output_dir=output_dir,
+        samplesheet=samplesheet,
+        max_cells=max_cells,
+        random_seed=random_seed,
+    )
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

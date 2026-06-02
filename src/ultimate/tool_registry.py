@@ -132,7 +132,7 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("scrublet", "https://github.com/swolock/scrublet", "qc", "keep_default", "scrna_core", env="ultimate-scrna", python_import="scrublet", size_class="small", reason_cn="Python 双细胞检测。"),
     _tool("DoubletFinder", "https://github.com/chris-mcginnis-ucsf/DoubletFinder", "qc", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="DoubletFinder", install_method="R remotes", size_class="small", reason_cn="Seurat/R 双细胞检测。"),
     _tool("SoupX", "https://github.com/constantAmateur/SoupX", "qc", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="SoupX", size_class="small", reason_cn="ambient RNA 去污染常用工具。"),
-    _tool("DecontX", "https://github.com/JCVenterInstitute/DecontX", "qc", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="celda", size_class="medium", reason_cn="污染校正候选，R 包 celda 提供。"),
+    _tool("DecontX", "https://github.com/JCVenterInstitute/DecontX", "qc", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="celda", install_method="optional_deferred: R4.4 main env conflict", size_class="medium", reason_cn="污染校正候选；celda 在当前 R 4.4 主环境会触发 Bioconductor 代际冲突，按项目隔离安装。"),
     _tool("souporcell", "https://github.com/wheaton5/souporcell", "demultiplex", "keep_optional", "genome_tools", env="ultimate-genome-mtdna", command="souporcell_pipeline.py", size_class="large", reason_cn="无 genotype demultiplex 和 doublet 检测。"),
     _tool("scFlow", "https://github.com/combiz/scflow", "workflow", "reference_only", "registry", install_method="reference", size_class="none", reason_cn="QC workflow 参考，不安装。"),
     _tool("scPipe", "https://github.com/LuyiTian/scPipe", "workflow", "reference_only", "registry", install_method="reference", size_class="none", reason_cn="preprocessing pipeline 参考。"),
@@ -154,15 +154,15 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("DESeq2", "https://github.com/thelovelab/DESeq2", "statistics", "keep_default", "r_compat", env="ultimate-rnaseq", r_package="DESeq2", size_class="large", reason_cn="bulk 和 pseudobulk 标准差异分析。"),
     _tool("edgeR", "https://bioconductor.org/packages/release/bioc/html/edgeR.html", "statistics", "keep_default", "r_compat", env="ultimate-rnaseq", r_package="edgeR", size_class="medium", reason_cn="bulk/pseudobulk 差异分析。"),
     _tool("limma", "https://bioconductor.org/packages/release/bioc/html/limma.html", "statistics", "keep_default", "core", env="ultimate-core", r_package="limma", size_class="small", reason_cn="线性模型和多组学矩阵统计基础。"),
-    _tool("muscat", "https://github.com/HelenaLC/muscat", "statistics", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="muscat", size_class="medium", reason_cn="多样本单细胞 pseudobulk 统计。"),
-    _tool("dreamlet", "https://github.com/DiseaseNeuroGenomics/dreamlet", "statistics", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="dreamlet", size_class="medium", reason_cn="复杂设计 pseudobulk/混合模型。"),
+    _tool("muscat", "https://github.com/HelenaLC/muscat", "statistics", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="muscat", install_method="optional_deferred: R4.4 main env conflict", size_class="medium", reason_cn="多样本单细胞 pseudobulk 统计；当前主 R 环境 dry-run 要求大换血，按项目隔离安装。"),
+    _tool("dreamlet", "https://github.com/DiseaseNeuroGenomics/dreamlet", "statistics", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="dreamlet", install_method="optional_deferred: R4.4 main env conflict", size_class="medium", reason_cn="复杂设计 pseudobulk/混合模型；保留为隔离环境候选，避免污染主线 Seurat/Monocle 环境。"),
     # Enrichment / scoring.
     _tool("decoupler-py", "https://github.com/saezlab/decoupler-py", "pathway", "keep_default", "scrna_core", env="ultimate-scrna", python_import="decoupler", size_class="medium", reason_cn="通路/TF/功能状态活性评分主线。"),
     _tool("GSEApy", "https://github.com/zqfang/GSEApy", "pathway", "keep_default", "scrna_core", env="ultimate-scrna", python_import="gseapy", size_class="medium", reason_cn="Python GSEA/Enrichr/prerank/ssGSEA。"),
     _tool("clusterProfiler", "https://github.com/YuLab-SMU/clusterProfiler", "pathway", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="clusterProfiler", size_class="large", reason_cn="R 生态 GO/KEGG/GSEA 标准工具。"),
     _tool("GSVA", "https://github.com/rcastelo/GSVA", "pathway", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="GSVA", size_class="medium", reason_cn="GSVA/ssGSEA。"),
     _tool("AUCell", "https://github.com/aertslab/AUCell", "pathway", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="AUCell", size_class="medium", reason_cn="单细胞 gene set activity。"),
-    _tool("progeny", "https://github.com/saezlab/progeny", "pathway", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="progeny", size_class="small", reason_cn="通路活性推断。"),
+    _tool("progeny", "https://github.com/saezlab/progeny", "pathway", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="progeny", install_method="optional_deferred: R4.4 main env conflict", size_class="small", reason_cn="R 侧通路活性候选；Python decoupler 已作为默认路线，R progeny 按项目隔离安装。"),
     _tool("dorothea", "https://github.com/saezlab/dorothea", "pathway", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="dorothea", size_class="small", reason_cn="TF-target regulon。"),
     _tool("UCell", "https://github.com/carmonalab/UCell", "pathway", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="UCell", size_class="small", reason_cn="稳健 signature scoring。"),
     _tool("VISION", "https://github.com/YosefLab/VISION", "pathway", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="VISION", size_class="medium", reason_cn="signature exploration。"),
@@ -173,9 +173,9 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("CellPhoneDB", "https://github.com/ventolab/CellphoneDB", "communication", "keep_optional", "specialized_light", env="ultimate-scrna", python_import="cellphonedb", command="cellphonedb", size_class="large", reason_cn="配体-受体通讯候选。"),
     _tool("NicheNet", "https://github.com/saeyslab/nichenetr", "communication", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="nichenetr", install_method="R remotes", size_class="medium", reason_cn="ligand-target 机制假设生成。"),
     _tool("LIANA", "https://github.com/saezlab/liana-py", "communication", "keep_optional", "specialized_light", env="ultimate-scrna", python_import="liana", size_class="medium", reason_cn="整合多通讯方法；当前服务器 pip 链会触发源码编译，保留为隔离环境候选。"),
-    _tool("OmnipathR", "https://github.com/saezlab/OmnipathR", "communication", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="OmnipathR", size_class="small", reason_cn="OmniPath R 接口。"),
+    _tool("OmnipathR", "https://github.com/saezlab/OmnipathR", "communication", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="OmnipathR", install_method="optional_deferred: R4.4 main env conflict", size_class="small", reason_cn="OmniPath R 接口；主线优先 Python omnipath/decoupler，R 侧按项目隔离安装。"),
     _tool("omnipath", "https://github.com/saezlab/omnipath", "communication", "keep_optional", "specialized_light", env="ultimate-scrna", python_import="omnipath", size_class="small", reason_cn="OmniPath Python 接口。"),
-    _tool("stLearn", "https://github.com/BiomedicalMachineLearning/stLearn", "spatial", "keep_optional", "spatial", env="ultimate-spatial-py", python_import="stlearn", size_class="large", reason_cn="空间通讯/形态整合候选。"),
+    _tool("stLearn", "https://github.com/BiomedicalMachineLearning/stLearn", "spatial", "keep_optional", "spatial", env="ultimate-spatial-py", python_import="stlearn", size_class="large", reason_cn="空间通讯/形态整合候选；与当前 squidpy/spatialdata 栈求解较慢，后续隔离旧空间栈验证。"),
     # Trajectory / velocity.
     _tool("monocle3", "https://github.com/cole-trapnell-lab/monocle3", "trajectory", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="monocle3", size_class="large", reason_cn="R 生态拟时序。"),
     _tool("slingshot", "https://github.com/kstreet13/slingshot", "trajectory", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="slingshot", size_class="medium", reason_cn="轨迹推断常用 Bioconductor 工具。"),
@@ -517,6 +517,8 @@ def _audit_row(tool: ToolSpec, checks: dict[str, dict[str, bool]]) -> dict[str, 
         status = "adapter_ready" if installed else "adapter_pending"
     elif installed:
         status = "installed"
+    elif tool.decision == "keep_optional" and tool.install_method.startswith("optional_deferred"):
+        status = "optional_deferred"
     else:
         status = "needs_trial_install"
 
