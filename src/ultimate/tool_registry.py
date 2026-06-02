@@ -267,7 +267,7 @@ def run_audit_tools(root: Path, output_dir: Path | None = None) -> dict[str, Any
 
     registry_rows = [asdict(tool) for tool in TOOL_REGISTRY]
     env_paths = _env_paths(root)
-    checks = _collect_checks(env_paths)
+    checks = _collect_checks(env_paths, TOOL_REGISTRY)
     audit_rows = [_audit_row(tool, checks) for tool in TOOL_REGISTRY]
     install_rows = [row for row in audit_rows if _needs_install(row)]
     storage = _storage_estimate(root, audit_rows)
@@ -328,7 +328,7 @@ def run_trial_tools(
     before = _storage_estimate(root, [])
     selected = [tool for tool in TOOL_REGISTRY if tool.batch == batch]
     install_logs = _install_batch(root=root, project_root=project_root, batch=batch, output_dir=output_dir) if install else []
-    checks = _collect_checks(_env_paths(root))
+    checks = _collect_checks(_env_paths(root), selected)
     rows = [_audit_row(tool, checks) for tool in selected]
     after = _storage_estimate(root, [])
 
@@ -393,7 +393,7 @@ def _env_paths(root: Path) -> dict[str, Path]:
     return {env: root / ".conda" / "envs" / env for env in env_names}
 
 
-def _collect_checks(env_paths: dict[str, Path]) -> dict[str, dict[str, bool]]:
+def _collect_checks(env_paths: dict[str, Path], specs: tuple[ToolSpec, ...] | list[ToolSpec]) -> dict[str, dict[str, bool]]:
     python_checks: dict[str, bool] = {}
     r_checks: dict[str, bool] = {}
     command_checks: dict[str, bool] = {}
@@ -401,7 +401,7 @@ def _collect_checks(env_paths: dict[str, Path]) -> dict[str, dict[str, bool]]:
     py_by_env: dict[str, list[str]] = {}
     r_by_env: dict[str, list[str]] = {}
     commands: set[str] = set()
-    for tool in TOOL_REGISTRY:
+    for tool in specs:
         if tool.python_import and tool.env:
             py_by_env.setdefault(tool.env, []).append(tool.python_import)
         if tool.r_package and tool.env:
