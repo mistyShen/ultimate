@@ -91,7 +91,16 @@ Missing optional tools are reported in `preflight_manifest.json`, `run_manifest.
 Set `report.style` in `config/project.yaml`:
 
 - `soft_color`: 柔彩科研配色，默认推荐。
+- `okabe_ito`: 色盲友好的经典科研分类色。
+- `colorbrewer_set2`: 柔和分类色，适合细胞类型/分组较多的图。
+- `nature_modern`: Nature 风格现代科研配色。
+- `lancet_clinical`: Lancet 风格临床强化配色。
+- `jama_clean`: JAMA 风格清爽克制配色。
+- `nejm_warm`: NEJM 风格暖色临床配色。
+- `viridis_teal`: Viridis 连续值友好配色。
+- `cividis_gold`: Cividis 蓝金连续值配色。
 - `clean_clinical`: 清爽蓝灰临床报告配色。
 - `warm_academic`: 暖彩学术配色。
 
-Use `ultimate styles --output-dir <dir>` to render review figures before delivery.
+Use `ultimate styles --output-dir <dir>` to render one review set, or
+`ultimate styles --all --output-dir <dir>` to render all style options before delivery.

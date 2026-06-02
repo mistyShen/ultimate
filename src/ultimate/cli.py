@@ -109,11 +109,20 @@ def audit_production_command(root: Path, output_dir: Path | None) -> None:
 
 @main.command("styles")
 @click.option("--style", "style_key", default="soft_color", show_default=True, help="Style key to render.")
+@click.option("--all", "render_all", is_flag=True, help="Render review figures for every registered style.")
 @click.option("--output-dir", type=click.Path(path_type=Path), default=None, help="Optional review output directory.")
-def styles_command(style_key: str, output_dir: Path | None) -> None:
+def styles_command(style_key: str, render_all: bool, output_dir: Path | None) -> None:
     styles = available_styles()
     if output_dir is None:
         click.echo(json.dumps(styles, indent=2, ensure_ascii=False))
+        return
+    if render_all:
+        manifests = {}
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for key in styles:
+            tokens = set_active_style(key)
+            manifests[key] = generate_style_review(output_dir / key, style=tokens)
+        click.echo(json.dumps({"selected": "all", "available": list(styles), "manifests": manifests}, indent=2, ensure_ascii=False))
         return
     tokens = set_active_style(style_key)
     manifest = generate_style_review(output_dir, style=tokens)
