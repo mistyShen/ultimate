@@ -610,16 +610,59 @@ def _install_batch(root: Path, project_root: Path, batch: str, output_dir: Path)
     if not env_file.exists():
         return [{"batch": batch, "status": "missing_env_file", "log": str(log_path), "command": str(env_file)}]
     mamba = shutil.which("mamba") or "mamba"
-    command = [mamba, "env", "update" if prefix.exists() else "create", "-p", str(prefix), "-f", str(env_file), "-y"]
-    if prefix.exists():
-        command.append("--prune")
-    env = os.environ.copy()
-    env["CONDA_PKGS_DIRS"] = str(root / ".conda" / "pkgs")
+    if prefix.exists() and not (prefix / "conda-meta").exists() and not (prefix / "bin" / "python").exists():
+        shutil.rmtree(prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     (root / ".conda" / "pkgs").mkdir(parents=True, exist_ok=True)
-    with log_path.open("w", encoding="utf-8") as log:
-        proc = subprocess.run(command, text=True, stdout=log, stderr=subprocess.STDOUT, env=env, check=False)
-    return [{"batch": batch, "status": "ok" if proc.returncode == 0 else f"failed:{proc.returncode}", "log": str(log_path), "command": " ".join(command)}]
+    rows: list[dict[str, Any]] = []
+    for attempt_idx, condarc in enumerate(_condarc_candidates(project_root), start=1):
+        env_exists = (prefix / "conda-meta").exists() or (prefix / "bin" / "python").exists()
+        command = [mamba, "env", "update" if env_exists else "create", "-p", str(prefix), "-f", str(env_file), "-y"]
+        if env_exists:
+            command.append("--prune")
+        env = os.environ.copy()
+        env["CONDA_PKGS_DIRS"] = str(root / ".conda" / "pkgs")
+        if condarc is None:
+            env.pop("CONDARC", None)
+            condarc_label = "default_channels"
+        else:
+            env["CONDARC"] = str(condarc)
+            condarc_label = condarc.name
+        attempt_log = output_dir / f"install_{batch}_{attempt_idx}_{condarc_label}.log"
+        with attempt_log.open("w", encoding="utf-8") as log:
+            log.write(f"CONDARC={env.get('CONDARC', 'unset')}\n")
+            log.write(f"COMMAND={' '.join(command)}\n\n")
+            proc = subprocess.run(command, text=True, stdout=log, stderr=subprocess.STDOUT, env=env, check=False)
+        rows.append(
+            {
+                "batch": batch,
+                "status": "ok" if proc.returncode == 0 else f"failed:{proc.returncode}",
+                "log": str(attempt_log),
+                "command": " ".join(command),
+                "condarc": env.get("CONDARC", ""),
+            }
+        )
+        if proc.returncode == 0:
+            break
+    return rows
+
+
+def _condarc_candidates(project_root: Path) -> list[Path | None]:
+    candidates: list[Path | None] = []
+    current = os.environ.get("CONDARC")
+    if current and Path(current).exists():
+        candidates.append(Path(current))
+    for name in (
+        "condarc.mirrors.bfsu.yml",
+        "condarc.mirrors.sjtu.yml",
+        "condarc.mirrors.aliyun.yml",
+        "condarc.mirrors.tuna.yml",
+    ):
+        path = project_root / "config" / name
+        if path.exists() and path not in candidates:
+            candidates.append(path)
+    candidates.append(None)
+    return candidates
 
 
 def _run_cleanup_command(command: list[str], target: str) -> list[dict[str, Any]]:
