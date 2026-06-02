@@ -529,7 +529,6 @@ def _storage_estimate(root: Path, audit_rows: list[dict[str, Any]]) -> dict[str,
     target = root if root.exists() else root.parent
     usage = shutil.disk_usage(target)
     paths = {
-        "ultimate_root": root,
         "conda_envs": root / ".conda" / "envs",
         "conda_pkgs": root / ".conda" / "pkgs",
         "public_data": root / "public_data",
@@ -544,6 +543,7 @@ def _storage_estimate(root: Path, audit_rows: list[dict[str, Any]]) -> dict[str,
     ]
     for name, path in paths.items():
         rows.append({"metric": f"{name}_gb", "path": str(path), "value": _du_gb(path), "note": "du -sk"})
+    rows.append({"metric": "ultimate_root_full_scan_gb", "path": str(root), "value": "", "note": "skipped_to_avoid_heavy_shared_filesystem_scan"})
     pending_gb = round(sum(float(row["estimated_gb"]) for row in audit_rows if _needs_install(row)), 2)
     rows.append({"metric": "pending_trial_install_estimated_gb", "path": str(root), "value": pending_gb, "note": "registry estimate; references and licensed paths excluded"})
     rows.append({"metric": "storage_guard_min_available_gb", "path": str(target), "value": 800.0, "note": "below this only audit should run"})
