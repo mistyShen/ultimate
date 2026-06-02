@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-BATCH="${1:?Usage: tool_trial_batch.sbatch <batch>}"
+BATCH="${1:-${ULTIMATE_TRIAL_BATCH:-scrna_core}}"
 PROJECT_ROOT="${ULTIMATE_ROOT:-/shared/shen/2026/ultimate}"
 CORE_ENV="${ULTIMATE_CORE_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-core}"
 CONDA_SH="${CONDA_SH:-/share/home/nshen/miniconda3/etc/profile.d/conda.sh}"

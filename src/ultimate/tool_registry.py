@@ -325,12 +325,12 @@ def run_trial_tools(
     output_dir = (output_dir or root / "audits" / "tool_trials" / batch).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    before = _storage_estimate(root, [])
+    before = _storage_estimate(root, [], detailed=False)
     selected = [tool for tool in TOOL_REGISTRY if tool.batch == batch]
     install_logs = _install_batch(root=root, project_root=project_root, batch=batch, output_dir=output_dir) if install else []
     checks = _collect_checks(_env_paths(root), selected)
     rows = [_audit_row(tool, checks) for tool in selected]
-    after = _storage_estimate(root, [])
+    after = _storage_estimate(root, [], detailed=False)
 
     trial_tsv = output_dir / "trial_tools.tsv"
     install_log_tsv = output_dir / "install_logs.tsv"
@@ -525,7 +525,7 @@ def _needs_install(row: dict[str, Any]) -> bool:
     return row["decision"] in {"keep_default", "keep_optional", "adapter_only"} and row["status"] in {"needs_trial_install", "adapter_pending"}
 
 
-def _storage_estimate(root: Path, audit_rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _storage_estimate(root: Path, audit_rows: list[dict[str, Any]], *, detailed: bool = True) -> dict[str, Any]:
     target = root if root.exists() else root.parent
     usage = shutil.disk_usage(target)
     paths = {
@@ -542,7 +542,10 @@ def _storage_estimate(root: Path, audit_rows: list[dict[str, Any]]) -> dict[str,
         {"metric": "filesystem_available_gb", "path": str(target), "value": _bytes_to_gb(usage.free), "note": ""},
     ]
     for name, path in paths.items():
-        rows.append({"metric": f"{name}_gb", "path": str(path), "value": _du_gb(path), "note": "du -sk"})
+        if detailed:
+            rows.append({"metric": f"{name}_gb", "path": str(path), "value": _du_gb(path), "note": "du -sk"})
+        else:
+            rows.append({"metric": f"{name}_gb", "path": str(path), "value": "", "note": "skipped_in_fast_trial_snapshot"})
     rows.append({"metric": "ultimate_root_full_scan_gb", "path": str(root), "value": "", "note": "skipped_to_avoid_heavy_shared_filesystem_scan"})
     pending_gb = round(sum(float(row["estimated_gb"]) for row in audit_rows if _needs_install(row)), 2)
     rows.append({"metric": "pending_trial_install_estimated_gb", "path": str(root), "value": pending_gb, "note": "registry estimate; references and licensed paths excluded"})
