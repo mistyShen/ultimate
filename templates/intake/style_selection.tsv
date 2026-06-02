@@ -1,4 +1,12 @@
 style_key	style_cn	use_case
-soft_color	临床期刊版-柔彩科研配色	默认推荐；适合医学客户、论文初稿、常规报告
+soft_color	临床期刊版-极光柔彩	默认推荐；适合医学客户、论文初稿、常规报告
+okabe_ito	Okabe-Ito 色盲友好	色盲友好分类配色
+colorbrewer_set2	ColorBrewer Set2 柔和分类	多分类柔和展示
+nature_modern	Nature 风格现代科研	论文图现代科研配色
+lancet_clinical	Lancet 风格临床强化	临床红蓝强调
+jama_clean	JAMA 风格清爽克制	正式交付和临床队列
+nejm_warm	NEJM 风格暖色临床	暖色临床报告
+viridis_teal	Viridis 连续值友好	连续值、空间图、评分图
+cividis_gold	Cividis 蓝金连续值	连续值和色觉无障碍
 clean_clinical	临床期刊版-清爽蓝灰	更克制；适合临床队列和正式交付
 warm_academic	临床期刊版-暖彩学术	更彩色；适合展示、汇报和图文报告

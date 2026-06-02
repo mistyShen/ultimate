@@ -8,12 +8,14 @@ import click
 from ultimate.config import load_config
 from ultimate.constants import PROJECT_TYPES
 from ultimate.demo import init_project
+from ultimate.intake import prepare_intake_package
 from ultimate.pipeline import run_pipeline_from_config
 from ultimate.plot_style import available_styles, generate_style_review, set_active_style
 from ultimate.preflight import run_preflight
 from ultimate.production_audit import run_production_audit
 from ultimate.report import build_report
 from ultimate.singlecell_audit import run_singlecell_audit
+from ultimate.tool_registry import available_tool_batches, run_audit_tools, run_prune_tools, run_trial_tools
 
 
 @click.group()
@@ -104,6 +106,77 @@ def audit_singlecell_command(root: Path, output_dir: Path | None) -> None:
 )
 def audit_production_command(root: Path, output_dir: Path | None) -> None:
     manifest = run_production_audit(root=root, output_dir=output_dir)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("audit-tools")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    default=Path("/shared/shen/2026/ultimate"),
+    show_default=True,
+    help="Ultimate project root on shared storage.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Where tool audit artifacts should be written. Defaults to <root>/audits/tools.",
+)
+def audit_tools_command(root: Path, output_dir: Path | None) -> None:
+    manifest = run_audit_tools(root=root, output_dir=output_dir)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("trial-tools")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    default=Path("/shared/shen/2026/ultimate"),
+    show_default=True,
+    help="Ultimate project root on shared storage.",
+)
+@click.option("--batch", type=click.Choice(available_tool_batches()), required=True)
+@click.option("--output-dir", type=click.Path(path_type=Path), default=None)
+@click.option("--project-root", type=click.Path(path_type=Path), default=None, help="Directory containing envs/*.yml. Defaults to --root.")
+@click.option("--install/--no-install", default=False, show_default=True, help="Run the batch mamba install before smoke checks.")
+def trial_tools_command(root: Path, batch: str, output_dir: Path | None, project_root: Path | None, install: bool) -> None:
+    manifest = run_trial_tools(root=root, batch=batch, output_dir=output_dir, install=install, project_root=project_root)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("prune-tools")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    default=Path("/shared/shen/2026/ultimate"),
+    show_default=True,
+    help="Ultimate project root on shared storage.",
+)
+@click.option("--output-dir", type=click.Path(path_type=Path), default=None)
+@click.option("--yes", is_flag=True, help="Actually run safe cache cleanup commands. Without this, only writes a prune plan.")
+def prune_tools_command(root: Path, output_dir: Path | None, yes: bool) -> None:
+    manifest = run_prune_tools(root=root, output_dir=output_dir, yes=yes)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("prepare-intake")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    default=Path("/shared/shen/2026/ultimate"),
+    show_default=True,
+    help="Ultimate project root on shared storage.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Where the customer intake package should be written. Defaults to <root>/intake_packages/latest.",
+)
+@click.option("--refresh-audit/--no-refresh-audit", default=False, show_default=True)
+def prepare_intake_command(root: Path, output_dir: Path | None, refresh_audit: bool) -> None:
+    manifest = prepare_intake_package(root=root, output_dir=output_dir, refresh_audit=refresh_audit)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 

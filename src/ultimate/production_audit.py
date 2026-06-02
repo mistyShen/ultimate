@@ -34,8 +34,40 @@ VALIDATION_HINTS = {
     "scatac": ("slurm_scatac_10x_pbmc", "10x PBMC scATAC public validation"),
     "multiome": ("slurm_multiome_10x_pbmc", "10x PBMC Multiome public validation"),
     "vdj": ("slurm_vdj_10x_pbmc", "10x PBMC VDJ public validation"),
+    "scdna": ("slurm_scdna_0518", "Existing 0518 scDNA/genome baseline validation"),
     "mtdna": ("slurm_mtdna_0518", "Existing 0518 mtDNA validation"),
+    "cite_seq": ("cite_seq_10x_pbmc_cli", "10x PBMC CITE-seq public validation"),
     "spatial": ("slurm_spatial_squidpy_visium", "Squidpy Visium public validation"),
+    "method_tools": ("slurm_method_tools_nsclc", "NSCLC scRNA method-tools baseline validation"),
+}
+
+DERIVED_VALIDATION_HINTS = {
+    "functional_state": {
+        "validation_dir": "slurm_scrna_nsclc_lambrechts",
+        "validation_label": "NSCLC scRNA signature/function-state validation",
+        "required_artifacts": (
+            "results/tables/signature_scores_by_cell_type.tsv",
+            "results/figures/signature_score_heatmap.png",
+        ),
+    },
+    "tumor_sc": {
+        "validation_dir": "slurm_scrna_nsclc_lambrechts",
+        "validation_label": "NSCLC tumor single-cell CNV/signature validation",
+        "required_artifacts": (
+            "results/tables/tumor_cnv_proxy.tsv",
+            "results/figures/tumor_cnv_proxy_by_chromosome.png",
+            "results/tables/cell_type_proportions.tsv",
+        ),
+    },
+    "scepi": {
+        "validation_dir": "slurm_scatac_10x_pbmc",
+        "validation_label": "10x PBMC single-cell epigenomic accessibility validation",
+        "required_artifacts": (
+            "results/tables/cell_qc_summary.tsv",
+            "results/tables/top_peak_counts.tsv",
+            "results/figures/top_accessible_peaks.png",
+        ),
+    },
 }
 
 OPTIONAL_LICENSED = {
@@ -66,6 +98,10 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
     dependency_path = output_dir / "dependency_report.tsv"
     pd.DataFrame(dependency_rows).to_csv(dependency_path, sep="\t", index=False)
 
+    order_rows = _order_readiness_rows(capability_rows)
+    order_path = output_dir / "order_readiness_checklist.tsv"
+    pd.DataFrame(order_rows).to_csv(order_path, sep="\t", index=False)
+
     next_steps_path = output_dir / "next_steps.md"
     next_steps_path.write_text(_next_steps_markdown(capability_rows), encoding="utf-8")
 
@@ -82,6 +118,7 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
         "organism_support": str(organism_path),
         "style_options": str(style_path),
         "dependency_report": str(dependency_path),
+        "order_readiness_checklist": str(order_path),
         "next_steps": str(next_steps_path),
         "licensed_optional": OPTIONAL_LICENSED,
     }
@@ -94,9 +131,8 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
 def _capability_row(root: Path, module: str) -> dict[str, Any]:
     spec = MODULE_SPECS[module]
     contract = RAW_CONTRACTS[module]
-    validation_dir, validation_label = VALIDATION_HINTS.get(module, ("", ""))
-    validation_manifest = root / "validations" / validation_dir / "run_manifest.json" if validation_dir else None
-    validation_status = "available" if validation_manifest and validation_manifest.exists() else "not_required" if module in BULK_MODULES else "missing"
+    evidence = _validation_evidence(root, module)
+    validation_status = evidence["validation"]
     backend = _backend_label(module, validation_status)
     status = _production_status(module, validation_status)
     return {
@@ -111,10 +147,69 @@ def _capability_row(root: Path, module: str) -> dict[str, Any]:
         "figure_output": "ready",
         "report_output": "ready",
         "validation": validation_status,
-        "validation_label": validation_label,
+        "validation_label": evidence["validation_label"],
+        "evidence_manifest": evidence["evidence_manifest"],
+        "evidence_artifacts": evidence["evidence_artifacts"],
+        "workflow_stages": _workflow_stages(module, status),
+        "style_selectable": "ready",
         "production_status": status,
         "next_action": _next_action(module, status, validation_status),
     }
+
+
+def _validation_evidence(root: Path, module: str) -> dict[str, str]:
+    if module in BULK_MODULES:
+        return {"validation": "not_required", "validation_label": "", "evidence_manifest": "", "evidence_artifacts": ""}
+
+    if module in VALIDATION_HINTS:
+        validation_dir, validation_label = VALIDATION_HINTS[module]
+        run_dir = root / "validations" / validation_dir
+        manifest = run_dir / "run_manifest.json"
+        if _ready_manifest(manifest):
+            return {
+                "validation": "available",
+                "validation_label": validation_label,
+                "evidence_manifest": str(manifest),
+                "evidence_artifacts": "",
+            }
+        return {
+            "validation": "partial:validation_manifest_not_ready" if manifest.exists() else "missing",
+            "validation_label": validation_label,
+            "evidence_manifest": str(manifest) if manifest.exists() else "",
+            "evidence_artifacts": "",
+        }
+
+    if module in DERIVED_VALIDATION_HINTS:
+        hint = DERIVED_VALIDATION_HINTS[module]
+        run_dir = root / "validations" / str(hint["validation_dir"])
+        manifest = run_dir / "run_manifest.json"
+        artifacts = tuple(str(value) for value in hint["required_artifacts"])
+        artifact_paths = [run_dir / artifact for artifact in artifacts]
+        if _ready_manifest(manifest) and all(path.exists() and path.stat().st_size > 0 for path in artifact_paths):
+            return {
+                "validation": "available",
+                "validation_label": str(hint["validation_label"]),
+                "evidence_manifest": str(manifest),
+                "evidence_artifacts": ",".join(str(path) for path in artifact_paths),
+            }
+        return {
+            "validation": "partial:derived_artifacts_missing" if manifest.exists() else "missing",
+            "validation_label": str(hint["validation_label"]),
+            "evidence_manifest": str(manifest) if manifest.exists() else "",
+            "evidence_artifacts": ",".join(str(path) for path in artifact_paths),
+        }
+
+    return {"validation": "missing", "validation_label": "", "evidence_manifest": "", "evidence_artifacts": ""}
+
+
+def _ready_manifest(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return str(manifest.get("status", "")).lower() == "ready"
 
 
 def _backend_label(module: str, validation_status: str) -> str:
@@ -130,6 +225,8 @@ def _production_status(module: str, validation_status: str) -> str:
         return "ready_basic"
     if validation_status == "available":
         return "ready_basic"
+    if validation_status.startswith("partial:"):
+        return validation_status
     return "partial:needs_modality_validation"
 
 
@@ -143,6 +240,13 @@ def _next_action(module: str, status: str, validation_status: str) -> str:
     if module in {"functional_state", "tumor_sc", "method_tools"}:
         return "Promote matrix/object-level analysis from smoke backend to formal scanpy/Seurat workflow."
     return "Run public or existing production validation and record run_manifest.json."
+
+
+def _workflow_stages(module: str, status: str) -> str:
+    stages = ["raw_input_contract", "raw_qc_manifest", "standard_matrix_or_object", "basic_analysis", "figures", "chinese_report", "run_manifest"]
+    if module in {"scdna"} and status != "ready_basic":
+        stages.append("needs_real_modality_validation")
+    return ",".join(stages)
 
 
 def _organism_rows(root: Path) -> list[dict[str, Any]]:
@@ -172,6 +276,47 @@ def _style_rows() -> list[dict[str, Any]]:
                 "control_color": style["control"],
                 "accent_color": style["accent"],
                 "layout": "clinical_report",
+            }
+        )
+    return rows
+
+
+def _order_readiness_rows(capability_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for row in capability_rows:
+        module = str(row["module"])
+        contract = RAW_CONTRACTS[module]
+        rows.append(
+            {
+                "module": module,
+                "title_cn": row["title_cn"],
+                "ready_for_basic_order": "yes" if row["production_status"] == "ready_basic" else "partial",
+                "accepted_species": ",".join(sorted(SUPPORTED_ORGANISMS)),
+                "accepted_raw_inputs": ",".join(contract.input_types),
+                "quote_preflight_checks": ",".join(
+                    [
+                        "species",
+                        "sample_sheet_columns",
+                        "group_design",
+                        "input_path_exists",
+                        "reference_or_database_path",
+                        "licensed_tool_path_if_requested",
+                    ]
+                ),
+                "minimum_delivery_artifacts": ",".join(
+                    [
+                        "run_manifest.json",
+                        "raw_qc_manifest.json",
+                        "results/figures",
+                        "results/tables",
+                        "objects",
+                        "reports/report.html",
+                        "reports/methods.md",
+                    ]
+                ),
+                "compute_policy": "slurm_for_raw_or_large_runs; cli_ok_for_preflight_style_and_small_matrix_smoke",
+                "style_configuration": "report.style plus report.style_overrides; available styles are in style_options.tsv",
+                "remaining_gap": "" if row["production_status"] == "ready_basic" else row["next_action"],
             }
         )
     return rows
@@ -220,6 +365,24 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, int]:
 
 def _next_steps_markdown(rows: list[dict[str, Any]]) -> str:
     partials = [row for row in rows if str(row["production_status"]).startswith("partial")]
+    priority_lines = (
+        [
+            "1. 把仍为 partial 的模块补真实或公开验证数据，形成 Slurm smoke run。",
+            "2. 把 scrna/scatac/multiome/spatial/vdj/cite_seq/method_tools/scdna/scepi 现有验证脚本接入统一 `ultimate run` 后端，而不是只作为独立 validation 脚本。",
+            "3. 为 bulk RNA、甲基化、蛋白/代谢、公共数据库、WGCNA 增加真实公开数据 smoke，并固定验收产物。",
+            "4. 继续完善接单模板：报价前 preflight、交付报告索引、风格选择单和客户数据回执。",
+            "5. 保留 Cell Ranger、Space Ranger、CIBERSORT 为授权工具接口，不作为默认依赖。",
+        ]
+        if partials
+        else [
+            "1. 所有模块已经有 basic 级验证证据；下一步把独立 validation 脚本接入统一 `ultimate run` 后端。",
+            "2. 为 bulk RNA、甲基化、蛋白/代谢、公共数据库、WGCNA 增加更大的真实公开数据 smoke，并固定验收产物。",
+            "3. 把高级算法做成可选参数预设：inferCNV/CopyKAT、chromVAR、SCENIC、CellChat/NicheNet、RNA velocity、cellxgene/Shiny。",
+            "4. 继续完善接单模板：报价前 preflight、交付报告索引、风格选择单和客户数据回执。",
+            "5. 保留 Cell Ranger、Space Ranger、CIBERSORT 为授权工具接口，不作为默认依赖。",
+        ]
+    )
+    remaining_lines = [f"- `{row['module']}`：{row['next_action']}" for row in partials] or ["- 暂无 partial 模块；当前缺口转为统一入口整合、真实项目压力测试和高级算法预设。"]
     return "\n".join(
         [
             "# Ultimate 生产级接单能力审计与下一步计划",
@@ -233,15 +396,11 @@ def _next_steps_markdown(rows: list[dict[str, Any]]) -> str:
             "",
             "## 下一步优先级",
             "",
-            "1. 把 scDNA、CITE-seq、单细胞表观组学补一套公开 tiny/真实验证数据，形成 Slurm smoke run。",
-            "2. 把 scrna/scatac/multiome/spatial/vdj 现有验证脚本接入统一 `ultimate run` 后端，而不是只作为独立 validation 脚本。",
-            "3. 为 bulk RNA、甲基化、蛋白/代谢、公共数据库、WGCNA 增加真实公开数据 smoke，并固定验收产物。",
-            "4. 增加接单模板：客户数据清单、报价前 preflight、交付报告索引、风格选择单。",
-            "5. 保留 Cell Ranger、Space Ranger、CIBERSORT 为授权工具接口，不作为默认依赖。",
+            *priority_lines,
             "",
             "## 仍需补齐的模块",
             "",
-            *[f"- `{row['module']}`：{row['next_action']}" for row in partials],
+            *remaining_lines,
             "",
         ]
     )

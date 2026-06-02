@@ -1,36 +1,56 @@
 # Ultimate Bioinfo Workbench
 
-`ultimate` is a CLI-first, HPC-ready scaffold for reproducible multi-omics analysis delivery under:
+`ultimate` is a CLI-first, HPC-ready scaffold for reproducible human/mouse
+multi-omics analysis delivery under:
 
 ```text
 /shared/shen/2026/ultimate
 ```
 
-It supports project templates, input validation, raw-QC handoff, Python-first
-bulk analysis artifacts, Chinese reports, and explicit manifests for:
+It supports customer intake packages, project templates, input validation,
+raw-QC handoff, validated-run handoff, selectable figure styles, Chinese
+reports, and explicit manifests for 19 basic production-ready module types:
 
 - bulk RNA-seq
 - single-cell RNA-seq
+- single-cell ATAC-seq
+- single-cell Multiome
+- VDJ / TCR / BCR repertoire
+- single-cell DNA / genome
+- single-cell mtDNA
+- single-cell epigenomics / chromatin accessibility
+- CITE-seq / single-cell protein
+- spatial transcriptomics
+- single-cell functional state and tumor specialty summaries
+- cross-sample / clinical association
+- method tools / cellxgene handoff
 - methylation array / beta matrix
 - proteomics / metabolomics abundance tables
 - public database mining
 - WGCNA
 - single-gene analysis
 
-Bulk modules are now Python-first formal backends: RNA-seq, methylation,
-proteomics/metabolomics, public cohorts, WGCNA, single-gene analysis, and
-clinical association all write module-specific tables, figures, objects, and
-manifests. R entrypoints under `scripts/R/` remain optional comparison or
-extension hooks.
+The current production audit on the server reports `ready_basic: 19`. This is a
+basic order-ready guarantee: raw or semi-raw contracts, preflight checks, QC
+handoff, standard matrix/object handoff, figures, tables, Chinese reports, and
+manifests are available for human and mouse. Advanced algorithms such as
+SCENIC, CellChat/NicheNet, inferCNV/CopyKAT, chromVAR, RNA velocity, Cell
+Ranger, Space Ranger, and CIBERSORT are exposed as optional presets, adapters,
+or user-provided licensed paths instead of being promised as fully automatic
+best-parameter runs.
 
-Single-cell modules remain supported through the existing validation scripts,
-environment files, Slurm launchers, and smoke-run integration while the bulk
-layer is hardened first.
-
-## Supported Bulk Inputs
+## Supported Inputs
 
 - RNA-seq: FASTQ command plans, external tool detection, existing count matrix,
   or generated demo matrix.
+- Single-cell RNA-seq: 10x H5/MTX, existing h5ad/RDS handoff, or open upstream
+  routes such as STARsolo/alevin-fry.
+- Single-cell ATAC / epigenomics: fragments or peak matrices; fragments-level
+  TSS/FRiP and peak calling are enabled when those inputs are provided.
+- Multiome / CITE-seq / VDJ / spatial: 10x-style matrices, contig annotations,
+  Visium outputs, or validated public/existing handoff objects.
+- scDNA / mtDNA: BAM/FASTQ/variant-table handoff with QC summaries, depth,
+  variant, and chromosome-coverage proxy outputs.
 - Methylation: beta matrix import; IDAT is recorded as a formal raw contract and
   can be handled by optional parser/backends.
 - Proteomics/metabolomics: MaxQuant, Proteome Discoverer, or generic abundance
@@ -50,8 +70,70 @@ ultimate run --config example_projects/demo_all/config/project.yaml
 ultimate report --run-dir example_projects/demo_all/runs/demo_all
 ultimate styles --style soft_color --output-dir example_projects/style_review
 ultimate audit-production --root /shared/shen/2026/ultimate
+ultimate prepare-intake --root /shared/shen/2026/ultimate --output-dir /shared/shen/2026/ultimate/intake_packages/latest --refresh-audit
+ultimate audit-tools --root /shared/shen/2026/ultimate
+ultimate trial-tools --root /shared/shen/2026/ultimate --batch scrna_core --no-install
 pytest -q
 ```
+
+## Production Readiness And Intake
+
+For a new customer order, start with an intake package:
+
+```bash
+ultimate prepare-intake \
+  --root /shared/shen/2026/ultimate \
+  --output-dir /shared/shen/2026/ultimate/intake_packages/latest \
+  --refresh-audit
+```
+
+The package contains:
+
+- `templates/customer_project_intake.tsv`: customer project fields, organism,
+  module, input type, group design, optional clinical table, licensed tool
+  paths, delivery format, and style choice.
+- `module_input_catalog.tsv`: accepted human/mouse raw inputs and required
+  sample-sheet columns for every module.
+- `figure_style_catalog.tsv`: style keys, colors, and recommended use cases.
+- `quote_preflight_checklist.md`: quote-before-run checklist.
+- `audit_snapshot/`: production audit, dependency report, order readiness
+  checklist, organism support, and next-step notes.
+
+The standard order flow is:
+
+1. Fill the intake template and create a module-specific project with
+   `ultimate init-project`.
+2. Run `ultimate preflight --config config/project.yaml` and resolve missing
+   sample columns, paths, references, or licensed tools.
+3. Render a style review with `ultimate styles --style <style_key> --output-dir
+   <project>/style_review`.
+4. Submit raw or large analyses through Slurm, then rebuild reports with
+   `ultimate report --run-dir <run_dir>`.
+5. Deliver `run_manifest.json`, `raw_qc_manifest.json`, figures, tables,
+   objects, `report.html`, and `methods.md`.
+
+## Validated Run Handoff
+
+Some production validations are expensive or come from dedicated modality
+backends. To include an existing validated run in the unified report without
+copying large objects, set one of these in the module config:
+
+```yaml
+modules:
+  scrna:
+    enabled: true
+    validated_run_dir: /shared/shen/2026/ultimate/validations/slurm_scrna_nsclc_lambrechts
+
+  spatial:
+    enabled: true
+    validation:
+      run_dir: /shared/shen/2026/ultimate/validations/slurm_spatial_squidpy_visium
+```
+
+`ultimate run` reads the source `run_manifest.json`, indexes existing figures,
+tables, and objects, writes `validated_artifact_index.tsv`, and includes those
+artifacts in the unified Chinese report. The storage policy is reference-first:
+large h5ad/RDS/RData files stay where the validated backend wrote them.
 
 ## Server Workflow
 
@@ -67,6 +149,7 @@ Heavy validation, package installation, and public-data preparation should be su
 ```bash
 hpc-sbatch /shared/shen/2026/ultimate/slurm/singlecell_validation_suite.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/setup_singlecell_envs.sbatch genome_mtdna scrna
+hpc-sbatch /shared/shen/2026/ultimate/slurm/tool_trial_batch.sbatch scrna_core
 hpc-sbatch /shared/shen/2026/ultimate/slurm/download_public_singlecell_data.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/setup_bulk_envs.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/prepare_bulk_public_data.sbatch
@@ -86,11 +169,33 @@ Every run writes:
 
 Missing optional tools are reported in `preflight_manifest.json`, `run_manifest.json`, and the Chinese report instead of failing silently.
 
+## Tool Audit And Lean Trials
+
+The tool registry records every reviewed single-cell / omics package with a final
+disposition: keep by default, keep optional, external adapter, reference only,
+licensed path only, or rejected and cleaned. Full audit is metadata-only; trial
+jobs install and smoke-test one small batch at a time so the platform does not
+grow into a fragile mega-environment.
+
+```bash
+ultimate audit-tools --root /shared/shen/2026/ultimate
+ultimate trial-tools --root /shared/shen/2026/ultimate --batch scrna_core --no-install
+ULTIMATE_TRIAL_INSTALL=1 hpc-sbatch /shared/shen/2026/ultimate/slurm/tool_trial_batch.sbatch scrna_core
+ultimate prune-tools --root /shared/shen/2026/ultimate
+```
+
+The default reusable environments are `ultimate-core`, `ultimate-scrna`,
+`ultimate-scrna-r`, `ultimate-workflow`, `ultimate-scatac-py`,
+`ultimate-scatac-r`, `ultimate-vdj`, `ultimate-vdj-r`, `ultimate-spatial-py`,
+`ultimate-spatial-r`, and `ultimate-genome-mtdna`. Heavy or conflicting tools
+are kept optional and only promoted after a smoke run proves they are worth the
+storage and maintenance cost.
+
 ## Figure Styles
 
 Set `report.style` in `config/project.yaml`:
 
-- `soft_color`: 柔彩科研配色，默认推荐。
+- `soft_color`: 临床期刊版-极光柔彩，默认推荐。
 - `okabe_ito`: 色盲友好的经典科研分类色。
 - `colorbrewer_set2`: 柔和分类色，适合细胞类型/分组较多的图。
 - `nature_modern`: Nature 风格现代科研配色。
@@ -104,3 +209,5 @@ Set `report.style` in `config/project.yaml`:
 
 Use `ultimate styles --output-dir <dir>` to render one review set, or
 `ultimate styles --all --output-dir <dir>` to render all style options before delivery.
+Generated review images live in `style_reviews/` or the requested output
+directory and are intentionally not committed to Git.

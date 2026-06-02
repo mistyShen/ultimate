@@ -14,7 +14,7 @@ MAMBA_EXE="${MAMBA_EXE:-mamba}"
 CONDARC_PATH="${ULTIMATE_CONDARC:-$PROJECT_ROOT/config/condarc.mirrors.tuna.yml}"
 ENV_KEYS=("$@")
 if [[ ${#ENV_KEYS[@]} -eq 0 ]]; then
-  ENV_KEYS=(genome_mtdna scrna vdj spatial scatac_multiome rnaseq methylation proteomics publicdb wgcna)
+  ENV_KEYS=(workflow genome_mtdna scrna vdj spatial scatac_multiome rnaseq methylation proteomics publicdb wgcna)
 fi
 
 mkdir -p "$PROJECT_ROOT/.conda/envs" "$PROJECT_ROOT/.conda/pkgs" "$PROJECT_ROOT/logs" "$PROJECT_ROOT/audits/env_setup"
@@ -26,8 +26,9 @@ fi
 
 env_file_for_key() {
   case "$1" in
+    workflow) echo "$PROJECT_ROOT/envs/environment.workflow.yml" ;;
     genome_mtdna) echo "$PROJECT_ROOT/envs/environment.genome_mtdna.yml" ;;
-    scrna) echo "$PROJECT_ROOT/envs/environment.scrna.full.yml" ;;
+    scrna) echo "$PROJECT_ROOT/envs/environment.scrna.py.yml" ;;
     vdj) echo "$PROJECT_ROOT/envs/environment.vdj.yml" ;;
     spatial) echo "$PROJECT_ROOT/envs/environment.spatial.yml" ;;
     scatac_multiome) echo "$PROJECT_ROOT/envs/environment.scatac_multiome.yml" ;;
@@ -42,6 +43,7 @@ env_file_for_key() {
 
 env_name_for_key() {
   case "$1" in
+    workflow) echo "ultimate-workflow" ;;
     genome_mtdna) echo "ultimate-genome-mtdna" ;;
     scrna) echo "ultimate-scrna" ;;
     vdj) echo "ultimate-vdj" ;;

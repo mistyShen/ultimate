@@ -29,6 +29,8 @@ audits/
 validations/
 public_data/
 projects/
+style_reviews/
+intake_packages/
 .conda/
 slurm-*.out
 *.out

@@ -59,9 +59,12 @@ def normalize_config(config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
     for module_name in MODULE_ORDER:
         module_cfg = normalized["modules"].setdefault(module_name, {"enabled": False})
         module_cfg.setdefault("enabled", False)
-        for path_key in ("input_matrix", "samplesheet", "input_path", "clinical_table", "signature_matrix"):
+        for path_key in ("input_matrix", "samplesheet", "input_path", "clinical_table", "signature_matrix", "validated_run_dir", "validation_run_dir"):
             if module_cfg.get(path_key):
                 module_cfg[path_key] = str(resolve_path(base_dir, module_cfg[path_key]))
+        validation_cfg = module_cfg.get("validation")
+        if isinstance(validation_cfg, dict) and validation_cfg.get("run_dir"):
+            validation_cfg["run_dir"] = str(resolve_path(base_dir, validation_cfg["run_dir"]))
         raw_cfg = module_cfg.get("raw")
         if isinstance(raw_cfg, dict):
             for path_key in (

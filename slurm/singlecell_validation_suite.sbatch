@@ -86,6 +86,14 @@ run_mtdna_validation() {
   fi
 }
 
+run_scdna_validation() {
+  local out_dir="$PROJECT_ROOT/validations/slurm_scdna_0518"
+  conda activate "$CORE_ENV"
+  python "$PROJECT_ROOT/01_tools/validate_scdna_0518.py" \
+    --source-root "/shared/shen/2026/0518" \
+    --output-dir "$out_dir"
+}
+
 run_vdj_validation() {
   local out_dir="$PROJECT_ROOT/validations/slurm_vdj_10x_pbmc"
   local input_dir="$PROJECT_ROOT/public_data/vdj"
@@ -166,6 +174,24 @@ run_spatial_validation() {
   fi
 }
 
+run_method_tools_validation() {
+  local out_dir="$PROJECT_ROOT/validations/slurm_method_tools_nsclc"
+  local input_h5ad="/shared/shen/2026/nsclc_virtual_sc/02_processed_scRNA/Lambrechts_all_harmonized.h5ad"
+  if [[ -x "$SCRNA_ENV/bin/python" ]]; then
+    "$SCRNA_ENV/bin/python" "$PROJECT_ROOT/01_tools/validate_method_tools_scrna.py" \
+      --input-h5ad "$input_h5ad" \
+      --output-dir "$out_dir" \
+      --max-cells "${ULTIMATE_METHOD_TOOLS_MAX_CELLS:-3000}"
+  elif [[ -x "$SCRNA_FALLBACK_ENV/bin/python" ]]; then
+    "$SCRNA_FALLBACK_ENV/bin/python" "$PROJECT_ROOT/01_tools/validate_method_tools_scrna.py" \
+      --input-h5ad "$input_h5ad" \
+      --output-dir "$out_dir" \
+      --max-cells "${ULTIMATE_METHOD_TOOLS_MAX_CELLS:-3000}"
+  else
+    write_skip_manifest "$out_dir" "partial:dependency_required" "未找到 ultimate-scrna 或现有 singlecell_workbench scRNA Python 环境。"
+  fi
+}
+
 run_final_audit() {
   conda activate "$CORE_ENV"
   cd "$PROJECT_ROOT"
@@ -176,9 +202,11 @@ run_final_audit() {
 
 run_initial_audit
 run_scrna_validation
+run_scdna_validation
 run_mtdna_validation
 run_vdj_validation
 run_scatac_validation
 run_multiome_validation
 run_spatial_validation
+run_method_tools_validation
 run_final_audit

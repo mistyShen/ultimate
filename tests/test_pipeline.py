@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ultimate.demo import init_project
+from ultimate.config import dump_yaml, load_config
 from ultimate.pipeline import run_pipeline_from_config
 
 
@@ -40,3 +41,48 @@ def test_bulk_modules_use_python_formal_backend(tmp_path: Path) -> None:
     assert Path(modules["wgcna"]["artifacts"]["tables"]["wgcna_module_assignments"]).exists()
     assert Path(modules["single_gene"]["artifacts"]["tables"]["single_gene_summary"]).exists()
     assert Path(modules["clinical_assoc"]["artifacts"]["tables"]["clinical_feature_associations"]).exists()
+
+
+def test_validated_run_dir_is_imported_by_unified_run(tmp_path: Path) -> None:
+    manifest = init_project("scrna", tmp_path / "validated_demo", demo_data=True)
+    config_path = Path(manifest["config_path"])
+    loaded = load_config(config_path)
+
+    source_run = tmp_path / "validated_demo" / "validated" / "scrna_source"
+    figures = source_run / "results" / "figures"
+    tables = source_run / "results" / "tables"
+    objects = source_run / "objects"
+    reports = source_run / "reports"
+    for directory in (figures, tables, objects, reports):
+        directory.mkdir(parents=True, exist_ok=True)
+    (figures / "umap.png").write_text("figure", encoding="utf-8")
+    (tables / "markers.tsv").write_text("gene\tscore\nA\t1\n", encoding="utf-8")
+    (objects / "validated.h5ad").write_text("object", encoding="utf-8")
+    (source_run / "run_manifest.json").write_text(
+        """
+{
+  "status": "ready",
+  "validation_scope": "test validated run",
+  "n_cells": 12,
+  "n_features": 34,
+  "figures": ["RESULTS_FIG"],
+  "tables": ["RESULTS_TABLE"],
+  "objects": {"h5ad": "RESULTS_OBJECT"}
+}
+""".replace("RESULTS_FIG", str(figures / "umap.png"))
+        .replace("RESULTS_TABLE", str(tables / "markers.tsv"))
+        .replace("RESULTS_OBJECT", str(objects / "validated.h5ad")),
+        encoding="utf-8",
+    )
+
+    config = loaded.raw
+    config["modules"]["scrna"]["validated_run_dir"] = "../validated/scrna_source"
+    dump_yaml(config, config_path)
+
+    run_manifest = run_pipeline_from_config(config_path)
+    module = run_manifest["modules"][0]
+    assert module["status"] == "complete_validated_run_backend"
+    assert module["backend"]["primary"] == "validated_run"
+    assert Path(module["artifacts"]["tables"]["validated_artifact_index"]).exists()
+    assert module["artifacts"]["figures"]["umap"] == str(figures / "umap.png")
+    assert module["artifacts"]["objects"]["h5ad"] == str(objects / "validated.h5ad")

@@ -1,0 +1,20 @@
+name: ultimate-workflow
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - nextflow
+  - nf-core
+  - snakemake
+  - snakemake-executor-plugin-slurm
+  - multiqc
+  - quarto
+  - fastqc
+  - fastp
+  - star
+  - salmon
+  - kallisto
+  - bustools
+  - alevin-fry

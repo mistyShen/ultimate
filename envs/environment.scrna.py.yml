@@ -1,0 +1,27 @@
+name: ultimate-scrna
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - scanpy
+  - anndata
+  - pandas
+  - numpy
+  - scipy
+  - scikit-learn
+  - scikit-misc
+  - matplotlib
+  - seaborn
+  - h5py
+  - leidenalg
+  - python-igraph
+  - pynndescent
+  - scrublet
+  - celltypist
+  - decoupler
+  - gseapy
+  - harmonypy
+  - bbknn
+  - scanorama
