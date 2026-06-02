@@ -1,0 +1,3 @@
+sample_id	condition	batch	input_path	visium_dir
+CTRL_1	control	B1	raw/spatial/CTRL_1	raw/spatial/CTRL_1
+TRT_1	treated	B2	raw/spatial/TRT_1	raw/spatial/TRT_1

@@ -1,0 +1,3 @@
+sample_id	condition	batch	input_path	sentrix_id	sentrix_position
+CTRL_1	control	B1	raw/methylation/CTRL_1	204123450001	R01C01
+TRT_1	treated	B2	raw/methylation/TRT_1	204123450001	R02C01

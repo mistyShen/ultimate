@@ -1,0 +1,11 @@
+name: ultimate-proteomics
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base=4.4
+  - r-ggplot2
+  - r-pheatmap
+  - r-igraph
+  - bioconductor-limma
+  - r-vegan

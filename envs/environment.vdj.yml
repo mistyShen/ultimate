@@ -1,0 +1,18 @@
+name: ultimate-vdj
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - scanpy
+  - anndata
+  - scirpy
+  - pandas
+  - numpy
+  - matplotlib
+  - seaborn
+  - r-base
+  - r-immunarch
+  - pip:
+      - dandelion

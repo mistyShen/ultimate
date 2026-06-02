@@ -1,0 +1,23 @@
+name: ultimate-scatac-multiome
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - scanpy
+  - anndata
+  - mudata
+  - muon
+  - snapatac2
+  - macs2
+  - bedtools
+  - samtools
+  - tabix
+  - htslib
+  - r-base
+  - r-seurat
+  - r-signac
+  - bioconductor-chromvar
+  - bioconductor-genomicranges
+  - bioconductor-bsgenome.hsapiens.ucsc.hg38

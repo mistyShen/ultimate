@@ -1,0 +1,12 @@
+name: ultimate-publicdb
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base=4.4
+  - r-ggplot2
+  - r-survival
+  - r-survminer
+  - bioconductor-geoquery
+  - bioconductor-gsva
+  - bioconductor-limma

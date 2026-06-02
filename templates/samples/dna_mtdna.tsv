@@ -1,0 +1,3 @@
+sample_id	condition	batch	input_path	normal_id
+CTRL_1	control	B1	raw/genome/CTRL_1.bam	CTRL_1
+TRT_1	treated	B2	raw/genome/TRT_1.bam	CTRL_1

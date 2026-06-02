@@ -1,0 +1,32 @@
+# {{ manifest.project.name }} 方法说明
+
+生成时间：{{ generated_at }}
+
+本项目使用 Ultimate 多组学生信分析平台运行。平台通过统一配置文件记录项目、样本、分组、资源、模块参数和输出路径，并在 `run_manifest.json` 中保存可复现命令、依赖检查和结果文件索引。
+
+## 输入与质控
+
+- 物种：`{{ manifest.project.organism }}`
+- 输出目录：`{{ manifest.output_dir }}`
+- Preflight 状态：`{{ preflight.status }}`
+- 出图风格：临床期刊版（白底、蓝灰主色、红蓝差异强调）；审阅图清单：`{{ manifest.style_review.figure_manifest }}`
+
+## 分析模块
+
+{% for module in modules %}
+### {{ module.title_cn }} (`{{ module.module }}`)
+
+- 状态：`{{ module.status }}`
+- Raw QC 状态：`{{ module.raw_qc.status }}`
+- Raw QC manifest：`{{ module.raw_qc.manifest_path }}`
+- 特征数：{{ module.n_features }}
+- 样本数：{{ module.n_samples }}
+- 统计结果：`{{ module.artifacts.tables.differential_results }}`
+- 图表目录：`{{ module.artifacts.figures.pca }}`
+- R 后端入口：`{{ module.formal_backend.r_entrypoint }}`
+
+{% endfor %}
+
+## 依赖和限制
+
+缺失的可选命令、R/Bioconductor 包、受限数据库资源会记录在 `preflight_manifest.json` 和 `run_manifest.json` 中。CIBERSORT 等授权资源需要用户提供脚本或签名矩阵后再启用正式后端。

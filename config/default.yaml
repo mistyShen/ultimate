@@ -1,0 +1,70 @@
+project:
+  name: ultimate_project
+  organism: human
+  output_dir: ../runs/ultimate_project
+  server_root: /shared/shen/2026/ultimate
+samples:
+  samplesheet: ../samples/samples.tsv
+design:
+  condition_column: condition
+  control: control
+  case: treated
+  batch_column: batch
+  comparisons:
+    - treated_vs_control
+resources:
+  human:
+    genome: GRCh38
+    gtf: /shared/shen/resources/genomes/human/GRCh38.gtf
+    orgdb: org.Hs.eg.db
+  mouse:
+    genome: GRCm39
+    gtf: /shared/shen/resources/genomes/mouse/GRCm39.gtf
+    orgdb: org.Mm.eg.db
+  msigdb: /shared/shen/resources/msigdb
+  cellchatdb: /shared/shen/resources/cellchatdb
+  public_cache: /shared/shen/2026/ultimate/cache/publicdb
+modules:
+  rnaseq:
+    enabled: true
+    samplesheet: ../samples/samples.tsv
+    input_matrix: ../data/rnaseq_matrix.tsv
+    r_entrypoint: scripts/R/rnaseq.R
+  scrna:
+    enabled: true
+    samplesheet: ../samples/samples.tsv
+    input_matrix: ../data/scrna_matrix.tsv
+    r_entrypoint: scripts/R/scrna.R
+  methylation:
+    enabled: true
+    samplesheet: ../samples/samples.tsv
+    input_matrix: ../data/methylation_matrix.tsv
+    r_entrypoint: scripts/R/methylation.R
+  proteomics:
+    enabled: true
+    samplesheet: ../samples/samples.tsv
+    input_matrix: ../data/proteomics_matrix.tsv
+    r_entrypoint: scripts/R/proteomics.R
+  publicdb:
+    enabled: true
+    samplesheet: ../samples/samples.tsv
+    input_matrix: ../data/publicdb_matrix.tsv
+    cohort: TCGA_demo
+    open_immune_fallback: ssGSEA_signature_score
+    r_entrypoint: scripts/R/publicdb.R
+  wgcna:
+    enabled: true
+    samplesheet: ../samples/samples.tsv
+    input_matrix: ../data/wgcna_matrix.tsv
+    r_entrypoint: scripts/R/wgcna.R
+  single_gene:
+    enabled: true
+    gene: TP53
+    samplesheet: ../samples/samples.tsv
+    input_matrix: ../data/single_gene_matrix.tsv
+    r_entrypoint: scripts/R/single_gene.R
+report:
+  title: Ultimate 多组学生信分析报告
+  language: zh-CN
+  figure_format: png
+  dpi: 160

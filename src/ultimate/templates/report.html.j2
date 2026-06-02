@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>{{ manifest.project.name }} - Ultimate 多组学报告</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #1f2933; }
+    h1, h2 { color: #102a43; }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0 24px; }
+    th, td { border: 1px solid #d9e2ec; padding: 8px; text-align: left; font-size: 14px; }
+    th { background: #f0f4f8; }
+    code { background: #f0f4f8; padding: 2px 4px; border-radius: 4px; }
+    .warn { color: #9a3412; }
+  </style>
+</head>
+<body>
+  <h1>{{ manifest.project.name }} - Ultimate 多组学生信分析报告</h1>
+  <p>生成时间：{{ generated_at }}</p>
+  <p>物种：{{ manifest.project.organism }}；输出目录：<code>{{ manifest.output_dir }}</code></p>
+  <p>出图风格：临床期刊版；审阅图清单：<code>{{ manifest.style_review.figure_manifest }}</code></p>
+
+  <h2>运行概览</h2>
+  <table>
+    <thead><tr><th>模块</th><th>状态</th><th>Raw QC</th><th>特征数</th><th>样本数</th><th>R后端</th></tr></thead>
+    <tbody>
+    {% for module in modules %}
+      <tr>
+        <td>{{ module.title_cn }} ({{ module.module }})</td>
+        <td>{{ module.status }}</td>
+        <td>{{ module.raw_qc.status }}</td>
+        <td>{{ module.n_features }}</td>
+        <td>{{ module.n_samples }}</td>
+        <td>{{ module.formal_backend.r_entrypoint }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>可选依赖提示</h2>
+  {% for module in preflight.modules %}
+    {% if module.warnings %}
+      <p class="warn">{{ module.title_cn }}：{{ module.warnings | join("; ") }}</p>
+    {% endif %}
+  {% endfor %}
+
+  <h2>主要结果文件</h2>
+  {% for module in modules %}
+    <h3>{{ module.title_cn }}</h3>
+    <ul>
+      <li>Raw QC manifest：<code>{{ module.raw_qc.manifest_path }}</code></li>
+      <li>Raw QC 标准矩阵：<code>{{ module.raw_qc.artifacts.objects.standard_matrix }}</code></li>
+      {% for key, value in module.artifacts.tables.items() %}
+        <li>表格 {{ key }}：<code>{{ value }}</code></li>
+      {% endfor %}
+      {% for key, value in module.artifacts.figures.items() %}
+        <li>图表 {{ key }}：<code>{{ value }}</code></li>
+      {% endfor %}
+      {% for key, value in module.artifacts.objects.items() %}
+        <li>对象 {{ key }}：<code>{{ value }}</code></li>
+      {% endfor %}
+    </ul>
+  {% endfor %}
+</body>
+</html>

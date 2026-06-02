@@ -1,0 +1,12 @@
+name: ultimate-scrna
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - scanpy
+  - anndata
+  - r-base
+  - r-seurat
+  - bioconductor-singler
+  - r-monocle3

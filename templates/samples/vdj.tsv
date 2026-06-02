@@ -1,0 +1,3 @@
+sample_id	condition	batch	input_path	chain
+CTRL_1	control	B1	raw/vdj/CTRL_1/filtered_contig_annotations.csv	TCR
+TRT_1	treated	B2	raw/vdj/TRT_1/filtered_contig_annotations.csv	TCR

@@ -1,0 +1,34 @@
+name: ultimate-scrna
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - scanpy
+  - anndata
+  - mudata
+  - muon
+  - scvi-tools
+  - celltypist
+  - decoupler
+  - scvelo
+  - cellrank
+  - scikit-learn
+  - leidenalg
+  - igraph
+  - matplotlib
+  - seaborn
+  - pandas
+  - numpy
+  - r-base
+  - r-seurat
+  - bioconductor-singler
+  - bioconductor-gsva
+  - bioconductor-aucell
+  - r-wgcna
+  - bioconductor-clusterprofiler
+  - bioconductor-org.hs.eg.db
+  - bioconductor-org.mm.eg.db
+  - pip:
+      - cellphonedb

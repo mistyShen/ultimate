@@ -1,0 +1,9 @@
+name: ultimate-spatial-r
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base=4.4
+  - r-seurat
+  - bioconductor-spatialexperiment
+  - bioconductor-tenxvisiumdata

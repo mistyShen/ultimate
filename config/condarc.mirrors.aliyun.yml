@@ -1,0 +1,16 @@
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+show_channel_urls: true
+channel_priority: flexible
+default_channels:
+  - https://mirrors.aliyun.com/anaconda/pkgs/main
+  - https://mirrors.aliyun.com/anaconda/pkgs/r
+custom_channels:
+  conda-forge: https://mirrors.aliyun.com/anaconda/cloud
+  bioconda: https://mirrors.aliyun.com/anaconda/cloud
+  r: https://mirrors.aliyun.com/anaconda/cloud
+  pytorch: https://mirrors.aliyun.com/anaconda/cloud
+ssl_verify: true
+

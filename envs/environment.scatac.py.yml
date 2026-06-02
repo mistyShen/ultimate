@@ -1,0 +1,22 @@
+name: ultimate-scatac-py
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - pandas
+  - numpy
+  - scipy
+  - matplotlib
+  - h5py
+  - anndata
+  - scanpy
+  - mudata
+  - muon
+  - snapatac2
+  - macs2
+  - bedtools
+  - samtools
+  - tabix
+  - htslib

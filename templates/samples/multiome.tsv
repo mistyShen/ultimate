@@ -1,0 +1,3 @@
+sample_id	condition	batch	input_path	fragments	matrix_path
+CTRL_1	control	B1	raw/multiome/CTRL_1/raw_feature_bc_matrix.h5	raw/multiome/CTRL_1/atac_fragments.tsv.gz	raw/multiome/CTRL_1/raw_feature_bc_matrix.h5
+TRT_1	treated	B2	raw/multiome/TRT_1/raw_feature_bc_matrix.h5	raw/multiome/TRT_1/atac_fragments.tsv.gz	raw/multiome/TRT_1/raw_feature_bc_matrix.h5

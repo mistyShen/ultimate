@@ -1,0 +1,3 @@
+cohort_id	condition	source	matrix_path	clinical_table
+TCGA_demo	tumor	TCGA	cache/publicdb/TCGA_demo_expression.tsv	cache/publicdb/TCGA_demo_clinical.tsv
+GEO_demo	control	GEO	cache/publicdb/GEO_demo_expression.tsv	cache/publicdb/GEO_demo_clinical.tsv

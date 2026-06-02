@@ -1,0 +1,10 @@
+name: ultimate-methylation
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base=4.4
+  - r-ggplot2
+  - r-pheatmap
+  - bioconductor-minfi
+  - bioconductor-limma

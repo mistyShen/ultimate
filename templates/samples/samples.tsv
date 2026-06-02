@@ -1,0 +1,5 @@
+sample_id	condition	batch	donor	cohort_id	fastq_1	fastq_2	input_path
+CTRL_1	control	B1	D1	TCGA_demo	path/to/CTRL_1_R1.fastq.gz	path/to/CTRL_1_R2.fastq.gz	path/to/input
+CTRL_2	control	B1	D2	TCGA_demo	path/to/CTRL_2_R1.fastq.gz	path/to/CTRL_2_R2.fastq.gz	path/to/input
+TRT_1	treated	B2	D3	TCGA_demo	path/to/TRT_1_R1.fastq.gz	path/to/TRT_1_R2.fastq.gz	path/to/input
+TRT_2	treated	B2	D4	TCGA_demo	path/to/TRT_2_R1.fastq.gz	path/to/TRT_2_R2.fastq.gz	path/to/input

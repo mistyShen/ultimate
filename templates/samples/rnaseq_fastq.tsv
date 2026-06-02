@@ -1,0 +1,3 @@
+sample_id	condition	batch	fastq_1	fastq_2	strandedness
+CTRL_1	control	B1	raw/rnaseq/CTRL_1_R1.fastq.gz	raw/rnaseq/CTRL_1_R2.fastq.gz	unstranded
+TRT_1	treated	B2	raw/rnaseq/TRT_1_R1.fastq.gz	raw/rnaseq/TRT_1_R2.fastq.gz	unstranded

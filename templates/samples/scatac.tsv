@@ -1,0 +1,3 @@
+sample_id	condition	batch	input_path	fragments	peak_matrix
+CTRL_1	control	B1	raw/scatac/CTRL_1	raw/scatac/CTRL_1/fragments.tsv.gz	raw/scatac/CTRL_1/filtered_peak_bc_matrix.h5
+TRT_1	treated	B2	raw/scatac/TRT_1	raw/scatac/TRT_1/fragments.tsv.gz	raw/scatac/TRT_1/filtered_peak_bc_matrix.h5

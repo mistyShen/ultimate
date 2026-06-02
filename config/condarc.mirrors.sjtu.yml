@@ -1,0 +1,16 @@
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+show_channel_urls: true
+channel_priority: flexible
+default_channels:
+  - https://mirror.sjtu.edu.cn/anaconda/pkgs/main
+  - https://mirror.sjtu.edu.cn/anaconda/pkgs/r
+custom_channels:
+  conda-forge: https://mirror.sjtu.edu.cn/anaconda/cloud
+  bioconda: https://mirror.sjtu.edu.cn/anaconda/cloud
+  r: https://mirror.sjtu.edu.cn/anaconda/cloud
+  pytorch: https://mirror.sjtu.edu.cn/anaconda/cloud
+ssl_verify: true
+

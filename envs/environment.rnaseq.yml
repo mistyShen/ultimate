@@ -1,0 +1,17 @@
+name: ultimate-rnaseq
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - fastqc
+  - multiqc
+  - fastp
+  - star
+  - hisat2
+  - subread
+  - salmon
+  - r-base
+  - bioconductor-deseq2
+  - bioconductor-edger
+  - bioconductor-clusterprofiler
+  - bioconductor-fgsea

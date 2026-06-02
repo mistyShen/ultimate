@@ -1,0 +1,17 @@
+name: ultimate-spatial-py
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - scanpy
+  - anndata
+  - squidpy
+  - spatialdata
+  - spatialdata-io
+  - pandas
+  - numpy
+  - scipy
+  - matplotlib
+  - seaborn

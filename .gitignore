@@ -1,0 +1,56 @@
+# OS / editor state
+.DS_Store
+.idea/
+.vscode/
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Local secrets and machine-specific config
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+known_hosts
+
+# Runtime outputs and HPC scratch
+logs/
+audits/
+validations/
+public_data/
+projects/
+.conda/
+slurm-*.out
+*.out
+*.err
+*.lock
+*.tmp
+*.bak
+
+# Large data should live on /shared and be documented in manifests.
+*.bam
+*.bai
+*.cram
+*.crai
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.sam
+*.vcf
+*.vcf.gz
+*.h5ad
+*.h5mu
+*.loom
+*.rds
+*.RData
