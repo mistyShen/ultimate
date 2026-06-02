@@ -1,0 +1,8 @@
+name: ultimate-browser
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - cellxgene
+  - dash

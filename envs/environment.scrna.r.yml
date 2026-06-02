@@ -5,6 +5,7 @@ channels:
 dependencies:
   - r-base=4.4
   - r-seurat
+  - r-azimuth
   - r-soupx
   - r-harmony
   - r-vision

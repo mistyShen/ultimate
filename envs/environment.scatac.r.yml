@@ -6,6 +6,7 @@ dependencies:
   - r-base=4.4
   - r-seurat
   - r-signac
+  - r-archr
   - bioconductor-chromvar
   - bioconductor-genomicranges
   - bioconductor-minfi
