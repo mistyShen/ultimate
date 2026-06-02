@@ -53,8 +53,8 @@ def _check_module(config: dict[str, Any], samples: pd.DataFrame, module_name: st
         "input_matrix": _path_check(input_matrix),
         "samplesheet": _path_check(samplesheet),
         "required_sample_columns": _missing_columns(samples, spec.required_columns),
-        "optional_commands": {cmd: bool(shutil.which(cmd)) for cmd in spec.optional_commands},
-        "optional_r_packages": _r_package_checks(spec.optional_r_packages),
+        "optional_commands": _command_checks(spec.optional_commands, config),
+        "optional_r_packages": _r_package_checks(spec.optional_r_packages, config, module_name),
     }
     raw_report = _raw_preflight(module_cfg, samples, module_name)
     checks["raw"] = raw_report
@@ -130,22 +130,91 @@ def _global_tool_checks() -> dict[str, Any]:
     }
 
 
-def _r_package_checks(packages: tuple[str, ...]) -> dict[str, str]:
-    if not shutil.which("Rscript"):
+def _command_checks(commands: tuple[str, ...], config: dict[str, Any]) -> dict[str, bool]:
+    roots = _env_bin_roots(config)
+    checks = {}
+    for command in commands:
+        checks[command] = bool(shutil.which(command)) or any((root / command).exists() for root in roots)
+    return checks
+
+
+def _r_package_checks(packages: tuple[str, ...], config: dict[str, Any] | None = None, module_name: str | None = None) -> dict[str, str]:
+    candidates = []
+    if shutil.which("Rscript"):
+        candidates.append(Path(shutil.which("Rscript") or "Rscript"))
+    if config is not None:
+        for env_name in _candidate_env_names(module_name):
+            rscript = Path((config.get("project") or {}).get("server_root", "/shared/shen/2026/ultimate")) / ".conda" / "envs" / env_name / "bin" / "Rscript"
+            if rscript.exists():
+                candidates.append(rscript)
+    if not candidates:
         return {pkg: "not_checked:Rscript_missing" for pkg in packages}
     script = "cat(paste(installed.packages()[, 'Package'], collapse='\\n'))"
-    try:
-        completed = subprocess.run(
-            ["Rscript", "-e", script],
-            check=False,
-            text=True,
-            capture_output=True,
-            timeout=20,
-        )
-    except Exception as exc:
-        return {pkg: f"not_checked:{type(exc).__name__}" for pkg in packages}
-    installed = set(completed.stdout.splitlines())
+    installed = set()
+    errors = []
+    for rscript in candidates:
+        try:
+            completed = subprocess.run(
+                [str(rscript), "-e", script],
+                check=False,
+                text=True,
+                capture_output=True,
+                timeout=45,
+            )
+        except Exception as exc:
+            errors.append(f"{rscript}:{type(exc).__name__}")
+            continue
+        installed.update(completed.stdout.splitlines())
+    if not installed and errors:
+        return {pkg: "not_checked:" + ",".join(errors[:2]) for pkg in packages}
     return {pkg: "available" if pkg in installed else "missing_optional" for pkg in packages}
+
+
+def _env_bin_roots(config: dict[str, Any]) -> list[Path]:
+    root = Path((config.get("project") or {}).get("server_root", "/shared/shen/2026/ultimate"))
+    envs = [
+        "ultimate-core",
+        "ultimate-rnaseq",
+        "ultimate-methylation",
+        "ultimate-proteomics",
+        "ultimate-publicdb",
+        "ultimate-wgcna",
+        "ultimate-scrna",
+        "ultimate-scrna-r",
+        "ultimate-scatac-py",
+        "ultimate-scatac-r",
+        "ultimate-scatac-multiome",
+        "ultimate-genome-mtdna",
+        "ultimate-vdj",
+        "ultimate-vdj-r",
+        "ultimate-spatial",
+        "ultimate-spatial-py",
+        "ultimate-spatial-r",
+    ]
+    return [root / ".conda" / "envs" / env / "bin" for env in envs]
+
+
+def _candidate_env_names(module_name: str | None) -> list[str]:
+    common = ["ultimate-core"]
+    specific = {
+        "rnaseq": ["ultimate-rnaseq"],
+        "methylation": ["ultimate-methylation"],
+        "proteomics": ["ultimate-proteomics"],
+        "publicdb": ["ultimate-publicdb"],
+        "wgcna": ["ultimate-wgcna"],
+        "scrna": ["ultimate-scrna", "ultimate-scrna-r"],
+        "scatac": ["ultimate-scatac-multiome", "ultimate-scatac-r"],
+        "multiome": ["ultimate-scatac-multiome", "ultimate-scatac-r"],
+        "vdj": ["ultimate-vdj", "ultimate-vdj-r"],
+        "spatial": ["ultimate-spatial", "ultimate-spatial-r"],
+        "functional_state": ["ultimate-scrna", "ultimate-publicdb"],
+        "tumor_sc": ["ultimate-scrna", "ultimate-publicdb"],
+        "clinical_assoc": ["ultimate-publicdb"],
+        "single_gene": ["ultimate-publicdb"],
+        "method_tools": ["ultimate-scrna", "ultimate-scrna-r"],
+        "scepi": ["ultimate-scatac-multiome", "ultimate-methylation"],
+    }.get(module_name or "", [])
+    return specific + common
 
 
 def _overall_status(module_reports: list[dict[str, Any]], samples: pd.DataFrame) -> str:
