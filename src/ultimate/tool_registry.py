@@ -119,12 +119,12 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("anndata", "https://github.com/scverse/anndata", "data_format", "keep_default", "scrna_core", env="ultimate-scrna", python_import="anndata", size_class="small", reason_cn="h5ad 单模态对象标准。"),
     _tool("Seurat", "https://github.com/satijalab/seurat", "scrna_r", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="Seurat", size_class="large", reason_cn="客户和论文常用 R 单细胞生态。"),
     _tool("single-cell-tutorial", "https://github.com/theislab/single-cell-tutorial", "reference", "reference_only", "registry", install_method="reference", size_class="none", reason_cn="标准步骤参考，不安装。"),
-    _tool("scvi-tools", "https://github.com/scverse/scvi-tools", "integration", "keep_optional", "specialized_heavy", env="ultimate-scrna", python_import="scvi", size_class="xlarge", reason_cn="scVI/scANVI/totalVI/multiVI，重依赖，按项目启用。"),
+    _tool("scvi-tools", "https://github.com/scverse/scvi-tools", "integration", "keep_optional", "specialized_heavy_py", env="ultimate-scrna-heavy", python_import="scvi", size_class="xlarge", reason_cn="scVI/scANVI/totalVI/multiVI，重依赖，隔离环境按项目启用。"),
     _tool("muon", "https://github.com/scverse/muon", "multiome", "keep_optional", "specialized_light", env="ultimate-scrna", python_import="muon", size_class="medium", reason_cn="多模态分析框架。"),
     _tool("mudata", "https://github.com/scverse/mudata", "data_format", "keep_optional", "specialized_light", env="ultimate-scrna", python_import="mudata", size_class="small", reason_cn="h5mu/MuData 数据结构。"),
     _tool("rapids_singlecell", "https://github.com/scverse/rapids_singlecell", "acceleration", "keep_optional", "gpu_optional", env="ultimate-gpu", python_import="rapids_singlecell", size_class="xlarge", reason_cn="GPU 加速；无 CUDA 时不安装。"),
-    _tool("cellrank", "https://github.com/scverse/cellrank", "trajectory", "keep_optional", "specialized_heavy", env="ultimate-scrna", python_import="cellrank", size_class="large", reason_cn="命运概率和 velocity 后续建模。"),
-    _tool("scarches", "https://github.com/theislab/scarches", "mapping", "keep_optional", "specialized_heavy", env="ultimate-scrna", python_import="scarches", size_class="large", reason_cn="reference/atlas mapping。"),
+    _tool("cellrank", "https://github.com/scverse/cellrank", "trajectory", "keep_optional", "specialized_heavy_py", env="ultimate-scrna-heavy", python_import="cellrank", size_class="large", reason_cn="命运概率和 velocity 后续建模，隔离环境按项目启用。"),
+    _tool("scarches", "https://github.com/theislab/scarches", "mapping", "keep_optional", "specialized_heavy_py", env="ultimate-scrna-heavy", python_import="scarches", size_class="large", reason_cn="reference/atlas mapping，隔离环境按项目启用。"),
     _tool("celltypist", "https://github.com/Teichlab/celltypist", "annotation", "keep_default", "scrna_core", env="ultimate-scrna", python_import="celltypist", size_class="medium", reason_cn="自动细胞类型注释候选。"),
     _tool("cellxgene-census", "https://github.com/chanzuckerberg/cellxgene-census", "reference", "keep_optional", "reference_data", env="ultimate-scrna", python_import="cellxgene_census", size_class="large", reason_cn="大型参考数据查询；默认不缓存全库。"),
     _tool("cellxgene", "https://github.com/chanzuckerberg/cellxgene", "browser", "keep_optional", "visualization", env="ultimate-scrna", command="cellxgene", size_class="medium", reason_cn="h5ad 客户浏览器，按需启动。"),
@@ -167,12 +167,12 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("UCell", "https://github.com/carmonalab/UCell", "pathway", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="UCell", size_class="small", reason_cn="稳健 signature scoring。"),
     _tool("VISION", "https://github.com/YosefLab/VISION", "pathway", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="VISION", size_class="medium", reason_cn="signature exploration。"),
     # Regulatory and communication.
-    _tool("pySCENIC", "https://github.com/aertslab/pySCENIC", "regulatory", "keep_optional", "specialized_heavy", env="ultimate-scrna", python_import="pyscenic", command="pyscenic", size_class="xlarge", reason_cn="SCENIC regulon/TF activity，重依赖按需启用。"),
+    _tool("pySCENIC", "https://github.com/aertslab/pySCENIC", "regulatory", "keep_optional", "specialized_heavy_py", env="ultimate-scrna-heavy", python_import="pyscenic", command="pyscenic", size_class="xlarge", reason_cn="SCENIC regulon/TF activity，重依赖隔离环境按需启用。"),
     _tool("SCENIC", "https://github.com/aertslab/SCENIC", "regulatory", "reference_only", "registry", install_method="reference", size_class="none", reason_cn="旧 R 路线参考，生产优先 pySCENIC/SCENIC+ 生态。"),
     _tool("CellChat", "https://github.com/jinworks/CellChat", "communication", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="CellChat", install_method="R remotes", size_class="large", reason_cn="细胞通讯常用 R 工具。"),
     _tool("CellPhoneDB", "https://github.com/ventolab/CellphoneDB", "communication", "keep_optional", "specialized_light", env="ultimate-scrna", python_import="cellphonedb", command="cellphonedb", size_class="large", reason_cn="配体-受体通讯候选。"),
     _tool("NicheNet", "https://github.com/saeyslab/nichenetr", "communication", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="nichenetr", install_method="R remotes", size_class="medium", reason_cn="ligand-target 机制假设生成。"),
-    _tool("LIANA", "https://github.com/saezlab/liana-py", "communication", "keep_default", "specialized_light", env="ultimate-scrna", python_import="liana", size_class="medium", reason_cn="整合多通讯方法，适合 Python 主线。"),
+    _tool("LIANA", "https://github.com/saezlab/liana-py", "communication", "keep_optional", "specialized_light", env="ultimate-scrna", python_import="liana", size_class="medium", reason_cn="整合多通讯方法；当前服务器 pip 链会触发源码编译，保留为隔离环境候选。"),
     _tool("OmnipathR", "https://github.com/saezlab/OmnipathR", "communication", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="OmnipathR", size_class="small", reason_cn="OmniPath R 接口。"),
     _tool("omnipath", "https://github.com/saezlab/omnipath", "communication", "keep_optional", "specialized_light", env="ultimate-scrna", python_import="omnipath", size_class="small", reason_cn="OmniPath Python 接口。"),
     _tool("stLearn", "https://github.com/BiomedicalMachineLearning/stLearn", "spatial", "keep_optional", "spatial", env="ultimate-spatial-py", python_import="stlearn", size_class="large", reason_cn="空间通讯/形态整合候选。"),
@@ -183,7 +183,7 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("paga", "https://github.com/theislab/paga", "trajectory", "reference_only", "registry", install_method="covered_by_scanpy", size_class="none", reason_cn="PAGA 已在 Scanpy 主线内覆盖。"),
     _tool("Palantir", "https://github.com/dpeerlab/Palantir", "trajectory", "keep_optional", "specialized_light", env="ultimate-scrna", python_import="palantir", size_class="medium", reason_cn="分化状态和命运概率候选。"),
     _tool("SPRING", "https://github.com/AllonKleinLab/SPRING", "trajectory", "rejected_cleaned", "registry", install_method="none", size_class="none", reason_cn="交互工具较旧，和现有 h5ad/cellxgene/Vitessce 重叠。"),
-    _tool("scvelo", "https://github.com/theislab/scvelo", "velocity", "keep_optional", "specialized_heavy", env="ultimate-scrna", python_import="scvelo", size_class="large", reason_cn="RNA velocity 下游分析。"),
+    _tool("scvelo", "https://github.com/theislab/scvelo", "velocity", "keep_optional", "specialized_heavy_py", env="ultimate-scrna-heavy", python_import="scvelo", size_class="large", reason_cn="RNA velocity 下游分析，隔离环境按需启用。"),
     _tool("velocyto.py", "https://github.com/velocyto-team/velocyto.py", "velocity", "rejected_cleaned", "registry", python_import="velocyto", command="velocyto", size_class="none", reason_cn="上游提示已不维护；优先 STARsolo/alevin-fry 或已有 spliced/unspliced。"),
     _tool("kallisto", "https://github.com/pachterlab/kallisto", "upstream", "keep_optional", "upstream_adapter", env="ultimate-workflow", command="kallisto", size_class="medium", reason_cn="BUS/velocity 上游可选。"),
     _tool("bustools", "https://github.com/BUStools/bustools", "upstream", "keep_optional", "upstream_adapter", env="ultimate-workflow", command="bustools", size_class="small", reason_cn="kallisto/bustools 生态。"),
@@ -242,17 +242,36 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("Shiny", "https://github.com/rstudio/shiny", "visualization", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="shiny", size_class="medium", reason_cn="R 交互报告候选。"),
     _tool("seurat-data", "https://github.com/satijalab/seurat-data", "reference", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="SeuratData", size_class="medium", reason_cn="Seurat 教程/参考数据。"),
     _tool("sceasy", "https://github.com/cellgeni/sceasy", "interop", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="sceasy", install_method="R remotes", size_class="small", reason_cn="Seurat/SCE/h5ad 互转候选。"),
-    _tool("seurat-disk", "https://github.com/mojaveazure/seurat-disk", "interop", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="SeuratDisk", size_class="medium", reason_cn="Seurat/h5Seurat/h5ad 互转。"),
+    _tool("seurat-disk", "https://github.com/mojaveazure/seurat-disk", "interop", "keep_optional", "r_compat", env="ultimate-scrna-r", r_package="SeuratDisk", size_class="medium", reason_cn="Seurat/h5Seurat/h5ad 互转；当前 conda 包依赖旧 R，降为可选兼容层。"),
+    _tool("zellkonverter", "https://bioconductor.org/packages/release/bioc/html/zellkonverter.html", "interop", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="zellkonverter", size_class="medium", reason_cn="Bioconductor h5ad/SCE 互转默认路线，替代旧 SeuratDisk 主路径。"),
     _tool("seurat-object", "https://github.com/satijalab/seurat-object", "interop", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="SeuratObject", size_class="medium", reason_cn="Seurat 对象基础。"),
     _tool("SingleCellExperiment", "https://bioconductor.org/packages/release/bioc/html/SingleCellExperiment.html", "interop", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="SingleCellExperiment", size_class="medium", reason_cn="Bioconductor 单细胞对象标准。"),
 )
 
 
 BATCH_ENV_FILES = {
-    "workflow_core": ("ultimate-workflow", "environment.workflow.yml"),
-    "upstream_adapter": ("ultimate-workflow", "environment.workflow.yml"),
-    "scrna_core": ("ultimate-scrna", "environment.scrna.py.yml"),
-    "r_compat": ("ultimate-scrna-r", "environment.scrna.r.yml"),
+    "workflow_core": [("ultimate-workflow", "environment.workflow.yml")],
+    "upstream_adapter": [
+        ("ultimate-workflow", "environment.workflow.yml"),
+        ("ultimate-vdj", "environment.vdj.yml"),
+    ],
+    "scrna_core": [("ultimate-scrna", "environment.scrna.py.yml")],
+    "r_compat": [
+        ("ultimate-scrna-r", "environment.scrna.r.yml"),
+        ("ultimate-rnaseq", "environment.rnaseq.yml"),
+    ],
+    "specialized_light": [
+        ("ultimate-scrna", "environment.scrna.py.yml"),
+        ("ultimate-scatac-py", "environment.scatac.py.yml"),
+        ("ultimate-scatac-r", "environment.scatac.r.yml"),
+        ("ultimate-vdj", "environment.vdj.yml"),
+        ("ultimate-vdj-r", "environment.vdj.r.yml"),
+        ("ultimate-spatial-py", "environment.spatial.py.yml"),
+        ("ultimate-spatial-r", "environment.spatial.r.yml"),
+    ],
+    "spatial": [("ultimate-spatial-py", "environment.spatial.py.yml")],
+    "genome_tools": [("ultimate-genome-mtdna", "environment.genome_mtdna.yml")],
+    "specialized_heavy_py": [("ultimate-scrna-heavy", "environment.scrna.heavy.yml")],
 }
 
 
@@ -462,6 +481,8 @@ def _check_r(env_path: Path | None, packages: list[str]) -> dict[str, bool]:
 
 
 def _command_available(command: str, env_paths: dict[str, Path]) -> bool:
+    if command == "apptainer" and shutil.which("singularity") is not None:
+        return True
     for env_path in env_paths.values():
         candidate = env_path / "bin" / command
         if candidate.exists():
@@ -603,47 +624,49 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, int]:
 def _install_batch(root: Path, project_root: Path, batch: str, output_dir: Path) -> list[dict[str, Any]]:
     if batch not in BATCH_ENV_FILES:
         return [{"batch": batch, "status": "install_not_supported_for_batch", "log": "", "command": ""}]
-    env_name, env_file_name = BATCH_ENV_FILES[batch]
-    env_file = project_root / "envs" / env_file_name
-    prefix = root / ".conda" / "envs" / env_name
-    log_path = output_dir / f"install_{batch}.log"
-    if not env_file.exists():
-        return [{"batch": batch, "status": "missing_env_file", "log": str(log_path), "command": str(env_file)}]
     mamba = shutil.which("mamba") or "mamba"
-    if prefix.exists() and not (prefix / "conda-meta").exists() and not (prefix / "bin" / "python").exists():
-        shutil.rmtree(prefix)
-    prefix.parent.mkdir(parents=True, exist_ok=True)
     (root / ".conda" / "pkgs").mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, Any]] = []
-    for attempt_idx, condarc in enumerate(_condarc_candidates(project_root), start=1):
-        env_exists = (prefix / "conda-meta").exists() or (prefix / "bin" / "python").exists()
-        command = [mamba, "env", "update" if env_exists else "create", "-p", str(prefix), "-f", str(env_file), "-y"]
-        if env_exists:
-            command.append("--prune")
-        env = os.environ.copy()
-        env["CONDA_PKGS_DIRS"] = str(root / ".conda" / "pkgs")
-        if condarc is None:
-            env.pop("CONDARC", None)
-            condarc_label = "default_channels"
-        else:
-            env["CONDARC"] = str(condarc)
-            condarc_label = condarc.name
-        attempt_log = output_dir / f"install_{batch}_{attempt_idx}_{condarc_label}.log"
-        with attempt_log.open("w", encoding="utf-8") as log:
-            log.write(f"CONDARC={env.get('CONDARC', 'unset')}\n")
-            log.write(f"COMMAND={' '.join(command)}\n\n")
-            proc = subprocess.run(command, text=True, stdout=log, stderr=subprocess.STDOUT, env=env, check=False)
-        rows.append(
-            {
-                "batch": batch,
-                "status": "ok" if proc.returncode == 0 else f"failed:{proc.returncode}",
-                "log": str(attempt_log),
-                "command": " ".join(command),
-                "condarc": env.get("CONDARC", ""),
-            }
-        )
-        if proc.returncode == 0:
-            break
+    for env_name, env_file_name in BATCH_ENV_FILES[batch]:
+        env_file = project_root / "envs" / env_file_name
+        prefix = root / ".conda" / "envs" / env_name
+        log_path = output_dir / f"install_{batch}_{env_name}.log"
+        if not env_file.exists():
+            rows.append({"batch": batch, "env": env_name, "status": "missing_env_file", "log": str(log_path), "command": str(env_file), "condarc": ""})
+            continue
+        if prefix.exists() and not (prefix / "conda-meta").exists() and not (prefix / "bin" / "python").exists():
+            shutil.rmtree(prefix)
+        prefix.parent.mkdir(parents=True, exist_ok=True)
+        for attempt_idx, condarc in enumerate(_condarc_candidates(project_root), start=1):
+            env_exists = (prefix / "conda-meta").exists() or (prefix / "bin" / "python").exists()
+            command = [mamba, "env", "update" if env_exists else "create", "-p", str(prefix), "-f", str(env_file), "-y"]
+            if env_exists:
+                command.append("--prune")
+            env = os.environ.copy()
+            env["CONDA_PKGS_DIRS"] = str(root / ".conda" / "pkgs")
+            if condarc is None:
+                env.pop("CONDARC", None)
+                condarc_label = "default_channels"
+            else:
+                env["CONDARC"] = str(condarc)
+                condarc_label = condarc.name
+            attempt_log = output_dir / f"install_{batch}_{env_name}_{attempt_idx}_{condarc_label}.log"
+            with attempt_log.open("w", encoding="utf-8") as log:
+                log.write(f"CONDARC={env.get('CONDARC', 'unset')}\n")
+                log.write(f"COMMAND={' '.join(command)}\n\n")
+                proc = subprocess.run(command, text=True, stdout=log, stderr=subprocess.STDOUT, env=env, check=False)
+            rows.append(
+                {
+                    "batch": batch,
+                    "env": env_name,
+                    "status": "ok" if proc.returncode == 0 else f"failed:{proc.returncode}",
+                    "log": str(attempt_log),
+                    "command": " ".join(command),
+                    "condarc": env.get("CONDARC", ""),
+                }
+            )
+            if proc.returncode == 0:
+                break
     return rows
 
 

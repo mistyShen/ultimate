@@ -1,4 +1,4 @@
-name: ultimate-scrna
+name: ultimate-scrna-heavy
 channels:
   - conda-forge
   - bioconda
@@ -11,18 +11,13 @@ dependencies:
   - numpy
   - scipy
   - scikit-learn
-  - scikit-misc
   - matplotlib
   - seaborn
   - h5py
   - leidenalg
   - python-igraph
-  - pynndescent
-  - scrublet
-  - celltypist
-  - decoupler
-  - gseapy
-  - harmonypy
-  - bbknn
-  - scanorama
-  - muon
+  - scvi-tools
+  - scvelo
+  - cellrank
+  - scarches
+  - pyscenic

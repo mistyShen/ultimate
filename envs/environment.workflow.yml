@@ -18,3 +18,4 @@ dependencies:
   - kallisto
   - bustools
   - alevin-fry
+  - dash

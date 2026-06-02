@@ -14,5 +14,3 @@ dependencies:
   - seaborn
   - r-base
   - r-immunarch
-  - pip:
-      - dandelion

@@ -185,11 +185,12 @@ ultimate prune-tools --root /shared/shen/2026/ultimate
 ```
 
 The default reusable environments are `ultimate-core`, `ultimate-scrna`,
-`ultimate-scrna-r`, `ultimate-workflow`, `ultimate-scatac-py`,
-`ultimate-scatac-r`, `ultimate-vdj`, `ultimate-vdj-r`, `ultimate-spatial-py`,
-`ultimate-spatial-r`, and `ultimate-genome-mtdna`. Heavy or conflicting tools
-are kept optional and only promoted after a smoke run proves they are worth the
-storage and maintenance cost.
+`ultimate-scrna-heavy`, `ultimate-scrna-r`, `ultimate-workflow`,
+`ultimate-scatac-py`, `ultimate-scatac-r`, `ultimate-vdj`, `ultimate-vdj-r`,
+`ultimate-spatial-py`, `ultimate-spatial-r`, and `ultimate-genome-mtdna`.
+Heavy or conflicting tools are kept optional, with the heaviest single-cell
+Python stack isolated in `ultimate-scrna-heavy`, and only promoted after a
+smoke run proves they are worth the storage and maintenance cost.
 
 ## Figure Styles
 

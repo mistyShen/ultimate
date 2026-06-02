@@ -5,10 +5,20 @@ channels:
 dependencies:
   - r-base=4.4
   - r-seurat
+  - r-soupx
+  - r-harmony
+  - r-vision
   - bioconductor-singler
+  - bioconductor-zellkonverter
+  - bioconductor-dropletutils
+  - bioconductor-glmgampoi
   - bioconductor-gsva
   - bioconductor-aucell
+  - bioconductor-ucell
+  - bioconductor-dorothea
+  - bioconductor-slingshot
   - r-wgcna
+  - r-monocle3
   - bioconductor-clusterprofiler
   - bioconductor-org.hs.eg.db
   - bioconductor-org.mm.eg.db
@@ -16,4 +26,3 @@ dependencies:
   - r-dsb
   - r-survival
   - r-survminer
-
