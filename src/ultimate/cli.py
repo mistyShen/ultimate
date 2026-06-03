@@ -16,6 +16,7 @@ from ultimate.production_audit import run_production_audit
 from ultimate.report import build_report
 from ultimate.reproducibility import export_reproducible_package
 from ultimate.singlecell_audit import run_singlecell_audit
+from ultimate.validation_index import build_validation_index
 
 
 @click.group()
@@ -101,6 +102,30 @@ def export_repro_command(run_dir: Path, checksum_max_mb: int) -> None:
 )
 def audit_singlecell_command(root: Path, output_dir: Path | None) -> None:
     manifest = run_singlecell_audit(root=root, output_dir=output_dir)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("validation-index")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    default=Path("/shared/shen/2026/ultimate"),
+    show_default=True,
+)
+@click.option(
+    "--validations-dir",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    default=None,
+    help="Directory containing <run>/run_manifest.json files. Defaults to <root>/validations.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Where validation index artifacts should be written. Defaults to <root>/reports/validation_index.",
+)
+def validation_index_command(root: Path, validations_dir: Path | None, output_dir: Path | None) -> None:
+    manifest = build_validation_index(root=root, validations_dir=validations_dir, output_dir=output_dir)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 

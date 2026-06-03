@@ -189,7 +189,11 @@ ultimate init-project --type all --output-dir projects/demo_all --demo-data
 hpc-sbatch /shared/shen/2026/ultimate/slurm/ultimate_run.sbatch projects/demo_all/config/project.yaml
 ```
 
-Heavy validation, package installation, and public-data preparation should be submitted through Slurm. Keep large downloads, conda package caches, and analysis outputs on the remote shared filesystem:
+Small smoke checks, audits, and environment repairs can run directly on the
+login node when they are short. Large raw-data analyses, fragments-level
+ATAC/Visium production validation, and long downloads should be submitted
+through Slurm. Keep large downloads, conda package caches, and analysis outputs
+on the remote shared filesystem:
 
 ```bash
 hpc-sbatch /shared/shen/2026/ultimate/slurm/singlecell_validation_suite.sbatch
@@ -200,6 +204,7 @@ hpc-sbatch /shared/shen/2026/ultimate/slurm/gapfill_specialty_validation.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/setup_bulk_envs.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/prepare_bulk_public_data.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/bulk_validation_suite.sbatch
+hpc-sbatch /shared/shen/2026/ultimate/slurm/validation_index.sbatch
 ```
 
 The default cache and output locations are under `/shared/shen/2026/ultimate/.conda/`, `/shared/shen/2026/ultimate/public_data/`, `/shared/shen/2026/ultimate/validations/`, and `/shared/shen/2026/ultimate/audits/`.
@@ -214,6 +219,31 @@ Every run writes:
 - `run_manifest.json`
 
 Missing optional tools are reported in `preflight_manifest.json`, `run_manifest.json`, and the Chinese report instead of failing silently.
+
+## Current Single-Cell Completion Snapshot
+
+The single-cell line is now smoke-validated across the core public/available
+modalities. Refresh the capability matrix and the run index with:
+
+```bash
+ultimate audit-singlecell --root /shared/shen/2026/ultimate \
+  --output-dir /shared/shen/2026/ultimate/audits/singlecell_latest
+ultimate validation-index --root /shared/shen/2026/ultimate \
+  --output-dir /shared/shen/2026/ultimate/reports/validation_index
+```
+
+Interpretation policy:
+
+- `ready`: current environment, data contract, and smoke validation are usable.
+- `partial:licensed_optional_missing`: open pipeline is usable; upstream vendor
+  tools such as Cell Ranger, Cell Ranger ATAC/ARC, or Space Ranger require a
+  user-provided licensed path.
+- `partial:data_required` or `partial:dependency_required`: quote and run only
+  after the listed data or dependency gap is resolved.
+
+Matrix-level smoke validations are not a promise of best parameters for every
+large project. Fragments-level scATAC, full raw FASTQ, and complete Visium
+production workflows should be submitted as dedicated Slurm jobs.
 
 ## Tool Audit And Lean Trials
 

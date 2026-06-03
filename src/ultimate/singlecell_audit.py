@@ -20,6 +20,7 @@ class Capability:
     python_packages: tuple[str, ...] = ()
     r_packages: tuple[str, ...] = ()
     commands: tuple[str, ...] = ()
+    command_groups: tuple[tuple[str, ...], ...] = ()
     data_checks: tuple[str, ...] = ()
     licensed_tools: tuple[str, ...] = ()
 
@@ -168,7 +169,11 @@ CAPABILITIES: tuple[Capability, ...] = (
         "ultimate-genome-mtdna",
         alternate_env_paths=("{root}/.conda/envs/ultimate-core",),
         python_packages=("pandas",),
-        commands=("cellsnp-lite", "vireo", "souporcell_pipeline.py", "demuxlet", "popscle"),
+        command_groups=(
+            ("cellsnp-lite", "vireo"),
+            ("souporcell_pipeline.py",),
+            ("demuxlet", "popscle"),
+        ),
         data_checks=("dna_bam_0518",),
     ),
     Capability(
@@ -245,6 +250,7 @@ def run_singlecell_audit(root: Path, output_dir: Path | None = None) -> dict[str
         "report_html": str(html_path),
         "report_md": str(markdown_path),
         "summary": _summarize(rows),
+        "delivery_summary": _summarize_by_key(rows, "delivery_category"),
         "capabilities": rows,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -265,6 +271,7 @@ def _check_capability(root: Path, capability: Capability) -> dict[str, Any]:
         "python_packages": _check_python_packages(python_paths, capability.python_packages),
         "r_packages": _check_r_packages(rscript_paths, capability.r_packages),
         "commands": _check_commands(bin_dirs, capability.commands),
+        "command_groups": _check_command_groups(bin_dirs, capability.command_groups),
         "data": _check_data(root, capability.data_checks),
         "licensed_tools": {tool: _command_available(tool, bin_dirs) for tool in capability.licensed_tools},
     }
@@ -317,6 +324,14 @@ def _check_commands(bin_dirs: list[Path], commands: tuple[str, ...]) -> dict[str
     return {command: _command_available(command, bin_dirs) for command in commands}
 
 
+def _check_command_groups(bin_dirs: list[Path], command_groups: tuple[tuple[str, ...], ...]) -> dict[str, bool]:
+    checks = {}
+    for group in command_groups:
+        label = "+".join(group)
+        checks[label] = all(_command_available(command, bin_dirs) for command in group)
+    return checks
+
+
 def _command_available(command: str, bin_dirs: list[Path]) -> bool:
     return any((bin_dir / command).exists() for bin_dir in bin_dirs) or shutil.which(command) is not None
 
@@ -355,9 +370,11 @@ def _capability_row(capability: Capability, checks: dict[str, Any]) -> dict[str,
     py_missing = [k for k, v in checks["python_packages"].items() if not v]
     r_missing = [k for k, v in checks["r_packages"].items() if not v]
     command_missing = [k for k, v in checks["commands"].items() if not v]
+    command_group_available = any(checks["command_groups"].values()) if checks["command_groups"] else True
+    command_group_missing = [] if command_group_available else [" 或 ".join(checks["command_groups"])]
     data_missing = [k for k, v in checks["data"].items() if not v]
     licensed_missing = [k for k, v in checks["licensed_tools"].items() if not v]
-    missing = py_missing + r_missing + command_missing
+    missing = py_missing + r_missing + command_missing + command_group_missing
     if not missing and not data_missing:
         status = "ready"
     elif not missing and data_missing:
@@ -368,6 +385,7 @@ def _capability_row(capability: Capability, checks: dict[str, Any]) -> dict[str,
         status = "missing"
     if licensed_missing and status == "ready":
         status = "partial:licensed_optional_missing"
+    delivery_category = _delivery_category(status)
     return {
         "capability": capability.key,
         "title_cn": capability.title_cn,
@@ -375,17 +393,18 @@ def _capability_row(capability: Capability, checks: dict[str, Any]) -> dict[str,
         "status": status,
         "python_missing": ",".join(py_missing),
         "r_missing": ",".join(r_missing),
-        "command_missing": ",".join(command_missing),
+        "command_missing": ",".join(command_missing + command_group_missing),
         "data_missing": ",".join(data_missing),
         "licensed_optional_missing": ",".join(licensed_missing),
         "env_exists": str(checks["env_exists"]),
         "reusable_envs": ";".join(checks["reusable_envs"]),
+        "delivery_category": delivery_category,
     }
 
 
 def _dependency_rows(capability: Capability, checks: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
-    for kind in ("python_packages", "r_packages", "commands", "data", "licensed_tools"):
+    for kind in ("python_packages", "r_packages", "commands", "command_groups", "data", "licensed_tools"):
         for name, available in checks[kind].items():
             rows.append(
                 {
@@ -420,25 +439,55 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, int]:
     return summary
 
 
+def _delivery_category(status: str) -> str:
+    if status == "ready":
+        return "deliverable"
+    if status == "partial:licensed_optional_missing":
+        return "requires_license_for_upstream_optional"
+    if status == "partial:data_required":
+        return "requires_data"
+    if status == "partial:dependency_required":
+        return "requires_dependency"
+    return "missing_or_blocked"
+
+
+def _summarize_by_key(rows: list[dict[str, Any]], key: str) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    for row in rows:
+        value = str(row[key])
+        summary[value] = summary.get(value, 0) + 1
+    return summary
+
+
 def _write_reports(*, html_path: Path, markdown_path: Path, rows: list[dict[str, Any]], manifest: dict[str, Any]) -> None:
+    delivery_summary = _summarize_by_key(rows, "delivery_category")
     md_lines = [
         "# Ultimate 单细胞能力审计报告",
         "",
         f"生成时间：{manifest['generated_at']}",
         f"根目录：`{manifest['root']}`",
         "",
-        "| 功能 | 状态 | 缺失依赖 | 缺失数据 | 授权工具 |",
-        "|---|---|---|---|---|",
+        "## 交付摘要",
+        "",
+        f"- 当前可交付：{delivery_summary.get('deliverable', 0)}",
+        f"- 需要用户授权路径：{delivery_summary.get('requires_license_for_upstream_optional', 0)}",
+        f"- 需要补数据：{delivery_summary.get('requires_data', 0)}",
+        f"- 需要补依赖：{delivery_summary.get('requires_dependency', 0)}",
+        f"- 阻塞/缺失：{delivery_summary.get('missing_or_blocked', 0)}",
+        "",
+        "| 功能 | 状态 | 交付分类 | 缺失依赖 | 缺失数据 | 授权工具 |",
+        "|---|---|---|---|---|---|",
     ]
     for row in rows:
         deps = ",".join(filter(None, [row["python_missing"], row["r_missing"], row["command_missing"]]))
         md_lines.append(
-            f"| {row['title_cn']} | `{row['status']}` | {deps or '-'} | {row['data_missing'] or '-'} | {row['licensed_optional_missing'] or '-'} |"
+            f"| {row['title_cn']} | `{row['status']}` | `{row['delivery_category']}` | {deps or '-'} | {row['data_missing'] or '-'} | {row['licensed_optional_missing'] or '-'} |"
         )
     markdown_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
     html_rows = "\n".join(
         "<tr>"
         f"<td>{row['title_cn']}</td><td><code>{row['status']}</code></td>"
+        f"<td><code>{row['delivery_category']}</code></td>"
         f"<td>{row['python_missing'] or '-'}</td><td>{row['r_missing'] or '-'}</td>"
         f"<td>{row['command_missing'] or '-'}</td><td>{row['data_missing'] or '-'}</td>"
         f"<td>{row['licensed_optional_missing'] or '-'}</td>"
@@ -450,7 +499,15 @@ def _write_reports(*, html_path: Path, markdown_path: Path, rows: list[dict[str,
 <html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>Ultimate 单细胞能力审计</title>
 <style>body{{font-family:sans-serif;margin:32px}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ddd;padding:6px}}th{{background:#f6f8fa}}</style>
 </head><body><h1>Ultimate 单细胞能力审计报告</h1><p>生成时间：{manifest['generated_at']}</p>
-<table><thead><tr><th>功能</th><th>状态</th><th>缺 Python</th><th>缺 R</th><th>缺命令</th><th>缺数据</th><th>授权工具</th></tr></thead>
+<h2>交付摘要</h2>
+<ul>
+<li>当前可交付：{delivery_summary.get('deliverable', 0)}</li>
+<li>需要用户授权路径：{delivery_summary.get('requires_license_for_upstream_optional', 0)}</li>
+<li>需要补数据：{delivery_summary.get('requires_data', 0)}</li>
+<li>需要补依赖：{delivery_summary.get('requires_dependency', 0)}</li>
+<li>阻塞/缺失：{delivery_summary.get('missing_or_blocked', 0)}</li>
+</ul>
+<table><thead><tr><th>功能</th><th>状态</th><th>交付分类</th><th>缺 Python</th><th>缺 R</th><th>缺命令</th><th>缺数据</th><th>授权工具</th></tr></thead>
 <tbody>{html_rows}</tbody></table></body></html>""",
         encoding="utf-8",
     )
