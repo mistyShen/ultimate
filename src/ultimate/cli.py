@@ -5,6 +5,7 @@ from pathlib import Path
 
 import click
 
+from ultimate.approval_gate import load_production_approval
 from ultimate.config import load_config
 from ultimate.constants import PROJECT_TYPES
 from ultimate.demo import init_project
@@ -264,7 +265,7 @@ def validate_scrna_command(
     from ultimate.scrna_smoke import run_scrna_validation
 
     try:
-        approval = _load_production_approval(
+        approval = load_production_approval(
             production_approval,
             analysis_level=analysis_level,
             input_path=input_path,
@@ -285,39 +286,6 @@ def validate_scrna_command(
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
-
-
-def _load_production_approval(
-    approval_path: Path | None,
-    *,
-    analysis_level: str | None,
-    input_path: Path,
-    output_dir: Path,
-) -> dict | None:
-    if analysis_level != "production_backend":
-        return None
-    if approval_path is None:
-        raise ValueError("production_backend requires --production-approval with an approved JSON gate file")
-    try:
-        approval = json.loads(approval_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"production approval JSON is invalid: {exc}") from exc
-    required = ("approved", "approved_by", "approved_at", "project_id", "input_path", "output_dir", "reason")
-    missing = [field for field in required if field not in approval or approval[field] in (None, "")]
-    if missing:
-        raise ValueError(f"production approval JSON missing required fields: {','.join(missing)}")
-    if approval.get("approved") is not True:
-        raise ValueError("production approval JSON must contain approved=true")
-    expected_input = input_path.expanduser().resolve()
-    expected_output = output_dir.expanduser().resolve()
-    approved_input = Path(str(approval["input_path"])).expanduser().resolve()
-    approved_output = Path(str(approval["output_dir"])).expanduser().resolve()
-    if approved_input != expected_input:
-        raise ValueError(f"production approval input_path mismatch: expected {expected_input}, got {approved_input}")
-    if approved_output != expected_output:
-        raise ValueError(f"production approval output_dir mismatch: expected {expected_output}, got {approved_output}")
-    approval["_approval_path"] = str(approval_path.expanduser().resolve())
-    return approval
 
 
 if __name__ == "__main__":

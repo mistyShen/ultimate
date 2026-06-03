@@ -34,6 +34,10 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
     for module in run_manifest["modules"]:
         assert module["analysis_level"] in {"demo_result", "smoke_backend", "validated_backend", "production_backend"}
         assert module["delivery_allowed"] is False
+        assert Path(module["artifacts"]["tables"]["module_qc_manifest"]).exists()
+        assert Path(module["artifacts"]["tables"]["tool_coverage"]).exists()
+        assert Path(module["artifacts"]["objects"]["mvp_object"]).exists()
+        assert Path(module["artifacts"]["reports"]["methods_fragment"]).exists()
         assert Path(module["artifacts"]["figures"]["pca"]).exists()
         assert Path(module["artifacts"]["tables"]["differential_results"]).exists()
         assert Path(module["artifacts"]["objects"]["rds"]).exists()

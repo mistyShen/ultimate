@@ -18,6 +18,16 @@ import seaborn as sns
 
 from ultimate.analysis_levels import classify_analysis_level
 from ultimate.constants import MODULE_SPECS
+from ultimate.modules.common import (
+    handoff_plan,
+    known_limitations,
+    write_module_methods_fragment,
+    write_module_qc_manifest,
+    write_mvp_figures,
+    write_mvp_object,
+    write_mvp_tables,
+    write_tool_coverage_table,
+)
 from ultimate.plot_style import apply_clinical_journal_style, continuous_cmap, save_figure
 
 
@@ -65,8 +75,9 @@ def run_bulk_module(
     figures_dir = module_dir / "results" / "figures" / module_name
     tables_dir = module_dir / "results" / "tables" / module_name
     objects_dir = module_dir / "objects" / module_name
+    reports_dir = module_dir / "reports" / module_name
     logs_dir = module_dir / "logs"
-    for directory in (figures_dir, tables_dir, objects_dir, logs_dir):
+    for directory in (figures_dir, tables_dir, objects_dir, reports_dir, logs_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
     module_cfg = (config.get("modules") or {}).get(module_name) or {}
@@ -87,13 +98,27 @@ def run_bulk_module(
     artifacts["figures"].update(_write_common_figures(module_name, matrix, stats, samples, figures_dir, design))
     artifacts["figures"].update(_write_module_figures(module_name, matrix, stats, samples, inputs, figures_dir, module_cfg))
     artifacts["objects"].update(_write_bulk_objects(module_name, matrix, stats, inputs, objects_dir))
+    artifacts["tables"].update(write_mvp_tables(module_name=module_name, tables_dir=tables_dir, matrix=matrix, stats=stats, samples=samples))
+    artifacts["figures"].update(write_mvp_figures(module_name=module_name, figures_dir=figures_dir, matrix=matrix))
+    artifacts["objects"].update(write_mvp_object(module_name=module_name, objects_dir=objects_dir, matrix=matrix, stats=stats))
+    artifacts["reports"] = {"methods_fragment": write_module_methods_fragment(module_name, reports_dir)}
+    artifacts["tables"]["tool_coverage"] = write_tool_coverage_table(module_name, tables_dir)
+    level_fields = level.to_manifest_fields()
+    artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
+        module_name=module_name,
+        tables_dir=tables_dir,
+        status="complete_python_bulk_backend",
+        artifacts=artifacts,
+        analysis_fields=level_fields,
+        warnings=list(inputs.warnings),
+    )
 
     module_manifest = {
         "module": module_name,
         "title_cn": MODULE_SPECS[module_name].title_cn,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": "complete_python_bulk_backend",
-        **level.to_manifest_fields(),
+        **level_fields,
         "backend": {
             "primary": "python",
             "optional_r_entrypoint": module_cfg.get("r_entrypoint", f"scripts/R/{module_name}.R"),
@@ -110,6 +135,8 @@ def run_bulk_module(
         "n_samples": int(matrix.shape[1]),
         "n_clinical_rows": int(inputs.clinical.shape[0]),
         "artifacts": artifacts,
+        "limitations": list(known_limitations(module_name)),
+        "handoff": handoff_plan(module_name),
         "reproducible_command": f"ultimate run --config {config.get('_config_path', '<config.yaml>')}",
         "warnings": list(inputs.warnings),
         "skip_reasons": [],

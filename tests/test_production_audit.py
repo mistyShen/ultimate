@@ -19,6 +19,8 @@ def test_production_audit_writes_readiness_artifacts(tmp_path: Path) -> None:
     assert Path(manifest["order_readiness_checklist"]).exists()
     assert Path(manifest["validation_evidence_matrix"]).exists()
     assert Path(manifest["final_acceptance_checklist"]).exists()
+    assert Path(manifest["module_maturity_table"]).exists()
+    assert Path(manifest["tool_coverage_by_module"]).exists()
     assert "final_acceptance_summary" in manifest
     assert Path(manifest["next_steps"]).exists()
     assert sum(manifest["summary"].values()) == len(MODULE_ORDER)

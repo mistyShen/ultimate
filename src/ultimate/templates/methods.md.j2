@@ -37,6 +37,12 @@
 - Raw QC manifest：`{{ raw_qc.get("manifest_path", "not_recorded") }}`
 - 特征数：{{ module.get("n_features", "NA") }}
 - 样本数：{{ module.get("n_samples", "NA") }}
+- 已知限制：`{{ (module.get("limitations") or []) | join("; ") }}`
+- Handoff/可选后端：`{{ ((module.get("handoff") or {}).get("handoff_tools") or []) | join(", ") or "none" }}`
+{% set tool_summary = (module.get("handoff") or {}).get("tool_decision_summary") or {} %}
+- 默认后端：`{{ (tool_summary.get("keep_default") or []) | join(", ") or "none" }}`
+- 可选后端：`{{ (tool_summary.get("keep_optional") or []) | join(", ") or "none" }}`
+- 授权路径检测：`{{ (tool_summary.get("licensed_path_only") or []) | join(", ") or "none" }}`
 - 统计结果：`{{ (artifacts.get("tables") or {}).get("differential_results", (artifacts.get("tables") or {}).get("top_features", "not_recorded")) }}`
 - 图表目录：`{{ (artifacts.get("figures") or {}).get("pca", (artifacts.get("figures") or {}).get("heatmap", "not_recorded")) }}`
 - R 后端入口：`{{ (module.get("formal_backend") or {}).get("r_entrypoint", "python/backend") }}`

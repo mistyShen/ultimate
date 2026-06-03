@@ -49,7 +49,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-ultimate = ["templates/*.j2", "templates/handoffs/nfcore_scrnaseq/*"]
+ultimate = ["templates/*.j2", "templates/handoffs/nfcore_scrnaseq/*", "templates/handoffs/*/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -11,6 +11,8 @@ import pandas as pd
 from ultimate.analysis_levels import require_real_evidence
 from ultimate.bulk import BULK_MODULES
 from ultimate.constants import MODULE_ORDER, MODULE_SPECS, SUPPORTED_ORGANISMS
+from ultimate.module_maturity import build_module_maturity_rows
+from ultimate.modules.common import tool_coverage_rows
 from ultimate.plot_style import available_styles
 from ultimate.raw_qc import RAW_CONTRACTS
 from ultimate.tool_registry import TOOL_REGISTRY
@@ -239,6 +241,14 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
     final_path = output_dir / "final_acceptance_checklist.tsv"
     pd.DataFrame(final_rows).to_csv(final_path, sep="\t", index=False)
 
+    maturity_rows = build_module_maturity_rows(root, capability_rows)
+    maturity_path = output_dir / "module_maturity_table.tsv"
+    pd.DataFrame(maturity_rows).to_csv(maturity_path, sep="\t", index=False)
+
+    coverage_rows = [row for module in MODULE_ORDER for row in tool_coverage_rows(module)]
+    coverage_path = output_dir / "tool_coverage_by_module.tsv"
+    pd.DataFrame(coverage_rows).to_csv(coverage_path, sep="\t", index=False)
+
     next_steps_path = output_dir / "next_steps.md"
     next_steps_path.write_text(_next_steps_markdown(capability_rows, final_rows), encoding="utf-8")
 
@@ -258,6 +268,8 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
         "order_readiness_checklist": str(order_path),
         "validation_evidence_matrix": str(validation_path),
         "final_acceptance_checklist": str(final_path),
+        "module_maturity_table": str(maturity_path),
+        "tool_coverage_by_module": str(coverage_path),
         "final_acceptance_summary": _final_summary(final_rows),
         "next_steps": str(next_steps_path),
         "licensed_optional": OPTIONAL_LICENSED,

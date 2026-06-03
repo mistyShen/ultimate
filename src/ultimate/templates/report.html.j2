@@ -70,6 +70,12 @@
       {% set artifacts = module.get("artifacts") or {"tables": {}, "figures": {}, "objects": {}} %}
       <li>analysis_level：<code>{{ module.get("analysis_level", "not_recorded") }}</code></li>
       <li>交付许可：<code>{{ module.get("delivery_allowed", false) }}</code>；原因：<code>{{ module.get("non_delivery_reason", "") or "none" }}</code></li>
+      <li>已知限制：<code>{{ (module.get("limitations") or []) | join("; ") }}</code></li>
+      <li>Handoff/可选后端：<code>{{ ((module.get("handoff") or {}).get("handoff_tools") or []) | join(", ") or "none" }}</code></li>
+      {% set tool_summary = (module.get("handoff") or {}).get("tool_decision_summary") or {} %}
+      <li>默认后端：<code>{{ (tool_summary.get("keep_default") or []) | join(", ") or "none" }}</code></li>
+      <li>可选后端：<code>{{ (tool_summary.get("keep_optional") or []) | join(", ") or "none" }}</code></li>
+      <li>授权路径检测：<code>{{ (tool_summary.get("licensed_path_only") or []) | join(", ") or "none" }}</code></li>
       <li>Raw QC manifest：<code>{{ raw_qc.get("manifest_path", "not_recorded") }}</code></li>
       <li>Raw QC 标准矩阵：<code>{{ ((raw_qc.get("artifacts") or {}).get("objects") or {}).get("standard_matrix", "not_recorded") }}</code></li>
       {% for key, value in (artifacts.get("tables") or {}).items() %}
@@ -80,6 +86,9 @@
       {% endfor %}
       {% for key, value in (artifacts.get("objects") or {}).items() %}
         <li>对象 {{ key }}：<code>{{ value }}</code></li>
+      {% endfor %}
+      {% for key, value in (artifacts.get("reports") or {}).items() %}
+        <li>报告片段 {{ key }}：<code>{{ value }}</code></li>
       {% endfor %}
     </ul>
   {% endfor %}
