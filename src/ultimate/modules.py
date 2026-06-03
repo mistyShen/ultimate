@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from ultimate.analysis_levels import classify_analysis_level
 from ultimate.constants import MODULE_SPECS
 from ultimate.bulk import is_bulk_module, run_bulk_module
 from ultimate.plot_style import apply_clinical_journal_style, continuous_cmap, save_figure
@@ -47,7 +48,14 @@ def run_module(
             tables_dir=tables_dir,
         )
 
-    matrix = _load_matrix(module_cfg.get("input_matrix"), samples)
+    input_matrix = module_cfg.get("input_matrix")
+    matrix_is_stub = not (input_matrix and Path(str(input_matrix)).exists())
+    level = classify_analysis_level(
+        requested_level=module_cfg.get("analysis_level"),
+        input_path=input_matrix,
+        is_stub=matrix_is_stub,
+    )
+    matrix = _load_matrix(input_matrix, samples)
     design = config.get("design") or {}
     stats = _differential_stats(matrix, samples, design)
 
@@ -68,7 +76,7 @@ def run_module(
         "title_cn": MODULE_SPECS[module_name].title_cn,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": "complete_smoke_backend",
-        "analysis_level": module_cfg.get("analysis_level", "smoke_then_formal_backend"),
+        **level.to_manifest_fields(),
         "input_matrix": module_cfg.get("input_matrix"),
         "n_features": int(matrix.shape[0]),
         "n_samples": int(matrix.shape[1]),
@@ -143,6 +151,7 @@ def _run_validated_run_backend(
         "source_run_dir": str(run_dir),
         "source_manifest": str(source_manifest_path),
         "source_status": source_manifest.get("status"),
+        "source_analysis_level": source_manifest.get("analysis_level"),
         "validation_scope": source_manifest.get("validation_scope"),
         "n_cells": source_manifest.get("n_cells") or source_manifest.get("n_spots"),
         "n_features": source_manifest.get("n_features") or source_manifest.get("n_genes") or source_manifest.get("n_peaks"),
@@ -150,13 +159,26 @@ def _run_validated_run_backend(
     }
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     artifacts["tables"]["validated_run_summary"] = str(summary_path)
+    try:
+        level = classify_analysis_level(
+            requested_level=str(source_manifest.get("analysis_level") or "validated_backend"),
+            input_path=run_dir,
+            is_demo=bool(source_manifest.get("is_demo", False)),
+            is_stub=bool(source_manifest.get("is_stub", False)),
+            public_dataset=True,
+        )
+        level_fields = level.to_manifest_fields()
+    except ValueError as exc:
+        status = "partial:validated_run_analysis_level_invalid"
+        skip_reasons.append(f"analysis_level_invalid:{exc}")
+        level_fields = classify_analysis_level(requested_level="smoke_backend", is_stub=True).to_manifest_fields()
 
     module_manifest = {
         "module": module_name,
         "title_cn": MODULE_SPECS[module_name].title_cn,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": status,
-        "analysis_level": "validated_run_handoff",
+        **level_fields,
         "validated_run_dir": str(run_dir),
         "source_manifest": str(source_manifest_path),
         "source_status": source_manifest.get("status"),

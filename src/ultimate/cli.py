@@ -230,7 +230,7 @@ def styles_command(style_key: str, render_all: bool, output_dir: Path | None) ->
 @click.option("--n-genes", type=int, default=90, show_default=True)
 @click.option("--seed", type=int, default=17, show_default=True)
 def create_scrna_demo_inputs_command(output_dir: Path, n_cells: int, n_genes: int, seed: int) -> None:
-    """Create tiny h5ad/10x h5/10x mtx inputs for scRNA smoke validation."""
+    """Create tiny h5ad/10x h5/10x mtx inputs for non-deliverable scRNA MVP checks."""
     from ultimate.scrna_smoke import create_demo_inputs
 
     manifest = create_demo_inputs(output_dir, n_cells=n_cells, n_genes=n_genes, seed=seed)
@@ -244,18 +244,37 @@ def create_scrna_demo_inputs_command(output_dir: Path, n_cells: int, n_genes: in
 @click.option("--samplesheet", type=click.Path(path_type=Path, exists=True), default=None)
 @click.option("--max-cells", type=int, default=3000, show_default=True)
 @click.option("--random-seed", type=int, default=7, show_default=True)
-def validate_scrna_command(input_path: Path, input_type: str, output_dir: Path, samplesheet: Path | None, max_cells: int, random_seed: int) -> None:
-    """Run the scRNA MVP smoke pipeline on h5ad, 10x H5, or 10x MTX input."""
+@click.option("--analysis-level", type=click.Choice(["demo_result", "smoke_backend", "validated_backend", "production_backend"]), default=None)
+@click.option("--public-dataset", is_flag=True, help="Mark a real public dataset validation run; never use with generated demo inputs.")
+@click.option("--dataset-label", default=None, help="Optional dataset label recorded in the manifest.")
+def validate_scrna_command(
+    input_path: Path,
+    input_type: str,
+    output_dir: Path,
+    samplesheet: Path | None,
+    max_cells: int,
+    random_seed: int,
+    analysis_level: str | None,
+    public_dataset: bool,
+    dataset_label: str | None,
+) -> None:
+    """Run the scRNA MVP validation path on h5ad, 10x H5, or 10x MTX input."""
     from ultimate.scrna_smoke import run_scrna_validation
 
-    manifest = run_scrna_validation(
-        input_path=input_path,
-        input_type=input_type,
-        output_dir=output_dir,
-        samplesheet=samplesheet,
-        max_cells=max_cells,
-        random_seed=random_seed,
-    )
+    try:
+        manifest = run_scrna_validation(
+            input_path=input_path,
+            input_type=input_type,
+            output_dir=output_dir,
+            samplesheet=samplesheet,
+            max_cells=max_cells,
+            random_seed=random_seed,
+            analysis_level=analysis_level,
+            public_dataset=public_dataset,
+            dataset_label=dataset_label,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 

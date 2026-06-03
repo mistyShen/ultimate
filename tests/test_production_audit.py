@@ -31,3 +31,36 @@ def test_cli_styles_generates_review(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert (out_dir / "style_review_manifest.json").exists()
     assert (out_dir / "qc_bar_review.png").exists()
+
+
+def test_production_audit_rejects_demo_scrna_mvp_as_real_evidence(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run_dir = root / "validation_runs" / "scrna_mvp_validation" / "10x_mtx"
+    (run_dir / "results" / "tables").mkdir(parents=True)
+    (run_dir / "results" / "figures").mkdir(parents=True)
+    (run_dir / "objects").mkdir(parents=True)
+    (run_dir / "reports").mkdir(parents=True)
+    (run_dir / "run_manifest.json").write_text(
+        """
+{
+  "status": "ready",
+  "analysis_level": "demo_result",
+  "is_demo": true,
+  "is_stub": false,
+  "delivery_allowed": false
+}
+""",
+        encoding="utf-8",
+    )
+    for idx in range(8):
+        (run_dir / "results" / "tables" / f"table_{idx}.tsv").write_text("a\\n1\\n", encoding="utf-8")
+    for idx in range(3):
+        (run_dir / "results" / "figures" / f"fig_{idx}.png").write_text("png", encoding="utf-8")
+    (run_dir / "objects" / "scrna_mvp.h5ad").write_text("object", encoding="utf-8")
+    (run_dir / "reports" / "report.md").write_text("report", encoding="utf-8")
+    (run_dir / "reports" / "report.html").write_text("report", encoding="utf-8")
+
+    manifest = run_production_audit(root=root, output_dir=tmp_path / "audit")
+    evidence = Path(manifest["validation_evidence_matrix"]).read_text(encoding="utf-8")
+    assert "scrna_mvp_10x_mtx" in evidence
+    assert "analysis_level=demo_result" in evidence

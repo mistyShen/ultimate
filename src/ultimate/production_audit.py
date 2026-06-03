@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from ultimate.analysis_levels import require_real_evidence
 from ultimate.bulk import BULK_MODULES
 from ultimate.constants import MODULE_ORDER, MODULE_SPECS, SUPPORTED_ORGANISMS
 from ultimate.plot_style import available_styles
@@ -86,29 +87,23 @@ OPTIONAL_LICENSED = {
 }
 
 VALIDATION_RUN_REQUIREMENTS = {
-    "scrna_h5ad": {
-        "label_cn": "scRNA h5ad 输入 smoke",
-        "run_dir": "validation_runs/scrna_input_smoke/h5ad",
-        "min_tables": 5,
+    "scrna_mvp_h5ad": {
+        "label_cn": "scRNA MVP h5ad 真实公开数据验证",
+        "run_dir": "validation_runs/scrna_mvp_validation/h5ad",
+        "min_tables": 8,
         "min_figures": 3,
         "min_objects": 1,
         "min_reports": 2,
+        "require_real_evidence": True,
     },
-    "scrna_10x_h5": {
-        "label_cn": "scRNA 10x H5 输入 smoke",
-        "run_dir": "validation_runs/scrna_input_smoke/10x_h5",
-        "min_tables": 5,
+    "scrna_mvp_10x_mtx": {
+        "label_cn": "scRNA MVP 10x matrix 真实公开数据验证",
+        "run_dir": "validation_runs/scrna_mvp_validation/10x_mtx",
+        "min_tables": 8,
         "min_figures": 3,
         "min_objects": 1,
         "min_reports": 2,
-    },
-    "scrna_10x_mtx": {
-        "label_cn": "scRNA 10x MTX 输入 smoke",
-        "run_dir": "validation_runs/scrna_input_smoke/10x_mtx",
-        "min_tables": 5,
-        "min_figures": 3,
-        "min_objects": 1,
-        "min_reports": 2,
+        "require_real_evidence": True,
     },
     "slurm_scrna": {
         "label_cn": "NSCLC scRNA Slurm 生产验证",
@@ -504,6 +499,11 @@ def _validation_evidence_row(root: Path, key: str, requirement: dict[str, Any]) 
         missing.append(f"modules<{requirement.get('min_modules')}")
     if raw_qc_count < int(requirement.get("min_raw_qc_manifests", 0)):
         missing.append(f"raw_qc_manifests<{requirement.get('min_raw_qc_manifests')}")
+    real_evidence_note = ""
+    if requirement.get("require_real_evidence"):
+        real_ready, real_evidence_note = require_real_evidence(manifest or {})
+        if not real_ready:
+            missing.append(real_evidence_note)
 
     return {
         "validation_key": key,
@@ -519,6 +519,9 @@ def _validation_evidence_row(root: Path, key: str, requirement: dict[str, Any]) 
         "raw_qc_manifest_count": raw_qc_count,
         "module_count": module_count,
         "ready_module_count": ready_module_count,
+        "analysis_level": str((manifest or {}).get("analysis_level", "")),
+        "delivery_allowed": str((manifest or {}).get("delivery_allowed", "")),
+        "real_evidence_note": real_evidence_note,
         "missing_or_gap": ";".join(missing),
     }
 
@@ -564,9 +567,9 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
         ),
         _requirement_row(
             "scrna_input_contracts_validated",
-            "scRNA h5ad/10x H5/10x MTX 三种输入全跑通",
-            all(validation_status.get(key) == "ready" for key in ("scrna_h5ad", "scrna_10x_h5", "scrna_10x_mtx")),
-            ",".join(f"{key}={validation_status.get(key, 'missing')}" for key in ("scrna_h5ad", "scrna_10x_h5", "scrna_10x_mtx")),
+            "scRNA MVP h5ad/10x matrix 真实公开数据验证全跑通",
+            all(validation_status.get(key) == "ready" for key in ("scrna_mvp_h5ad", "scrna_mvp_10x_mtx")),
+            ",".join(f"{key}={validation_status.get(key, 'missing')}" for key in ("scrna_mvp_h5ad", "scrna_mvp_10x_mtx")),
         ),
         _requirement_row(
             "slurm_singlecell_modalities_validated",
@@ -623,7 +626,7 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
             "slurm_adapter_files_present",
             "正式验证和上游适配 Slurm 脚本存在",
             _slurm_adapter_files_present(root),
-            "required=singlecell_validation_suite,bulk_validation_suite,ultimate_run,tool_trial_batch",
+            "required=singlecell_validation_suite,scrna_mvp_validation,bulk_validation_suite,ultimate_run,tool_trial_batch",
         ),
     ]
     return rows
@@ -695,6 +698,7 @@ def _tool_status_note(tool_matrix: pd.DataFrame, decision: str | None = None) ->
 def _slurm_adapter_files_present(root: Path) -> bool:
     required = (
         root / "slurm" / "singlecell_validation_suite.sbatch",
+        root / "slurm" / "scrna_mvp_validation.sbatch",
         root / "slurm" / "bulk_validation_suite.sbatch",
         root / "slurm" / "ultimate_run.sbatch",
         root / "slurm" / "tool_trial_batch.sbatch",

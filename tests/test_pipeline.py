@@ -28,8 +28,12 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
     assert run_manifest["analysis_request"]["analysis_presets"] == ["standard"]
     assert "reproducible_package" in run_manifest
     assert "复现信息" in (run_dir / "reports" / "methods.md").read_text(encoding="utf-8")
+    assert "analysis_level" in (run_dir / "reports" / "methods.md").read_text(encoding="utf-8")
+    assert "analysis_level" in (run_dir / "reports" / "report.html").read_text(encoding="utf-8")
     assert len(run_manifest["modules"]) >= 13
     for module in run_manifest["modules"]:
+        assert module["analysis_level"] in {"demo_result", "smoke_backend", "validated_backend", "production_backend"}
+        assert module["delivery_allowed"] is False
         assert Path(module["artifacts"]["figures"]["pca"]).exists()
         assert Path(module["artifacts"]["tables"]["differential_results"]).exists()
         assert Path(module["artifacts"]["objects"]["rds"]).exists()
@@ -96,6 +100,8 @@ def test_validated_run_dir_is_imported_by_unified_run(tmp_path: Path) -> None:
     module = run_manifest["modules"][0]
     assert module["status"] == "complete_validated_run_backend"
     assert module["backend"]["primary"] == "validated_run"
+    assert module["analysis_level"] == "validated_backend"
+    assert module["delivery_allowed"] is False
     assert Path(module["artifacts"]["tables"]["validated_artifact_index"]).exists()
     assert module["artifacts"]["figures"]["umap"] == str(figures / "umap.png")
     assert module["artifacts"]["objects"]["h5ad"] == str(objects / "validated.h5ad")

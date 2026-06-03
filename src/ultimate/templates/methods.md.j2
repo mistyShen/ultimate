@@ -29,6 +29,8 @@
 ### {{ module.title_cn }} (`{{ module.module }}`)
 
 - 状态：`{{ module.status }}`
+- analysis_level：`{{ module.get("analysis_level", "not_recorded") }}`
+- 交付许可：`{{ module.get("delivery_allowed", false) }}`；原因：`{{ module.get("non_delivery_reason", "") or "none" }}`
 {% set raw_qc = module.get("raw_qc") or {} %}
 {% set artifacts = module.get("artifacts") or {"tables": {}, "figures": {}, "objects": {}} %}
 - Raw QC 状态：`{{ raw_qc.get("status", "not_recorded") }}`

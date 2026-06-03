@@ -39,7 +39,7 @@ def init_project(project_type: str, output_dir: Path, *, demo_data: bool = False
         _write_raw_samplesheet(raw_samplesheet, module_name)
         module_config[module_name] = {
             "enabled": enabled,
-            "analysis_level": "smoke_then_formal_backend",
+            "analysis_level": "demo_result" if demo_data else "smoke_backend",
             "samplesheet": "../samples/samples.tsv",
             "input_matrix": f"../data/{module_name}_matrix.tsv",
             "r_entrypoint": f"scripts/R/{module_name}.R",

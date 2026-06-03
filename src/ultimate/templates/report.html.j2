@@ -23,12 +23,14 @@
 
   <h2>运行概览</h2>
   <table>
-    <thead><tr><th>模块</th><th>状态</th><th>Raw QC</th><th>特征数</th><th>样本数</th><th>R后端</th></tr></thead>
+    <thead><tr><th>模块</th><th>状态</th><th>analysis_level</th><th>交付许可</th><th>Raw QC</th><th>特征数</th><th>样本数</th><th>R后端</th></tr></thead>
     <tbody>
     {% for module in modules %}
       <tr>
         <td>{{ module.title_cn }} ({{ module.module }})</td>
         <td>{{ module.status }}</td>
+        <td>{{ module.get("analysis_level", "not_recorded") }}</td>
+        <td>{{ module.get("delivery_allowed", false) }}</td>
         <td>{{ (module.get("raw_qc") or {}).get("status", "not_recorded") }}</td>
         <td>{{ module.get("n_features", "NA") }}</td>
         <td>{{ module.get("n_samples", "NA") }}</td>
@@ -66,6 +68,8 @@
     <ul>
       {% set raw_qc = module.get("raw_qc") or {} %}
       {% set artifacts = module.get("artifacts") or {"tables": {}, "figures": {}, "objects": {}} %}
+      <li>analysis_level：<code>{{ module.get("analysis_level", "not_recorded") }}</code></li>
+      <li>交付许可：<code>{{ module.get("delivery_allowed", false) }}</code>；原因：<code>{{ module.get("non_delivery_reason", "") or "none" }}</code></li>
       <li>Raw QC manifest：<code>{{ raw_qc.get("manifest_path", "not_recorded") }}</code></li>
       <li>Raw QC 标准矩阵：<code>{{ ((raw_qc.get("artifacts") or {}).get("objects") or {}).get("standard_matrix", "not_recorded") }}</code></li>
       {% for key, value in (artifacts.get("tables") or {}).items() %}

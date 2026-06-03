@@ -15,6 +15,7 @@ dependencies:
   - matplotlib
   - seaborn
   - h5py
+  - pytest
   - leidenalg
   - python-igraph
   - pynndescent

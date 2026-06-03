@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from ultimate.analysis_levels import classify_analysis_level
 from ultimate.constants import MODULE_SPECS
 from ultimate.plot_style import apply_clinical_journal_style, continuous_cmap, save_figure
 
@@ -70,7 +71,13 @@ def run_bulk_module(
 
     module_cfg = (config.get("modules") or {}).get(module_name) or {}
     design = config.get("design") or {}
+    input_matrix = module_cfg.get("input_matrix")
     inputs = _load_bulk_inputs(module_name, module_cfg, samples)
+    level = classify_analysis_level(
+        requested_level=module_cfg.get("analysis_level"),
+        input_path=input_matrix,
+        is_stub=inputs.source == "demo_generated_matrix",
+    )
     matrix = _normalize_matrix(module_name, inputs.matrix)
     stats = _differential_stats(matrix, samples, design)
     artifacts = {"tables": {}, "figures": {}, "objects": {}}
@@ -86,7 +93,7 @@ def run_bulk_module(
         "title_cn": MODULE_SPECS[module_name].title_cn,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": "complete_python_bulk_backend",
-        "analysis_level": module_cfg.get("analysis_level", "formal_python_bulk_backend"),
+        **level.to_manifest_fields(),
         "backend": {
             "primary": "python",
             "optional_r_entrypoint": module_cfg.get("r_entrypoint", f"scripts/R/{module_name}.R"),
