@@ -24,6 +24,20 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
+scrna = [
+  "anndata>=0.10",
+  "h5py>=3.10",
+  "leidenalg>=0.10",
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "python-igraph>=0.11",
+  "scanpy>=1.10",
+  "scikit-learn>=1.4",
+  "scipy>=1.12",
+  "seaborn>=0.13",
+  "pytest>=8.0",
+]
 
 [project.scripts]
 ultimate = "ultimate.cli:main"
@@ -35,7 +49,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-ultimate = ["templates/*.j2"]
+ultimate = ["templates/*.j2", "templates/handoffs/nfcore_scrnaseq/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

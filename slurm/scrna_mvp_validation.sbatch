@@ -14,7 +14,7 @@ SCRNA_ENV="${ULTIMATE_SCRNA_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-scrna}"
 SCRNA_FALLBACK_ENV="${ULTIMATE_SCRNA_FALLBACK_ENV:-/shared/shen/2026/singlecell_workbench/.conda/envs/scw-py311}"
 CONDA_SH="${CONDA_SH:-/share/home/nshen/miniconda3/etc/profile.d/conda.sh}"
 OUT_ROOT="${ULTIMATE_SCRNA_MVP_OUT:-$PROJECT_ROOT/validation_runs/scrna_mvp_validation}"
-PUBLIC_ROOT="$PROJECT_ROOT/public_data/scrna_pbmc3k"
+PUBLIC_ROOT="${ULTIMATE_SCRNA_MVP_PUBLIC_ROOT:-$PROJECT_ROOT/public_data/scrna_pbmc3k}"
 
 mkdir -p "$PROJECT_ROOT/logs" "$PROJECT_ROOT/public_data" "$OUT_ROOT"
 source "$CONDA_SH"
@@ -36,18 +36,18 @@ reason = sys.argv[3]
 manifest = {
     "generated_at": datetime.now(timezone.utc).isoformat(),
     "status": status,
-    "analysis_level": "validated_backend",
+    "analysis_level": "smoke_backend",
     "is_demo": False,
     "is_stub": False,
     "delivery_allowed": False,
     "validation_evidence_allowed": False,
-    "non_delivery_reason": reason,
+    "non_delivery_reason": f"validation_not_completed:{reason}",
     "output_dir": str(out),
     "skip_reason": reason,
 }
 (out / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-(out / "reports" / "report.md").write_text(f"# scRNA MVP 验证未完成\n\nanalysis_level：`validated_backend`\n\n状态：`{status}`\n\n原因：{reason}\n", encoding="utf-8")
-(out / "reports" / "report.html").write_text(f"<html><body><h1>scRNA MVP 验证未完成</h1><p>analysis_level: validated_backend</p><p>{reason}</p></body></html>", encoding="utf-8")
+(out / "reports" / "report.md").write_text(f"# scRNA MVP 验证未完成\n\nanalysis_level：`smoke_backend`\n\n状态：`{status}`\n\n原因：{reason}\n", encoding="utf-8")
+(out / "reports" / "report.html").write_text(f"<html><body><h1>scRNA MVP 验证未完成</h1><p>analysis_level: smoke_backend</p><p>{reason}</p></body></html>", encoding="utf-8")
 PY
 }
 

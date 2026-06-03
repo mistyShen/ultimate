@@ -84,7 +84,10 @@ def run_scrna_validation(
     analysis_level: str | None = None,
     public_dataset: bool = False,
     dataset_label: str | None = None,
+    production_approval: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if analysis_level == "production_backend" and production_approval is None:
+        raise ValueError("production_backend requires --production-approval with an approved JSON gate file")
     level = classify_analysis_level(
         requested_level=analysis_level,
         input_path=input_path,
@@ -172,6 +175,7 @@ def run_scrna_validation(
         analysis_level=level.analysis_level,
         public_dataset=public_dataset,
         dataset_label=dataset_label,
+        production_approval=production_approval,
     )
 
     manifest = {
@@ -197,6 +201,8 @@ def run_scrna_validation(
         "pseudobulk_outputs": {name: str(path) for name, path in pseudobulk_paths.items()},
         "reproducible_command": reproducible_command,
     }
+    if level.analysis_level == "production_backend":
+        manifest["production_approval"] = _approval_summary(production_approval or {})
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     _write_report(manifest, reports / "report.md", reports / "report.html")
     return manifest
@@ -549,6 +555,7 @@ def _reproducible_command(
     analysis_level: str,
     public_dataset: bool,
     dataset_label: str | None,
+    production_approval: dict[str, Any] | None,
 ) -> str:
     pieces = [
         "ultimate",
@@ -572,7 +579,21 @@ def _reproducible_command(
         pieces.append("--public-dataset")
     if dataset_label:
         pieces.extend(["--dataset-label", str(dataset_label)])
+    approval_path = (production_approval or {}).get("_approval_path")
+    if approval_path:
+        pieces.extend(["--production-approval", str(approval_path)])
     return " ".join(pieces)
+
+
+def _approval_summary(approval: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "approved": bool(approval.get("approved")),
+        "approved_by": str(approval.get("approved_by", "")),
+        "approved_at": str(approval.get("approved_at", "")),
+        "project_id": str(approval.get("project_id", "")),
+        "reason": str(approval.get("reason", "")),
+        "approval_path": str(approval.get("_approval_path", "")),
+    }
 
 
 def _figure_manifest(figures: Path, output_path: Path, analysis_level: str) -> Path:

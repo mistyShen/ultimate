@@ -92,6 +92,35 @@ ultimate trial-tools --root /shared/shen/2026/ultimate --batch scrna_core --no-i
 pytest -q
 ```
 
+## scRNA MVP Validation
+
+`validate-scrna` 的验证级路径统一称为 `scrna_mvp`。真实公开数据验证通过 Slurm 运行，不在登录节点做重计算：
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/scrna_mvp_validation.sbatch
+```
+
+默认输出在：
+
+```text
+/shared/shen/2026/ultimate/validation_runs/scrna_mvp_validation/{10x_mtx,h5ad}/
+/shared/shen/2026/ultimate/validation_runs/scrna_mvp_validation/10x_mtx/
+/shared/shen/2026/ultimate/validation_runs/scrna_mvp_validation/h5ad/
+```
+
+每个分支至少应包含：
+
+- `run_manifest.json`
+- `raw_qc/raw_qc_manifest.json`
+- `objects/scrna_mvp.h5ad`
+- `results/tables/pseudobulk_counts.tsv`
+- `results/tables/pseudobulk_design.tsv`
+- `results/tables/pseudobulk_feature_metadata.tsv`
+- `results/tables/cell_type_annotation_placeholder.tsv`
+- `reports/report.html`
+
+`validated_backend` 只表示真实公开数据或已有验证数据可以作为平台能力证据，不是客户正式交付。正式客户项目必须在生产配置和审批记录齐全后才允许标为 `production_backend`；普通 CLI 不能仅靠 `--analysis-level production_backend` 直接生成正式交付级 manifest。
+
 ## Production Readiness And Intake
 
 For a new customer order, start with an intake package:
