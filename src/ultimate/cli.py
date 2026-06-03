@@ -8,15 +8,13 @@ import click
 from ultimate.config import load_config
 from ultimate.constants import PROJECT_TYPES
 from ultimate.demo import init_project
-from ultimate.intake import prepare_intake_package
 from ultimate.pipeline import run_pipeline_from_config
 from ultimate.plot_style import available_styles, generate_style_review, set_active_style
 from ultimate.preflight import run_preflight
 from ultimate.production_audit import run_production_audit
 from ultimate.report import build_report
-from ultimate.scrna_smoke import create_demo_inputs, run_scrna_validation
+from ultimate.reproducibility import export_reproducible_package
 from ultimate.singlecell_audit import run_singlecell_audit
-from ultimate.tool_registry import available_tool_batches, run_audit_tools, run_prune_tools, run_trial_tools
 
 
 @click.group()
@@ -74,6 +72,19 @@ def report_command(run_dir: Path) -> None:
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 
+@main.command("export-repro")
+@click.option(
+    "--run-dir",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+    help="Run directory containing run_manifest.json.",
+)
+@click.option("--checksum-max-mb", type=int, default=256, show_default=True, help="Maximum file size to hash for input checksums.")
+def export_repro_command(run_dir: Path, checksum_max_mb: int) -> None:
+    manifest = export_reproducible_package(run_dir, checksum_max_bytes=checksum_max_mb * 1024 * 1024)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
 @main.command("audit-singlecell")
 @click.option(
     "--root",
@@ -125,6 +136,8 @@ def audit_production_command(root: Path, output_dir: Path | None) -> None:
     help="Where tool audit artifacts should be written. Defaults to <root>/audits/tools.",
 )
 def audit_tools_command(root: Path, output_dir: Path | None) -> None:
+    from ultimate.tool_registry import run_audit_tools
+
     manifest = run_audit_tools(root=root, output_dir=output_dir)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
@@ -137,11 +150,15 @@ def audit_tools_command(root: Path, output_dir: Path | None) -> None:
     show_default=True,
     help="Ultimate project root on shared storage.",
 )
-@click.option("--batch", type=click.Choice(available_tool_batches()), required=True)
+@click.option("--batch", required=True)
 @click.option("--output-dir", type=click.Path(path_type=Path), default=None)
 @click.option("--project-root", type=click.Path(path_type=Path), default=None, help="Directory containing envs/*.yml. Defaults to --root.")
 @click.option("--install/--no-install", default=False, show_default=True, help="Run the batch mamba install before smoke checks.")
 def trial_tools_command(root: Path, batch: str, output_dir: Path | None, project_root: Path | None, install: bool) -> None:
+    from ultimate.tool_registry import available_tool_batches, run_trial_tools
+
+    if batch not in available_tool_batches():
+        raise click.BadParameter(f"Unsupported batch {batch!r}; expected one of {available_tool_batches()}")
     manifest = run_trial_tools(root=root, batch=batch, output_dir=output_dir, install=install, project_root=project_root)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
@@ -157,6 +174,8 @@ def trial_tools_command(root: Path, batch: str, output_dir: Path | None, project
 @click.option("--output-dir", type=click.Path(path_type=Path), default=None)
 @click.option("--yes", is_flag=True, help="Actually run safe cache cleanup commands. Without this, only writes a prune plan.")
 def prune_tools_command(root: Path, output_dir: Path | None, yes: bool) -> None:
+    from ultimate.tool_registry import run_prune_tools
+
     manifest = run_prune_tools(root=root, output_dir=output_dir, yes=yes)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
@@ -177,6 +196,8 @@ def prune_tools_command(root: Path, output_dir: Path | None, yes: bool) -> None:
 )
 @click.option("--refresh-audit/--no-refresh-audit", default=False, show_default=True)
 def prepare_intake_command(root: Path, output_dir: Path | None, refresh_audit: bool) -> None:
+    from ultimate.intake import prepare_intake_package
+
     manifest = prepare_intake_package(root=root, output_dir=output_dir, refresh_audit=refresh_audit)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
@@ -210,6 +231,8 @@ def styles_command(style_key: str, render_all: bool, output_dir: Path | None) ->
 @click.option("--seed", type=int, default=17, show_default=True)
 def create_scrna_demo_inputs_command(output_dir: Path, n_cells: int, n_genes: int, seed: int) -> None:
     """Create tiny h5ad/10x h5/10x mtx inputs for scRNA smoke validation."""
+    from ultimate.scrna_smoke import create_demo_inputs
+
     manifest = create_demo_inputs(output_dir, n_cells=n_cells, n_genes=n_genes, seed=seed)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
@@ -223,6 +246,8 @@ def create_scrna_demo_inputs_command(output_dir: Path, n_cells: int, n_genes: in
 @click.option("--random-seed", type=int, default=7, show_default=True)
 def validate_scrna_command(input_path: Path, input_type: str, output_dir: Path, samplesheet: Path | None, max_cells: int, random_seed: int) -> None:
     """Run the scRNA MVP smoke pipeline on h5ad, 10x H5, or 10x MTX input."""
+    from ultimate.scrna_smoke import run_scrna_validation
+
     manifest = run_scrna_validation(
         input_path=input_path,
         input_type=input_type,

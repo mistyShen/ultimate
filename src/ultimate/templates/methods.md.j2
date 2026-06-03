@@ -11,6 +11,18 @@
 - Preflight 状态：`{{ preflight.status }}`
 - 出图风格：`{{ manifest.figure_style.style_cn | default("临床期刊版") }}`（白底、柔彩主色、低饱和连续色条）；审阅图清单：`{{ manifest.style_review.figure_manifest }}`
 
+## 复现信息
+
+{% set repro = manifest.get("reproducible_package") or {} %}
+{% set slurm = manifest.get("slurm") or {} %}
+- 可复现命令：`{{ manifest.get("reproducible_command", "not_recorded") }}`
+- 配置快照：`{{ manifest.get("config_snapshot", "not_recorded") }}`
+- 复现代码包：`{{ repro.get("package_dir", "not_recorded") }}`
+- 重跑脚本：`{{ repro.get("rerun_script", "not_recorded") }}`
+- 输入校验表：`{{ repro.get("input_checksums", "not_recorded") }}`
+- 软件版本表：`{{ repro.get("software_versions", "not_recorded") }}`
+- Slurm Job ID：`{{ slurm.get("slurm_job_id", "") or "not_recorded" }}`
+
 ## 分析模块
 
 {% for module in modules %}

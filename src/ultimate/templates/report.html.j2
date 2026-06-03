@@ -38,6 +38,21 @@
     </tbody>
   </table>
 
+  <h2>复现信息</h2>
+  {% set repro = manifest.get("reproducible_package") or {} %}
+  {% set slurm = manifest.get("slurm") or {} %}
+  <table>
+    <tbody>
+      <tr><th>可复现命令</th><td><code>{{ manifest.get("reproducible_command", "not_recorded") }}</code></td></tr>
+      <tr><th>配置快照</th><td><code>{{ manifest.get("config_snapshot", "not_recorded") }}</code></td></tr>
+      <tr><th>复现代码包</th><td><code>{{ repro.get("package_dir", "not_recorded") }}</code></td></tr>
+      <tr><th>重跑脚本</th><td><code>{{ repro.get("rerun_script", "not_recorded") }}</code></td></tr>
+      <tr><th>输入校验</th><td><code>{{ repro.get("input_checksums", "not_recorded") }}</code></td></tr>
+      <tr><th>软件版本</th><td><code>{{ repro.get("software_versions", "not_recorded") }}</code></td></tr>
+      <tr><th>Slurm Job ID</th><td><code>{{ slurm.get("slurm_job_id", "") or "not_recorded" }}</code></td></tr>
+    </tbody>
+  </table>
+
   <h2>可选依赖提示</h2>
   {% for module in preflight.modules %}
     {% if module.warnings %}

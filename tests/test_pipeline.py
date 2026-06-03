@@ -5,6 +5,7 @@ from pathlib import Path
 from ultimate.demo import init_project
 from ultimate.config import dump_yaml, load_config
 from ultimate.pipeline import run_pipeline_from_config
+from ultimate.preflight import run_preflight
 
 
 BULK_MODULES = {"rnaseq", "methylation", "proteomics", "publicdb", "wgcna", "single_gene", "clinical_assoc"}
@@ -20,6 +21,13 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
     assert set(run_manifest["module_status"]) == {module["module"] for module in run_manifest["modules"]}
     assert (run_dir / "reports" / "report.html").exists()
     assert (run_dir / "reports" / "methods.md").exists()
+    assert (run_dir / "reproducible_code" / "rerun.sh").exists()
+    assert (run_dir / "reproducible_code" / "software_versions.tsv").exists()
+    assert (run_dir / "reproducible_code" / "input_checksums.tsv").exists()
+    assert (run_dir / "delivery_index.tsv").exists()
+    assert run_manifest["analysis_request"]["analysis_presets"] == ["standard"]
+    assert "reproducible_package" in run_manifest
+    assert "复现信息" in (run_dir / "reports" / "methods.md").read_text(encoding="utf-8")
     assert len(run_manifest["modules"]) >= 13
     for module in run_manifest["modules"]:
         assert Path(module["artifacts"]["figures"]["pca"]).exists()
@@ -91,3 +99,15 @@ def test_validated_run_dir_is_imported_by_unified_run(tmp_path: Path) -> None:
     assert Path(module["artifacts"]["tables"]["validated_artifact_index"]).exists()
     assert module["artifacts"]["figures"]["umap"] == str(figures / "umap.png")
     assert module["artifacts"]["objects"]["h5ad"] == str(objects / "validated.h5ad")
+
+
+def test_preflight_blocks_existing_run_manifest_in_production_mode(tmp_path: Path) -> None:
+    manifest = init_project("rnaseq", tmp_path / "overwrite_guard", demo_data=True)
+    run_manifest = run_pipeline_from_config(Path(manifest["config_path"]))
+    loaded = load_config(Path(manifest["config_path"]))
+    config = loaded.raw
+    config["project"]["run_mode"] = "production"
+    config["project"]["overwrite"] = False
+    preflight = run_preflight(config, write=False)
+    assert preflight["status"] == "blocked:existing_run_manifest"
+    assert preflight["output_safety"]["existing_run_manifest"] == str(Path(run_manifest["output_dir"]) / "run_manifest.json")

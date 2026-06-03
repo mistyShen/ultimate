@@ -35,6 +35,7 @@ def normalize_config(config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
     project.setdefault("organism", "human")
     project.setdefault("output_dir", "../runs/ultimate_project")
     project.setdefault("server_root", "/shared/shen/2026/ultimate")
+    project.setdefault("run_mode", "interactive")
 
     organism = str(project["organism"]).lower()
     if organism not in SUPPORTED_ORGANISMS:
@@ -51,6 +52,12 @@ def normalize_config(config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
     report.setdefault("dpi", 180)
     normalized.setdefault("samples", {})
     normalized.setdefault("modules", {})
+
+    analysis_request = normalized.get("analysis_request") or project.get("analysis_request")
+    if isinstance(analysis_request, (str, Path)):
+        normalized["analysis_request"] = str(resolve_path(base_dir, analysis_request))
+    elif isinstance(analysis_request, dict):
+        normalized["analysis_request"] = analysis_request
 
     for module_name in list(normalized["modules"]):
         if module_name not in MODULE_SPECS:
@@ -121,6 +128,28 @@ def load_samples(config: dict[str, Any]) -> pd.DataFrame:
     if isinstance(samples, list):
         return pd.DataFrame(samples)
     return pd.DataFrame()
+
+
+def load_analysis_request(config: dict[str, Any]) -> dict[str, Any]:
+    request = config.get("analysis_request")
+    if isinstance(request, dict):
+        return request
+    if not request:
+        return {}
+    path = Path(str(request))
+    if not path.exists():
+        return {"source": str(path), "status": "missing"}
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        with path.open("r", encoding="utf-8") as handle:
+            data = yaml.safe_load(handle) or {}
+        return data if isinstance(data, dict) else {"source": str(path), "content": data}
+    if path.suffix.lower() == ".json":
+        import json
+
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {"source": str(path), "content": data}
+    return {"source": str(path), "format": path.suffix.lstrip(".") or "text", "notes": path.read_text(encoding="utf-8")}
 
 
 def validate_project_type(project_type: str) -> str:
