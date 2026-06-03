@@ -1,0 +1,3 @@
+sample_id	condition	batch	bcl_dir	sample_sheet	lane	index_set	library_type
+CTRL_1	control	B1	raw/bcl/run_001	raw/bcl/run_001/SampleSheet.csv	1	10x_dual_index	scrna
+TRT_1	treated	B2	raw/bcl/run_001	raw/bcl/run_001/SampleSheet.csv	2	10x_dual_index	scrna

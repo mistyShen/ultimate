@@ -25,6 +25,9 @@ SINGLE_CELL_MODULES = {
     "scepi",
     "cite_seq",
     "spatial",
+    "perturb_seq",
+    "hto_demux",
+    "genotype_demux",
     "functional_state",
     "tumor_sc",
     "method_tools",
@@ -39,6 +42,9 @@ VALIDATION_HINTS = {
     "mtdna": ("slurm_mtdna_0518", "Existing 0518 mtDNA validation"),
     "cite_seq": ("cite_seq_10x_pbmc_cli", "10x PBMC CITE-seq public validation"),
     "spatial": ("slurm_spatial_squidpy_visium", "Squidpy Visium public validation"),
+    "perturb_seq": ("slurm_perturb_seq_demo", "Perturb-seq guide assignment and perturbation demo validation"),
+    "hto_demux": ("slurm_hto_demux_demo", "HTO/Cell Hashing demultiplex demo validation"),
+    "genotype_demux": ("slurm_genotype_demux_demo", "Genotype demultiplex demo validation"),
     "method_tools": ("slurm_method_tools_nsclc", "NSCLC scRNA method-tools baseline validation"),
 }
 
@@ -72,7 +78,9 @@ DERIVED_VALIDATION_HINTS = {
 }
 
 OPTIONAL_LICENSED = {
+    "bcl-convert/bcl2fastq": "测序仪 BCL demux；只做用户提供路径检测和 Slurm wrapper，不作为默认依赖。",
     "Cell Ranger": "10x 原厂 raw FASTQ 计数；平台提供 Cell Ranger 输出读取和 STARsolo/alevin-fry 等开源路线。",
+    "Cell Ranger ATAC/ARC/VDJ": "10x scATAC/Multiome/VDJ 原厂上游；只检测用户提供路径。",
     "Space Ranger": "10x Visium 原厂计数；平台提供 Space Ranger 输出读取和 squidpy/Seurat 开源分析。",
     "CIBERSORT": "授权免疫浸润脚本；平台默认提供开源 signature/ssGSEA 替代。",
 }
@@ -162,6 +170,30 @@ VALIDATION_RUN_REQUIREMENTS = {
         "label_cn": "NSCLC 方法学工具 Slurm 验证",
         "run_dir": "validations/slurm_method_tools_nsclc",
         "min_tables": 3,
+        "min_figures": 3,
+        "min_objects": 1,
+        "min_reports": 2,
+    },
+    "slurm_perturb_seq": {
+        "label_cn": "Perturb-seq/CRISPR 筛选 Slurm 验证",
+        "run_dir": "validations/slurm_perturb_seq_demo",
+        "min_tables": 4,
+        "min_figures": 3,
+        "min_objects": 1,
+        "min_reports": 2,
+    },
+    "slurm_hto_demux": {
+        "label_cn": "HTO/Cell Hashing 拆样 Slurm 验证",
+        "run_dir": "validations/slurm_hto_demux_demo",
+        "min_tables": 3,
+        "min_figures": 3,
+        "min_objects": 1,
+        "min_reports": 2,
+    },
+    "slurm_genotype_demux": {
+        "label_cn": "Genotype demultiplex 拆样 Slurm 验证",
+        "run_dir": "validations/slurm_genotype_demux_demo",
+        "min_tables": 4,
         "min_figures": 3,
         "min_objects": 1,
         "min_reports": 2,
@@ -350,6 +382,8 @@ def _next_action(module: str, status: str, validation_status: str) -> str:
         return "Keep validation data current and add customer-facing parameter presets."
     if module in {"scdna", "scepi", "cite_seq"}:
         return "Download or collect public demo data for this modality and run raw-to-object validation."
+    if module in {"perturb_seq", "hto_demux", "genotype_demux"}:
+        return "Keep synthetic validation current and replace with project/public modality data when available."
     if module in {"functional_state", "tumor_sc", "method_tools"}:
         return "Promote matrix/object-level analysis from smoke backend to formal scanpy/Seurat workflow."
     return "Run public or existing production validation and record run_manifest.json."
@@ -548,6 +582,9 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
                     "slurm_scdna",
                     "slurm_mtdna",
                     "slurm_method_tools",
+                    "slurm_perturb_seq",
+                    "slurm_hto_demux",
+                    "slurm_genotype_demux",
                 )
             ),
             ",".join(f"{key}={validation_status.get(key, 'missing')}" for key in validation_status if key.startswith("slurm_")),
@@ -566,7 +603,7 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
         ),
         _requirement_row(
             "production_capability_matrix_ready",
-            "19 个模块生产能力矩阵达到 basic 级",
+            f"{len(MODULE_ORDER)} 个模块生产能力矩阵达到 basic 级",
             len(ready_capabilities) == len(MODULE_ORDER),
             f"ready_basic={len(ready_capabilities)} partial={len(partial_capabilities)}",
         ),
@@ -661,6 +698,7 @@ def _slurm_adapter_files_present(root: Path) -> bool:
         root / "slurm" / "bulk_validation_suite.sbatch",
         root / "slurm" / "ultimate_run.sbatch",
         root / "slurm" / "tool_trial_batch.sbatch",
+        root / "slurm" / "gapfill_specialty_validation.sbatch",
     )
     return all(path.exists() and path.stat().st_size > 0 for path in required)
 

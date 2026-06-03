@@ -1,0 +1,3 @@
+sample_id	condition	batch	input_path	bam	variant_table	demux_result	tool_output
+CTRL_1	control	B1	raw/mtdna/CTRL_1	raw/mtdna/CTRL_1/possorted_genome_bam.bam	raw/mtdna/CTRL_1/variants.tsv	processed/mtdna/CTRL_1/clones.tsv	mgatk_output
+TRT_1	treated	B2	raw/mtdna/TRT_1	raw/mtdna/TRT_1/possorted_genome_bam.bam	raw/mtdna/TRT_1/variants.tsv	processed/mtdna/TRT_1/clones.tsv	mitotrace_output

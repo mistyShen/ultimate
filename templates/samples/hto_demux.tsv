@@ -1,0 +1,3 @@
+sample_id	condition	batch	input_path	hashtag_counts	adt_counts	expected_sample
+POOL_1	mixed	B1	raw/hto/pool_1/filtered_feature_bc_matrix.h5	raw/hto/pool_1/hto_counts.tsv	raw/hto/pool_1/adt_counts.tsv	CTRL_1
+POOL_1	mixed	B1	raw/hto/pool_1/filtered_feature_bc_matrix.h5	raw/hto/pool_1/hto_counts.tsv	raw/hto/pool_1/adt_counts.tsv	TRT_1

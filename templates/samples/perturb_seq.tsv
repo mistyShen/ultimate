@@ -1,0 +1,3 @@
+sample_id	condition	batch	input_path	guide_counts	guide_assignments	contrast
+CTRL_1	control	B1	raw/perturb/CTRL_1/expression.h5ad	raw/perturb/CTRL_1/guide_counts.tsv	raw/perturb/CTRL_1/guide_assignments.tsv	treated_vs_control
+TRT_1	treated	B2	raw/perturb/TRT_1/expression.h5ad	raw/perturb/TRT_1/guide_counts.tsv	raw/perturb/TRT_1/guide_assignments.tsv	treated_vs_control

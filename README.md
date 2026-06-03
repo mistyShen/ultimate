@@ -9,7 +9,7 @@ multi-omics analysis delivery under:
 
 It supports customer intake packages, project templates, input validation,
 raw-QC handoff, validated-run handoff, selectable figure styles, Chinese
-reports, and explicit manifests for 19 basic production-ready module types:
+reports, and explicit manifests for the current human/mouse order-ready module set:
 
 - bulk RNA-seq
 - single-cell RNA-seq
@@ -19,8 +19,11 @@ reports, and explicit manifests for 19 basic production-ready module types:
 - single-cell DNA / genome
 - single-cell mtDNA
 - single-cell epigenomics / chromatin accessibility
-- CITE-seq / single-cell protein
+- CITE-seq / ADT tag analysis
 - spatial transcriptomics
+- Perturb-seq / CRISPR screen handoff
+- HTO / Cell Hashing demultiplex handoff
+- genotype demultiplex handoff
 - single-cell functional state and tumor specialty summaries
 - cross-sample / clinical association
 - method tools / cellxgene handoff
@@ -30,7 +33,8 @@ reports, and explicit manifests for 19 basic production-ready module types:
 - WGCNA
 - single-gene analysis
 
-The current production audit on the server reports `ready_basic: 19`. This is a
+The production audit reports module-level `ready_basic` or explicit partial
+status per modality. This is a
 basic order-ready guarantee: raw or semi-raw contracts, preflight checks, QC
 handoff, standard matrix/object handoff, figures, tables, Chinese reports, and
 manifests are available for human and mouse. Advanced algorithms such as
@@ -39,22 +43,34 @@ Ranger, Space Ranger, and CIBERSORT are exposed as optional presets, adapters,
 or user-provided licensed paths instead of being promised as fully automatic
 best-parameter runs.
 
+Explicitly out of scope for this single-cell gap-fill pass: true single-cell
+mass-spectrometry proteomics, spatial protein / multiplex imaging platforms,
+complex lineage/barcode-tracing libraries, and non-human/non-mouse organisms.
+
 ## Supported Inputs
 
 - RNA-seq: FASTQ command plans, external tool detection, existing count matrix,
   or generated demo matrix.
-- Single-cell RNA-seq: 10x H5/MTX, existing h5ad/RDS handoff, or open upstream
-  routes such as STARsolo/alevin-fry.
-- Single-cell ATAC / epigenomics: fragments or peak matrices; fragments-level
-  TSS/FRiP and peak calling are enabled when those inputs are provided.
-- Multiome / CITE-seq / VDJ / spatial: 10x-style matrices, contig annotations,
-  Visium outputs, or validated public/existing handoff objects.
-- scDNA / mtDNA: BAM/FASTQ/variant-table handoff with QC summaries, depth,
-  variant, and chromosome-coverage proxy outputs.
+- BCL / upstream demux: `bcl-convert` / `bcl2fastq` path detection and Slurm
+  wrapper contracts only; no licensed software is bundled.
+- Single-cell RNA-seq: 10x H5/MTX/h5ad, FASTQ adapter routes, Smart-seq2
+  templates, and non-10x matrix handoff for BD Rhapsody, Parse Evercode,
+  Drop-seq, Seq-Well, and compatible exports.
+- Single-cell ATAC / epigenomics: FASTQ adapter contracts, fragments, peak
+  matrices, Cell Ranger ATAC outputs, and specialty epigenome handoff templates.
+- Multiome / CITE-seq / VDJ / spatial: 10x-style matrices, ARC outputs,
+  RNA+ATAC fragments, ADT matrices, contig annotations, AIRR tables, Visium
+  outputs, spatialdata/SOPA-compatible spatial exports, or validated
+  public/existing handoff objects.
+- Perturb-seq / HTO / genotype demux: guide count, hashtag count, BAM/VCF/barcode
+  and result-table contracts that produce standardized tables and report entries.
+- scDNA / mtDNA: BAM/FASTQ/variant-table handoff plus optional MissionBio/Tapestri,
+  mgatk, MitoTrace, mitoClone2, cellsnp-lite/vireo-style import contracts.
 - Methylation: beta matrix import; IDAT is recorded as a formal raw contract and
   can be handled by optional parser/backends.
-- Proteomics/metabolomics: MaxQuant, Proteome Discoverer, or generic abundance
-  tables; raw spectra are out of scope for this Python v1.
+- Proteomics/metabolomics: bulk MaxQuant, Proteome Discoverer, or generic
+  abundance tables remain supported; true single-cell mass-spec proteomics is
+  not part of this pass.
 - PublicDB: cached public expression and clinical tables or generated demo
   cohort data.
 - WGCNA, single-gene, and clinical association: standardized expression/feature
@@ -151,6 +167,7 @@ hpc-sbatch /shared/shen/2026/ultimate/slurm/singlecell_validation_suite.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/setup_singlecell_envs.sbatch genome_mtdna scrna
 hpc-sbatch /shared/shen/2026/ultimate/slurm/tool_trial_batch.sbatch scrna_core
 hpc-sbatch /shared/shen/2026/ultimate/slurm/download_public_singlecell_data.sbatch
+hpc-sbatch /shared/shen/2026/ultimate/slurm/gapfill_specialty_validation.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/setup_bulk_envs.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/prepare_bulk_public_data.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/bulk_validation_suite.sbatch

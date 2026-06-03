@@ -28,17 +28,162 @@ class RawContract:
     open_replacements: tuple[str, ...]
 
 
+PATH_COLUMNS = (
+    "input_path",
+    "fastq_1",
+    "fastq_2",
+    "fastq_dir",
+    "bcl_dir",
+    "fragments",
+    "peak_matrix",
+    "matrix_path",
+    "matrix_dir",
+    "feature_matrix",
+    "count_matrix",
+    "idat_dir",
+    "visium_dir",
+    "spatial_dir",
+    "spatialdata_zarr",
+    "sopa_project",
+    "cellranger_out",
+    "cellranger_atac_out",
+    "cellranger_arc_out",
+    "cellranger_vdj_out",
+    "spaceranger_out",
+    "airr_table",
+    "clonotypes",
+    "contig_annotations",
+    "guide_counts",
+    "guide_assignments",
+    "hashtag_counts",
+    "adt_counts",
+    "bam",
+    "vcf",
+    "barcode_file",
+    "variant_table",
+    "cnv_table",
+    "demux_result",
+    "reference",
+    "gtf",
+    "genome_dir",
+    "clinical_table",
+    "signature_matrix",
+)
+
+MATRIX_INPUT_KEYS = (
+    "matrix_path",
+    "feature_matrix",
+    "count_matrix",
+    "peak_matrix",
+    "clinical_table",
+    "signature_matrix",
+    "guide_counts",
+    "guide_assignments",
+    "hashtag_counts",
+    "adt_counts",
+    "airr_table",
+    "clonotypes",
+    "contig_annotations",
+    "variant_table",
+    "cnv_table",
+    "demux_result",
+)
+
+MATRIX_LIKE_INPUT_TYPES = {
+    "count_matrix",
+    "beta_matrix",
+    "abundance_table",
+    "downloaded_matrix",
+    "expression_matrix",
+    "matrix",
+    "clinical_table",
+    "peak_matrix",
+    "rna_adt_matrix",
+    "adt_counts",
+    "hashtag_counts",
+    "guide_counts",
+    "guide_assignment",
+    "airr_rearrangement",
+    "clonotypes",
+    "contig_annotations",
+    "variant_table",
+    "cnv_table",
+    "cellsnp_matrix",
+    "vireo_result",
+    "demux_result",
+    "bd_rhapsody_matrix",
+    "parse_matrix",
+    "dropseq_matrix",
+    "seqwell_matrix",
+    "smartseq2_matrix",
+    "stereoseq_matrix",
+    "slideseq_matrix",
+    "merfish_matrix",
+}
+
+
 RAW_CONTRACTS: dict[str, RawContract] = {
     "rnaseq": RawContract(("fastq", "count_matrix"), ("sample_id", "condition", "fastq_1"), "count_matrix", ("fastqc", "multiqc", "fastp", "STAR", "hisat2", "featureCounts", "salmon"), ("STAR", "HISAT2", "Salmon")),
-    "scrna": RawContract(("10x_h5", "10x_mtx", "fastq"), ("sample_id", "condition", "input_path"), "h5ad_or_rds", ("STAR", "alevin-fry"), ("STARsolo", "alevin-fry", "scanpy", "Seurat")),
-    "scatac": RawContract(("fragments", "peak_matrix"), ("sample_id", "condition", "input_path"), "peak_matrix_h5ad", ("macs2", "bedtools", "samtools"), ("MACS3", "Signac", "snapatac2")),
-    "multiome": RawContract(("multiome_h5", "fragments"), ("sample_id", "condition", "input_path"), "rna_atac_h5ad", ("macs2", "bedtools", "samtools"), ("muon", "Signac", "snapatac2")),
-    "vdj": RawContract(("contig_annotations",), ("sample_id", "condition", "input_path"), "clonotype_table", (), ("scirpy", "scRepertoire", "immunarch")),
-    "scdna": RawContract(("bam", "fastq", "variant_table"), ("sample_id", "condition", "input_path"), "variant_qc_tables", ("samtools", "bcftools", "bwa", "bedtools"), ("samtools", "bcftools", "cnvkit")),
-    "mtdna": RawContract(("bam", "variant_table"), ("sample_id", "condition", "input_path"), "mtdna_variant_tables", ("samtools", "bcftools"), ("samtools", "bcftools", "mgatk-like summary")),
-    "scepi": RawContract(("fragments", "idat", "matrix"), ("sample_id", "condition", "input_path"), "epigenomic_matrix", ("macs2", "bedtools", "samtools"), ("Signac", "chromVAR", "minfi")),
-    "cite_seq": RawContract(("10x_h5", "rna_adt_matrix"), ("sample_id", "condition", "input_path"), "rna_adt_h5ad", (), ("scanpy", "Seurat", "dsb")),
-    "spatial": RawContract(("visium_dir", "spatial_h5ad"), ("sample_id", "condition", "input_path"), "spatial_h5ad", (), ("squidpy", "Seurat", "SpatialExperiment")),
+    "scrna": RawContract(
+        ("10x_h5", "10x_mtx", "h5ad", "fastq", "bcl", "bd_rhapsody_matrix", "parse_matrix", "dropseq_matrix", "seqwell_matrix", "smartseq2_fastq", "smartseq2_matrix"),
+        ("sample_id", "condition", "input_path"),
+        "h5ad_or_rds",
+        ("cellranger", "bcl-convert", "bcl2fastq", "STAR", "alevin-fry", "nextflow"),
+        ("nf-core/scrnaseq", "STARsolo", "alevin-fry", "scanpy", "Seurat"),
+    ),
+    "scatac": RawContract(
+        ("fastq", "fragments", "peak_matrix", "cellranger_atac_out"),
+        ("sample_id", "condition", "input_path"),
+        "peak_matrix_h5ad",
+        ("cellranger-atac", "bwa", "macs2", "bedtools", "samtools"),
+        ("MACS3", "Signac", "snapatac2", "nf-core/atacseq adapter"),
+    ),
+    "multiome": RawContract(
+        ("multiome_h5", "arc_output", "fastq", "fragments", "rna_matrix_atac_fragments", "h5mu"),
+        ("sample_id", "condition", "input_path"),
+        "rna_atac_h5ad_or_h5mu",
+        ("cellranger-arc", "bwa", "macs2", "bedtools", "samtools"),
+        ("muon", "Signac", "snapatac2", "Cell Ranger ARC output reader"),
+    ),
+    "vdj": RawContract(
+        ("contig_annotations", "clonotypes", "airr_rearrangement", "fastq", "cellranger_vdj_out", "mixcr_output"),
+        ("sample_id", "condition", "input_path"),
+        "clonotype_table",
+        ("cellranger", "mixcr", "nextflow"),
+        ("scirpy", "scRepertoire", "immunarch", "nf-core/airrflow"),
+    ),
+    "scdna": RawContract(
+        ("bam", "fastq", "variant_table", "cnv_table", "missionbio_tapestri", "missionbio_mosaic"),
+        ("sample_id", "condition", "input_path"),
+        "variant_qc_tables",
+        ("samtools", "bcftools", "bwa", "bedtools"),
+        ("samtools", "bcftools", "cnvkit", "MissionBio mosaic optional adapter"),
+    ),
+    "mtdna": RawContract(
+        ("bam", "fastq", "variant_table", "cellsnp_matrix", "mgatk_output", "mitotrace_output", "mitoclone2_output"),
+        ("sample_id", "condition", "input_path"),
+        "mtdna_variant_tables",
+        ("samtools", "bcftools", "cellsnp-lite", "vireo"),
+        ("samtools", "bcftools", "mgatk-like summary", "MitoTrace optional adapter", "mitoClone2 optional adapter"),
+    ),
+    "scepi": RawContract(
+        ("fragments", "idat", "matrix", "scbs_fastq", "scnmt_matrix", "cuttag_fragments", "cutrun_fragments"),
+        ("sample_id", "condition", "input_path"),
+        "epigenomic_matrix",
+        ("macs2", "bedtools", "samtools"),
+        ("Signac", "chromVAR", "minfi", "specialty sc-epigenome adapter"),
+    ),
+    "cite_seq": RawContract(("10x_h5", "rna_adt_matrix", "adt_counts"), ("sample_id", "condition", "input_path"), "rna_adt_h5ad", (), ("scanpy", "Seurat", "dsb")),
+    "spatial": RawContract(
+        ("visium_dir", "spatial_h5ad", "xenium_dir", "cosmx_dir", "merscope_dir", "merfish_matrix", "slideseq_matrix", "stereoseq_matrix", "visium_hd_dir", "spatialdata_zarr", "sopa_project"),
+        ("sample_id", "condition", "input_path"),
+        "spatial_h5ad_or_spatialdata",
+        ("spaceranger",),
+        ("squidpy", "spatialdata", "spatialdata-io", "SOPA", "Seurat", "SpatialExperiment"),
+    ),
+    "perturb_seq": RawContract(("guide_counts", "guide_assignment", "expression_object", "matrix"), ("sample_id", "condition", "input_path"), "perturbation_tables", (), ("scanpy", "Seurat", "decoupler", "limma")),
+    "hto_demux": RawContract(("hashtag_counts", "antibody_capture_matrix", "10x_h5"), ("sample_id", "condition", "input_path"), "demultiplexed_sample_table", (), ("Seurat HTODemux", "DropletUtils", "scanpy")),
+    "genotype_demux": RawContract(("bam_vcf_barcode", "cellsnp_matrix", "vireo_result", "souporcell_result", "demuxlet_result", "popscle_result"), ("sample_id", "condition", "input_path"), "genotype_demux_table", ("cellsnp-lite", "vireo", "souporcell_pipeline.py", "demuxlet", "popscle"), ("cellsnp-lite", "vireo", "souporcell", "demuxlet/popscle optional adapter")),
     "functional_state": RawContract(("expression_object", "matrix"), ("sample_id", "condition", "input_path"), "score_matrix", (), ("GSVA", "AUCell", "decoupler")),
     "tumor_sc": RawContract(("expression_object", "matrix"), ("sample_id", "condition", "input_path"), "tumor_sc_object", (), ("inferCNV", "CopyKAT", "scanpy")),
     "clinical_assoc": RawContract(("clinical_table", "matrix"), ("sample_id", "condition", "input_path"), "clinical_matrix", (), ("survival", "survminer", "GSVA")),
@@ -146,7 +291,7 @@ def _input_rows(samples: pd.DataFrame, raw_cfg: dict[str, Any], input_type: str)
 
 
 def _row_has_existing_input(row: pd.Series) -> bool:
-    for column in ("input_path", "fastq_1", "fastq_2", "fragments", "peak_matrix", "matrix_path", "idat_dir", "visium_dir"):
+    for column in PATH_COLUMNS:
         value = str(row.get(column, "") or "")
         if value and Path(value).exists():
             return True
@@ -200,28 +345,22 @@ def _write_standard_matrix(
 
 
 def _existing_matrix_input(raw_cfg: dict[str, Any], input_rows: pd.DataFrame, input_type: str) -> Path | None:
-    candidate_keys = ("matrix_path", "peak_matrix", "input_path", "clinical_table", "signature_matrix")
-    for key in candidate_keys:
+    for key in MATRIX_INPUT_KEYS:
         value = raw_cfg.get(key)
-        if value and Path(value).is_file():
+        if value and Path(value).is_file() and _looks_tabular(Path(value)):
             return Path(value)
-    matrix_like_types = {
-        "count_matrix",
-        "beta_matrix",
-        "abundance_table",
-        "downloaded_matrix",
-        "expression_matrix",
-        "matrix",
-        "clinical_table",
-    }
-    if input_type not in matrix_like_types:
+    if input_type not in MATRIX_LIKE_INPUT_TYPES:
         return None
     for _, row in input_rows.iterrows():
-        for key in candidate_keys:
+        for key in (*MATRIX_INPUT_KEYS, "input_path"):
             value = str(row.get(key, "") or "")
-            if value and Path(value).is_file():
+            if value and Path(value).is_file() and _looks_tabular(Path(value)):
                 return Path(value)
     return None
+
+
+def _looks_tabular(path: Path) -> bool:
+    return path.suffix.lower() in {".csv", ".tsv", ".txt"} or path.name.endswith((".tsv.gz", ".csv.gz", ".txt.gz"))
 
 
 def _write_standard_object(module_name: str, samples: pd.DataFrame, raw_cfg: dict[str, Any], objects_dir: Path, matrix_path: Path) -> Path:
@@ -279,10 +418,60 @@ def _write_command_plan(module_name: str, input_rows: pd.DataFrame, raw_cfg: dic
 
 
 def _planned_command(module_name: str, row: pd.Series, raw_cfg: dict[str, Any]) -> str:
+    input_type = str(row.get("raw_input_type") or row.get("input_type") or raw_cfg.get("input_type") or "")
+    input_path = row.get("input_path", "<input>")
+    fastq_1 = row.get("fastq_1", "<R1.fastq.gz>")
+    fastq_2 = row.get("fastq_2", "<R2.fastq.gz>")
+    sample_id = row.get("sample_id", "<sample_id>")
+    bcl_dir = row.get("bcl_dir", input_path)
+    reference = row.get("reference", raw_cfg.get("reference", "<reference>"))
+    gtf = row.get("gtf", raw_cfg.get("gtf", "<genes.gtf>"))
     if module_name == "rnaseq":
-        fastq_1 = row.get("fastq_1", "<R1.fastq.gz>")
-        fastq_2 = row.get("fastq_2", "<R2.fastq.gz>")
         return f"fastp -i {fastq_1} -I {fastq_2} --stdout | salmon quant --libType A --mates1 {fastq_1} --mates2 {fastq_2}"
+    if module_name == "scrna":
+        if input_type == "bcl":
+            return f"licensed adapter: bcl-convert or bcl2fastq demux {bcl_dir} to FASTQ under jobs/<job_id>/raw_links, then run nf-core/scrnaseq or STARsolo on Slurm"
+        if input_type in {"fastq", "smartseq2_fastq"}:
+            return f"Slurm adapter: nf-core/scrnaseq --input samplesheet.csv --genome {reference}; open fallback STARsolo/alevin-fry with {fastq_1} {fastq_2}"
+        if input_type in {"bd_rhapsody_matrix", "parse_matrix", "dropseq_matrix", "seqwell_matrix", "smartseq2_matrix"}:
+            return f"standardize non-10x matrix {input_path} to h5ad, then run scanpy/Seurat downstream"
+        return f"read {input_type or '10x/h5ad'} input {input_path} and write standardized h5ad/RDS"
+    if module_name == "scatac":
+        if input_type == "fastq":
+            return f"Slurm adapter: user Cell Ranger ATAC path if configured, otherwise bwa/samtools/bedtools/MACS3 to fragments and peak matrix for {sample_id}"
+        return "read fragments/peak matrix or Cell Ranger ATAC output, compute QC handoff, then run Signac/SnapATAC2 backend"
+    if module_name == "multiome":
+        if input_type in {"fastq", "arc_output"}:
+            return f"licensed adapter: Cell Ranger ARC output/FASTQ if configured; otherwise standardize RNA matrix + ATAC fragments to h5mu for {sample_id}"
+        return "read multiome H5/h5mu/fragments, check RNA-ATAC barcode overlap, then export h5mu/h5ad handoff"
+    if module_name == "vdj":
+        if input_type == "fastq":
+            return "Slurm adapter: nf-core/airrflow or MiXCR on FASTQ; Cell Ranger VDJ only when user provides licensed path"
+        return "read 10x contig_annotations/clonotypes or AIRR table, then summarize clonotypes, V/J usage, sharing, and clone-state join keys"
+    if module_name == "spatial":
+        if input_type in {"xenium_dir", "cosmx_dir", "merscope_dir", "visium_hd_dir", "spatialdata_zarr", "sopa_project"}:
+            return f"spatialdata/SOPA adapter: ingest {input_type} from {input_path}, export spatialdata/zarr plus h5ad summary"
+        if input_type in {"merfish_matrix", "slideseq_matrix", "stereoseq_matrix"}:
+            return f"matrix adapter: standardize {input_type} to AnnData/spatialdata with coordinate table"
+        return "read Visium/Space Ranger output or spatial h5ad, then run squidpy/Seurat spatial QC"
+    if module_name == "perturb_seq":
+        return "read expression object plus guide_counts/guide_assignments, call guide assignment, compare perturbation groups, and score signatures/pathways"
+    if module_name == "hto_demux":
+        return "read hashtag/antibody capture count matrix, run HTO demultiplex, flag doublet/negative cells, and write sample composition table"
+    if module_name == "genotype_demux":
+        if input_type == "bam_vcf_barcode":
+            return "Slurm adapter: cellsnp-lite on BAM+VCF+barcodes, then vireo; souporcell/demuxlet/popscle are optional project-level adapters"
+        return "read cellsnp/vireo/souporcell/demuxlet/popscle result table and standardize demultiplex assignments"
+    if module_name == "scdna":
+        if input_type in {"missionbio_tapestri", "missionbio_mosaic"}:
+            return "optional platform adapter: parse MissionBio/Tapestri export with user-provided format notes, then standardize variant/CNV tables"
+        return "run or import BAM/FASTQ/variant/CNV QC with samtools/bcftools/cnvkit-compatible summaries"
+    if module_name == "mtdna":
+        if input_type in {"mgatk_output", "mitotrace_output", "mitoclone2_output"}:
+            return "optional mtDNA specialty adapter: import mgatk/MitoTrace/mitoClone2 outputs and standardize heteroplasmy/depth/clone tables"
+        return "run or import mtDNA BAM/variant QC; cellsnp-lite/vireo may be used when genotype-demux inputs are available"
+    if module_name == "scepi":
+        return "read fragments/matrix or specialty sc-epigenome output; raw scBS/scNMT/CUT&Tag/CUT&RUN FASTQ remains adapter-only"
     if module_name == "methylation":
         return "import beta matrix directly; IDAT processing uses optional methylation parser/minfi-compatible backend when configured"
     if module_name == "proteomics":
@@ -299,6 +488,9 @@ def _planned_command(module_name: str, row: pd.Series, raw_cfg: dict[str, Any]) 
 
 
 def _tool_available(tool: str, config: dict[str, Any], output_dir: Path) -> bool:
+    configured = _configured_tool_path(tool, config)
+    if configured and configured.exists():
+        return True
     root = _server_root_from_output(config, output_dir)
     candidates = [
         root / ".conda" / "envs" / "ultimate-core" / "bin" / tool,
@@ -315,6 +507,24 @@ def _tool_available(tool: str, config: dict[str, Any], output_dir: Path) -> bool
         root / ".conda" / "envs" / "ultimate-vdj" / "bin" / tool,
     ]
     return any(path.exists() for path in candidates) or shutil.which(tool) is not None
+
+
+def _configured_tool_path(tool: str, config: dict[str, Any]) -> Path | None:
+    resources = config.get("resources") or {}
+    licensed = resources.get("licensed_tools") if isinstance(resources.get("licensed_tools"), dict) else {}
+    aliases = {
+        "cellranger": ("cellranger", "cellranger_vdj"),
+        "cellranger-atac": ("cellranger_atac",),
+        "cellranger-arc": ("cellranger_arc",),
+        "spaceranger": ("spaceranger", "space_ranger"),
+        "bcl-convert": ("bcl_convert",),
+        "bcl2fastq": ("bcl2fastq",),
+    }
+    for key in aliases.get(tool, (tool.replace("-", "_"), tool)):
+        value = licensed.get(key) if isinstance(licensed, dict) else None
+        if value:
+            return Path(str(value))
+    return None
 
 
 def _server_root_from_output(config: dict[str, Any], output_dir: Path) -> Path:

@@ -1,0 +1,3 @@
+sample_id	condition	batch	platform	input_path	variant_table	cnv_table
+CTRL_1	control	B1	missionbio_tapestri	raw/scdna_tapestri/CTRL_1	raw/scdna_tapestri/CTRL_1/variants.tsv	raw/scdna_tapestri/CTRL_1/cnv.tsv
+TRT_1	treated	B2	missionbio_tapestri	raw/scdna_tapestri/TRT_1	raw/scdna_tapestri/TRT_1/variants.tsv	raw/scdna_tapestri/TRT_1/cnv.tsv

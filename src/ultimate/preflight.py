@@ -14,7 +14,7 @@ import pandas as pd
 from ultimate.config import enabled_modules, load_analysis_request, load_samples, output_dir
 from ultimate.bulk import BULK_MODULES, bulk_requirement_checks
 from ultimate.constants import MODULE_SPECS
-from ultimate.raw_qc import RAW_CONTRACTS
+from ultimate.raw_qc import PATH_COLUMNS, RAW_CONTRACTS
 
 
 def run_preflight(config: dict[str, Any], *, write: bool = True) -> dict[str, Any]:
@@ -128,10 +128,9 @@ def _raw_preflight(module_cfg: dict[str, Any], samples: pd.DataFrame, module_nam
 def _missing_raw_input_paths(frame: pd.DataFrame) -> list[str]:
     if frame.empty:
         return []
-    path_columns = ("input_path", "fastq_1", "fastq_2", "fragments", "peak_matrix", "matrix_path", "idat_dir", "visium_dir", "clinical_table", "signature_matrix")
     missing: list[str] = []
     for _, row in frame.iterrows():
-        for column in path_columns:
+        for column in PATH_COLUMNS:
             value = str(row.get(column, "") or "")
             if value and not Path(value).exists():
                 missing.append(f"{column}:{value}")
@@ -141,10 +140,9 @@ def _missing_raw_input_paths(frame: pd.DataFrame) -> list[str]:
 def _existing_raw_input_count(frame: pd.DataFrame) -> int:
     if frame.empty:
         return 0
-    path_columns = ("input_path", "fastq_1", "fastq_2", "fragments", "peak_matrix", "matrix_path", "idat_dir", "visium_dir", "clinical_table", "signature_matrix")
     count = 0
     for _, row in frame.iterrows():
-        for column in path_columns:
+        for column in PATH_COLUMNS:
             value = str(row.get(column, "") or "")
             if value and Path(value).exists():
                 count += 1
@@ -223,9 +221,13 @@ def _licensed_tool_checks(config: dict[str, Any]) -> dict[str, Any]:
     licensed = resources.get("licensed_tools") if isinstance(resources.get("licensed_tools"), dict) else {}
     checks = {}
     for name, command in {
+        "bcl_convert": "bcl-convert",
+        "bcl2fastq": "bcl2fastq",
         "cellranger": "cellranger",
+        "cellranger_vdj": "cellranger",
         "cellranger_atac": "cellranger-atac",
         "cellranger_arc": "cellranger-arc",
+        "spaceranger": "spaceranger",
     }.items():
         configured = licensed.get(name) if isinstance(licensed, dict) else None
         checks[name] = {
@@ -248,8 +250,27 @@ def _command_checks(commands: tuple[str, ...], config: dict[str, Any]) -> dict[s
     roots = _env_bin_roots(config)
     checks = {}
     for command in commands:
-        checks[command] = bool(shutil.which(command)) or any((root / command).exists() for root in roots)
+        configured = _configured_tool_path(command, config)
+        checks[command] = bool(configured and configured.exists()) or bool(shutil.which(command)) or any((root / command).exists() for root in roots)
     return checks
+
+
+def _configured_tool_path(command: str, config: dict[str, Any]) -> Path | None:
+    resources = config.get("resources") or {}
+    licensed = resources.get("licensed_tools") if isinstance(resources.get("licensed_tools"), dict) else {}
+    aliases = {
+        "bcl-convert": ("bcl_convert",),
+        "bcl2fastq": ("bcl2fastq",),
+        "cellranger": ("cellranger", "cellranger_vdj"),
+        "cellranger-atac": ("cellranger_atac",),
+        "cellranger-arc": ("cellranger_arc",),
+        "spaceranger": ("spaceranger", "space_ranger"),
+    }
+    for key in aliases.get(command, (command.replace("-", "_"), command)):
+        value = licensed.get(key) if isinstance(licensed, dict) else None
+        if value:
+            return Path(str(value))
+    return None
 
 
 def _r_package_checks(packages: tuple[str, ...], config: dict[str, Any] | None = None, module_name: str | None = None) -> dict[str, str]:
@@ -304,6 +325,7 @@ def _env_bin_roots(config: dict[str, Any]) -> list[Path]:
         "ultimate-spatial",
         "ultimate-spatial-py",
         "ultimate-spatial-r",
+        "ultimate-browser",
     ]
     return [root / ".conda" / "envs" / env / "bin" for env in envs]
 
@@ -321,6 +343,9 @@ def _candidate_env_names(module_name: str | None) -> list[str]:
         "multiome": ["ultimate-scatac-multiome", "ultimate-scatac-r"],
         "vdj": ["ultimate-vdj", "ultimate-vdj-r"],
         "spatial": ["ultimate-spatial", "ultimate-spatial-r"],
+        "perturb_seq": ["ultimate-scrna", "ultimate-scrna-r"],
+        "hto_demux": ["ultimate-scrna", "ultimate-scrna-r"],
+        "genotype_demux": ["ultimate-genome-mtdna"],
         "functional_state": ["ultimate-scrna", "ultimate-publicdb"],
         "tumor_sc": ["ultimate-scrna", "ultimate-publicdb"],
         "clinical_assoc": ["ultimate-publicdb"],

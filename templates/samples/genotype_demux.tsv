@@ -1,0 +1,2 @@
+sample_id	condition	batch	input_path	bam	vcf	barcode_file	demux_result
+POOL_1	mixed	B1	raw/genotype/pool_1	raw/genotype/pool_1/possorted_genome_bam.bam	raw/genotype/pool_1/donors.vcf.gz	raw/genotype/pool_1/barcodes.tsv	processed/genotype/pool_1/vireo_assignments.tsv

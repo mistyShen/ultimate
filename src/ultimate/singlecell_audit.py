@@ -101,7 +101,7 @@ CAPABILITIES: tuple[Capability, ...] = (
             "/share/home/nshen/miniconda3/envs/scfusion_final",
         ),
         python_packages=("pandas", "matplotlib"),
-        commands=("samtools", "bcftools"),
+        commands=("samtools", "bcftools", "cellsnp-lite", "vireo"),
         data_checks=("mtdna_0518",),
     ),
     Capability(
@@ -120,7 +120,7 @@ CAPABILITIES: tuple[Capability, ...] = (
     ),
     Capability(
         "cite_seq",
-        "单细胞蛋白组 / CITE-seq / REAP-seq",
+        "CITE-seq / ADT 标签分析",
         "ultimate-scrna",
         alternate_env_paths=(
             "{root}/.conda/envs/ultimate-scrna-r",
@@ -143,6 +143,33 @@ CAPABILITIES: tuple[Capability, ...] = (
         r_packages=("SpatialExperiment", "TENxVisiumData", "Seurat"),
         data_checks=("public_spatial",),
         licensed_tools=("spaceranger",),
+    ),
+    Capability(
+        "perturb_seq",
+        "Perturb-seq / CRISPR 筛选",
+        "ultimate-scrna",
+        alternate_env_paths=("{root}/.conda/envs/ultimate-scrna-r",),
+        python_packages=("scanpy", "decoupler"),
+        r_packages=("Seurat", "limma", "clusterProfiler"),
+        data_checks=("nsclc_h5ad",),
+    ),
+    Capability(
+        "hto_demux",
+        "HTO / Cell Hashing 拆样",
+        "ultimate-scrna",
+        alternate_env_paths=("{root}/.conda/envs/ultimate-scrna-r",),
+        python_packages=("scanpy",),
+        r_packages=("Seurat", "DropletUtils"),
+        data_checks=("public_cite_seq",),
+    ),
+    Capability(
+        "genotype_demux",
+        "Genotype demultiplex 拆样",
+        "ultimate-genome-mtdna",
+        alternate_env_paths=("{root}/.conda/envs/ultimate-core",),
+        python_packages=("pandas",),
+        commands=("cellsnp-lite", "vireo", "souporcell_pipeline.py", "demuxlet", "popscle"),
+        data_checks=("dna_bam_0518",),
     ),
     Capability(
         "functional_state",

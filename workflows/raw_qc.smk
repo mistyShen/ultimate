@@ -44,7 +44,7 @@ rule scrna_raw_qc:
     output:
         object=str(OUTDIR / "raw_qc" / "scrna" / "objects" / "scrna_object.h5ad")
     params:
-        tools="10x H5/MTX reader, STARsolo/alevin-fry fallback, scanpy/Seurat"
+        tools="10x H5/MTX/h5ad reader, non-10x matrix standardization, BCL/FASTQ adapter, STARsolo/alevin-fry fallback, scanpy/Seurat"
     shell:
         "mkdir -p $(dirname {output.object}) && printf 'placeholder h5ad handoff\\n' > {output.object}"
 
@@ -55,7 +55,7 @@ rule atac_multiome_raw_qc:
     wildcard_constraints:
         module="scatac|multiome"
     params:
-        tools="MACS3, bedtools, samtools, Signac, snapatac2, muon"
+        tools="Cell Ranger ATAC/ARC output adapter, MACS3, bedtools, samtools, Signac, snapatac2, muon"
     shell:
         "mkdir -p $(dirname {output.object}) && printf 'placeholder ATAC/Multiome handoff\\n' > {output.object}"
 
@@ -73,6 +73,6 @@ rule tabular_raw_qc:
     output:
         matrix=str(OUTDIR / "raw_qc" / "{module}" / "objects" / "{module}_standard_matrix.tsv")
     wildcard_constraints:
-        module="proteomics|publicdb|wgcna|single_gene|vdj|scdna|mtdna|scepi|cite_seq|spatial|functional_state|tumor_sc|clinical_assoc|method_tools"
+        module="proteomics|publicdb|wgcna|single_gene|vdj|scdna|mtdna|scepi|cite_seq|spatial|perturb_seq|hto_demux|genotype_demux|functional_state|tumor_sc|clinical_assoc|method_tools"
     shell:
         "mkdir -p $(dirname {output.matrix}) && printf 'feature_id\\tS1\\nFEATURE_DEMO\\t1\\n' > {output.matrix}"

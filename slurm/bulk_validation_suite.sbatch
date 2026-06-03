@@ -17,6 +17,7 @@ mkdir -p "$PROJECT_ROOT/logs" "$PROJECT_ROOT/validations"
 source "$CONDA_SH"
 conda activate "$CORE_ENV"
 cd "$PROJECT_ROOT"
+export ULTIMATE_ALLOW_OVERWRITE=1
 
 ultimate init-project --type all --output-dir "$RUN_ROOT/project" --demo-data
 ultimate preflight --config "$RUN_ROOT/project/config/project.yaml"

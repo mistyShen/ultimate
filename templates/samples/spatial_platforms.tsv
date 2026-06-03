@@ -1,0 +1,4 @@
+sample_id	condition	batch	platform	input_path	spatialdata_zarr	image_path	coordinate_table
+VISIUM_CTRL	control	B1	visium	raw/spatial/visium_CTRL	raw/spatial/visium_CTRL.zarr	raw/spatial/visium_CTRL/spatial/tissue_hires_image.png	raw/spatial/visium_CTRL/spatial/tissue_positions.csv
+XENIUM_TRT	treated	B2	xenium	raw/spatial/xenium_TRT	raw/spatial/xenium_TRT.zarr	raw/spatial/xenium_TRT/morphology.ome.tif	raw/spatial/xenium_TRT/cells.csv.gz
+COSMX_TRT	treated	B2	cosmx	raw/spatial/cosmx_TRT	raw/spatial/cosmx_TRT.zarr	raw/spatial/cosmx_TRT/image.ome.tif	raw/spatial/cosmx_TRT/cell_metadata.csv

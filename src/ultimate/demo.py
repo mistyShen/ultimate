@@ -208,6 +208,9 @@ def _features_for(module_name: str) -> list[str]:
         "publicdb": "PUBGENE",
         "wgcna": "WGCNA",
         "single_gene": "GENE",
+        "perturb_seq": "GUIDE_TARGET",
+        "hto_demux": "HTO",
+        "genotype_demux": "SNP",
     }.get(module_name, "FEATURE")
     features = [f"{prefix}_{idx:03d}" for idx in range(1, 41)]
     if module_name == "single_gene":

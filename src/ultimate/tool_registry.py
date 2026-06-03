@@ -110,6 +110,11 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("nf-core/atacseq", "https://github.com/nf-core/atacseq", "atac", "adapter_only", "upstream_adapter", env="ultimate-workflow", command="nextflow", size_class="external", reason_cn="bulk ATAC 参考，不作为完整 scATAC 主线。"),
     _tool("nf-core/spatialvi", "https://github.com/nf-core/spatialvi", "spatial", "adapter_only", "upstream_adapter", env="ultimate-workflow", command="nextflow", size_class="external", reason_cn="Visium 上游/Space Ranger 输出外部 adapter。"),
     _tool("nf-core/sopa", "https://github.com/nf-core/sopa", "spatial", "adapter_only", "upstream_adapter", env="ultimate-workflow", command="nextflow", size_class="external", reason_cn="Xenium/CosMX/MERSCOPE/Visium HD 外部 adapter。"),
+    _tool("bcl-convert", "https://support.illumina.com/sequencing/sequencing_software/bcl-convert.html", "upstream_demux", "licensed_path_only", "licensed", command="bcl-convert", install_method="user_provided_path", size_class="external", reason_cn="Illumina BCL demux，只检测用户提供路径。"),
+    _tool("bcl2fastq", "https://support.illumina.com/sequencing/sequencing_software/bcl2fastq-conversion-software.html", "upstream_demux", "licensed_path_only", "licensed", command="bcl2fastq", install_method="user_provided_path", size_class="external", reason_cn="旧版 Illumina BCL demux，只检测用户提供路径。"),
+    _tool("Parse Biosciences pipeline", "https://support.parsebiosciences.com/", "scrna_non10x", "adapter_only", "upstream_adapter", install_method="external_vendor_pipeline", size_class="external", reason_cn="Parse Evercode 原始数据建议先按厂商流程生成矩阵，再由 ultimate 下游接管。"),
+    _tool("BD Rhapsody pipeline", "https://www.bd.com/en-us/products-and-solutions/products/product-families/bd-rhapsody-single-cell-analysis-system", "scrna_non10x", "adapter_only", "upstream_adapter", install_method="external_vendor_pipeline", size_class="external", reason_cn="BD Rhapsody 原始数据建议先按厂商流程生成矩阵，再由 ultimate 下游接管。"),
+    _tool("Drop-seq tools", "https://github.com/broadinstitute/Drop-seq", "scrna_non10x", "keep_optional", "upstream_adapter", install_method="optional_deferred: Java toolkit", size_class="medium", reason_cn="Drop-seq 上游候选；接单主线优先矩阵/h5ad 入口。"),
     _tool("bollito", "https://github.com/cnio-bu/bollito", "scrna", "reference_only", "registry", install_method="reference", size_class="none", reason_cn="参考 Snakemake 模块拆分，不整体引入。"),
     _tool("scrnaseq_processing_seurat", "https://github.com/epigen/scrnaseq_processing_seurat", "scrna", "reference_only", "registry", install_method="reference", size_class="none", reason_cn="参考 Seurat 多样本流程，不整体引入。"),
     _tool("snakemake-single-cell-rna-seq", "https://github.com/snakemake-workflows/single-cell-rna-seq", "scrna", "reference_only", "registry", install_method="reference", size_class="none", reason_cn="参考官方 Snakemake rule 组织。"),
@@ -196,9 +201,11 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("pycisTopic", "https://github.com/aertslab/pycisTopic", "scatac", "keep_optional", "specialized_heavy", env="ultimate-scatac-py", python_import="pycisTopic", install_method="optional_deferred: would remove SnapATAC2/MACS3", size_class="large", reason_cn="topic/motif 调控分析候选；dry-run 会移除 SnapATAC2/MACS3 并降级 AnnData/Scanpy，按项目隔离安装。"),
     _tool("pycistarget", "https://github.com/aertslab/pycistarget", "scatac", "keep_optional", "specialized_heavy", env="ultimate-scatac-py", python_import="pycistarget", install_method="optional_deferred: would remove SnapATAC2/MACS3", size_class="large", reason_cn="motif target enrichment 候选；dry-run 会破坏 scATAC Python 主环境，按项目隔离安装。"),
     _tool("chromVAR", "https://github.com/GreenleafLab/chromVAR", "scatac", "keep_default", "specialized_light", env="ultimate-scatac-r", r_package="chromVAR", size_class="medium", reason_cn="TF motif deviation 标准工具。"),
-    _tool("Cell Ranger ATAC", "https://www.10xgenomics.com/support/software/cell-ranger-atac", "scatac_upstream", "licensed_path_only", "licensed", command="cellranger-atac", install_method="user_provided_path", size_class="external", reason_cn="10x 授权/注册软件，只检测路径。"),
+    _tool("Cell Ranger", "https://www.10xgenomics.com/support/software/cell-ranger", "scrna_upstream", "licensed_path_only", "licensed", command="cellranger", install_method="user_provided_path", size_class="external", reason_cn="10x scRNA/VDJ 原厂上游，只检测路径。"),
+    _tool("Cell Ranger ATAC", "https://www.10xgenomics.com/support/software/cell-ranger-atac", "scatac_upstream", "licensed_path_only", "licensed", command="cellranger-atac", install_method="user_provided_path", size_class="external", reason_cn="10x scATAC 原厂上游，只检测路径。"),
     _tool("Cell Ranger ARC", "https://www.10xgenomics.com/support/software/cell-ranger-arc", "multiome_upstream", "licensed_path_only", "licensed", command="cellranger-arc", install_method="user_provided_path", size_class="external", reason_cn="10x Multiome 上游，只检测路径。"),
     _tool("dsb", "https://github.com/niaid/dsb", "cite_seq", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="dsb", size_class="small", reason_cn="ADT 背景校正。"),
+    _tool("MAGeCK", "https://github.com/liulab-dfci/MAGeCK", "perturb_seq", "keep_optional", "specialized_light", env="ultimate-scrna", command="mageck", install_method="optional_deferred: project-level CRISPR screen tool", size_class="medium", reason_cn="CRISPR screen 统计候选；Perturb-seq v1 默认先做 guide assignment 和分组差异。"),
     # VDJ / immune repertoire.
     _tool("scirpy", "https://github.com/scverse/scirpy", "vdj", "keep_default", "specialized_light", env="ultimate-vdj", python_import="scirpy", size_class="medium", reason_cn="AnnData/MuData 免疫组库主线。"),
     _tool("dandelion", "https://github.com/tuonglab/dandelion", "vdj", "keep_optional", "specialized_light", env="ultimate-vdj", python_import="dandelion", size_class="large", reason_cn="BCR/TCR contig 注释和轨迹候选。"),
@@ -209,6 +216,7 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("Cell Ranger VDJ", "https://www.10xgenomics.com/support/software/cell-ranger", "vdj_upstream", "licensed_path_only", "licensed", command="cellranger", install_method="user_provided_path", size_class="external", reason_cn="10x VDJ 上游，只检测路径。"),
     # Spatial.
     _tool("squidpy", "https://github.com/scverse/squidpy", "spatial", "keep_default", "specialized_light", env="ultimate-spatial-py", python_import="squidpy", size_class="large", reason_cn="Scanpy/AnnData 空间分析主线。"),
+    _tool("Space Ranger", "https://www.10xgenomics.com/support/software/space-ranger", "spatial_upstream", "licensed_path_only", "licensed", command="spaceranger", install_method="user_provided_path", size_class="external", reason_cn="10x Visium/Visium HD 原厂上游，只检测路径。"),
     _tool("spatialdata", "https://github.com/scverse/spatialdata", "spatial", "keep_default", "specialized_light", env="ultimate-spatial-py", python_import="spatialdata", size_class="large", reason_cn="空间多组学数据结构。"),
     _tool("spatialdata-io", "https://github.com/scverse/spatialdata-io", "spatial", "keep_default", "specialized_light", env="ultimate-spatial-py", python_import="spatialdata_io", size_class="medium", reason_cn="空间平台数据读取。"),
     _tool("Giotto", "https://github.com/giottosuite/Giotto", "spatial", "keep_optional", "specialized_heavy", env="ultimate-spatial-r", r_package="Giotto", install_method="optional_deferred: no conda package", size_class="large", reason_cn="R 空间生态候选；未发现稳定 conda 包，按项目隔离安装。"),
@@ -515,7 +523,10 @@ def _audit_row(tool: ToolSpec, checks: dict[str, dict[str, bool]]) -> dict[str, 
     elif tool.decision == "licensed_path_only":
         status = "licensed_path_available" if installed else "licensed_path_missing"
     elif tool.decision == "adapter_only":
-        status = "adapter_ready" if installed else "adapter_pending"
+        if installed or tool.install_method in {"external_vendor_pipeline", "web_reference"} or tool.size_class == "external":
+            status = "adapter_ready"
+        else:
+            status = "adapter_pending"
     elif installed:
         status = "installed"
     elif tool.decision == "keep_optional" and tool.install_method.startswith("optional_deferred"):

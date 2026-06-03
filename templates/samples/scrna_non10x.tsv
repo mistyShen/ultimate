@@ -1,0 +1,4 @@
+sample_id	condition	batch	platform	input_path	matrix_path	barcode_file	feature_matrix
+BD_CTRL	control	B1	bd_rhapsody	raw/scrna_bd/CTRL_1	raw/scrna_bd/CTRL_1/expression.tsv	raw/scrna_bd/CTRL_1/barcodes.tsv	raw/scrna_bd/CTRL_1/features.tsv
+PARSE_TRT	treated	B2	parse_evercode	raw/scrna_parse/TRT_1	raw/scrna_parse/TRT_1/expression.tsv	raw/scrna_parse/TRT_1/barcodes.tsv	raw/scrna_parse/TRT_1/features.tsv
+DROPSEQ_CTRL	control	B1	dropseq	raw/scrna_dropseq/CTRL_1	raw/scrna_dropseq/CTRL_1/expression.tsv	raw/scrna_dropseq/CTRL_1/barcodes.tsv	raw/scrna_dropseq/CTRL_1/features.tsv
