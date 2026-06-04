@@ -49,6 +49,7 @@ VALIDATION_HINTS = {
     "perturb_seq": ("slurm_perturb_seq_demo", "Perturb-seq guide assignment and perturbation demo validation"),
     "hto_demux": ("slurm_hto_demux_demo", "HTO/Cell Hashing demultiplex demo validation"),
     "genotype_demux": ("slurm_genotype_demux_demo", "Genotype demultiplex demo validation"),
+    "tumor_sc": ("slurm_tumor_sc_maynard_raw_counts", "NSCLC tumor single-cell raw-count specialty validation"),
     "method_tools": ("slurm_method_tools_nsclc", "NSCLC scRNA method-tools baseline validation"),
 }
 
@@ -59,15 +60,6 @@ DERIVED_VALIDATION_HINTS = {
         "required_artifacts": (
             "results/tables/signature_scores_by_cell_type.tsv",
             "results/figures/signature_score_heatmap.png",
-        ),
-    },
-    "tumor_sc": {
-        "validation_dir": "slurm_scrna_nsclc_lambrechts",
-        "validation_label": "NSCLC tumor single-cell CNV/signature validation",
-        "required_artifacts": (
-            "results/tables/tumor_cnv_proxy.tsv",
-            "results/figures/tumor_cnv_proxy_by_chromosome.png",
-            "results/tables/cell_type_proportions.tsv",
         ),
     },
     "scepi": {
@@ -179,6 +171,14 @@ VALIDATION_RUN_REQUIREMENTS = {
         "label_cn": "NSCLC 方法学工具 Slurm 验证",
         "run_dir": "validations/slurm_method_tools_nsclc",
         "min_tables": 3,
+        "min_figures": 3,
+        "min_objects": 1,
+        "min_reports": 2,
+    },
+    "slurm_tumor_sc": {
+        "label_cn": "NSCLC 肿瘤单细胞 raw-count 专项 Slurm 验证",
+        "run_dir": "validations/slurm_tumor_sc_maynard_raw_counts",
+        "min_tables": 8,
         "min_figures": 3,
         "min_objects": 1,
         "min_reports": 2,
@@ -659,6 +659,7 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
                     "slurm_scdna",
                     "slurm_mtdna",
                     "slurm_method_tools",
+                    "slurm_tumor_sc",
                     "slurm_perturb_seq",
                     "slurm_hto_demux",
                     "slurm_genotype_demux",

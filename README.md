@@ -202,6 +202,7 @@ hpc-sbatch /shared/shen/2026/ultimate/slurm/setup_singlecell_envs.sbatch genome_
 hpc-sbatch /shared/shen/2026/ultimate/slurm/tool_trial_batch.sbatch scrna_core
 hpc-sbatch /shared/shen/2026/ultimate/slurm/download_public_singlecell_data.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/gapfill_specialty_validation.sbatch
+hpc-sbatch /shared/shen/2026/ultimate/slurm/tumor_sc_validation.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/setup_bulk_envs.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/prepare_bulk_public_data.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/bulk_validation_suite.sbatch
