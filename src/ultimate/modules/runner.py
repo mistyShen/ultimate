@@ -187,8 +187,13 @@ def _run_validated_run_backend(
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     artifacts["tables"]["validated_run_summary"] = str(summary_path)
     try:
+        current_module_cfg = (config.get("modules") or {}).get(module_name) or {}
+        requested_level = str(source_manifest.get("analysis_level") or "validated_backend")
+        if requested_level == "production_backend" and current_module_cfg.get("analysis_level") != "production_backend":
+            requested_level = "validated_backend"
+            skip_reasons.append("source_production_backend_downgraded:current_run_not_production_approved")
         level = classify_analysis_level(
-            requested_level=str(source_manifest.get("analysis_level") or "validated_backend"),
+            requested_level=requested_level,
             input_path=run_dir,
             is_demo=bool(source_manifest.get("is_demo", False)),
             is_stub=bool(source_manifest.get("is_stub", False)),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -25,14 +26,25 @@ def test_prepare_job_creates_shared_layout_and_command_plan(tmp_path: Path) -> N
     assert (job_dir / "config" / "project.yaml").exists()
     assert (job_dir / "config" / "production_approval.json").exists()
     assert (job_dir / "config" / "submit.sh").exists()
+    assert manifest["approval_gate"]["required"] is True
+    assert manifest["approval_gate"]["status"] == "template_pending_approval"
+    assert manifest["slurm_adapter"]["status"] == "missing"
+    assert manifest["slurm_adapter"]["path"] == str(root / "slurm" / "ultimate_run.sbatch")
     command_plan = (job_dir / "config" / "command_plan.md").read_text(encoding="utf-8")
     assert "hpc-sbatch" in command_plan
     assert "ultimate_run.sbatch" in command_plan
+    assert "未检测到 Slurm wrapper" in command_plan
     assert "production_approval.json" in command_plan
+    assert "approved" in command_plan
+    assert "true" in command_plan
     assert str(job_dir / "logs") in command_plan
     submit_script = (job_dir / "config" / "submit.sh").read_text(encoding="utf-8")
     assert "slurm_submit_" in submit_script
     assert 'LOG_DIR="$JOB_DIR/logs"' in submit_script
+    assert "production approval JSON is not approved=true" in submit_script
+    assert "production approval input_path mismatch" in submit_script
+    assert "production approval output_dir mismatch" in submit_script
+    assert "hpc-sbatch" in submit_script
 
     config = load_config(job_dir / "config" / "project.yaml").raw
     assert config["project"]["job_id"] == "ORDER_001"
@@ -46,6 +58,52 @@ def test_prepare_job_creates_shared_layout_and_command_plan(tmp_path: Path) -> N
     assert approval["approved"] is False
     assert approval["input_path"] == str((job_dir / "config" / "project.yaml").resolve())
     assert approval["output_dir"] == str((job_dir / "runs" / "ORDER_001").resolve())
+
+
+def test_prepare_job_submit_script_blocks_mismatched_approval_before_sbatch(tmp_path: Path) -> None:
+    source = init_project("rnaseq", tmp_path / "source_submit_guard", demo_data=True)
+    root = tmp_path / "shared" / "shen" / "2026" / "ultimate"
+    manifest = prepare_job(config_path=Path(source["config_path"]), job_id="SUBMIT001", root=root)
+    job_dir = Path(manifest["job_dir"])
+    approval_path = job_dir / "config" / "production_approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval.update(
+        {
+            "approved": True,
+            "approved_by": "pytest",
+            "approved_at": "2026-06-04T00:00:00Z",
+            "input_path": str((job_dir / "config" / "wrong_project.yaml").resolve()),
+            "reason": "pytest should fail before hpc-sbatch",
+        }
+    )
+    approval_path.write_text(json.dumps(approval, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    result = subprocess.run(
+        [str(job_dir / "config" / "submit.sh")],
+        cwd=job_dir,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "production approval input_path mismatch" in (result.stderr + result.stdout)
+    submit_logs = list((job_dir / "logs").glob("slurm_submit_*.log"))
+    assert not submit_logs
+
+
+def test_prepare_job_interactive_submit_does_not_require_approval(tmp_path: Path) -> None:
+    source = init_project("rnaseq", tmp_path / "source_interactive", demo_data=True)
+    root = tmp_path / "shared" / "shen" / "2026" / "ultimate"
+
+    manifest = prepare_job(config_path=Path(source["config_path"]), job_id="INTERACTIVE001", root=root, run_mode="interactive")
+
+    job_dir = root / "jobs" / "INTERACTIVE001"
+    assert manifest["approval_gate"]["required"] is False
+    submit_script = (job_dir / "config" / "submit.sh").read_text(encoding="utf-8")
+    assert "production approval JSON is not approved=true" not in submit_script
+    config = load_config(job_dir / "config" / "project.yaml").raw
+    assert "production_approval" not in config["project"]
 
 
 def test_cli_prepare_job(tmp_path: Path) -> None:

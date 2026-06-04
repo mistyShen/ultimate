@@ -623,6 +623,7 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
     ready_capabilities = [row for row in capability_rows if str(row["production_status"]) == "ready_basic"]
     partial_capabilities = [row for row in capability_rows if str(row["production_status"]) != "ready_basic"]
     prepared_delivery_ready, prepared_delivery_note = _prepared_job_delivery_status(root)
+    validation_index_ready, validation_index_note = _validation_index_status(root)
 
     rows = [
         _requirement_row(
@@ -694,6 +695,12 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
             "生产审计要求的验证 run_manifest 显式记录 analysis_level 和交付边界",
             all(str(row.get("guard_status")) == "ready" for row in validation_rows),
             ",".join(f"{row['validation_key']}={row.get('guard_status', 'missing')}" for row in validation_rows),
+        ),
+        _requirement_row(
+            "validation_index_summary_ready",
+            "validation-index 汇总所有验证 run 并输出交付边界统计",
+            validation_index_ready,
+            validation_index_note,
         ),
         _requirement_row(
             "raw_qc_contracts_all_modules",
@@ -830,6 +837,63 @@ def _prepared_job_delivery_status(root: Path) -> tuple[bool, str]:
     return ready_count > 0 and ready_count == len(job_dirs), note
 
 
+def _validation_index_status(root: Path) -> tuple[bool, str]:
+    manifest_path = root / "reports" / "validation_index" / "run_manifest.json"
+    manifest = _read_json(manifest_path)
+    if not manifest:
+        return False, f"manifest_missing={manifest_path}"
+    summary = manifest.get("summary") if isinstance(manifest.get("summary"), dict) else {}
+    required_summary_keys = (
+        "total_runs",
+        "ready_runs",
+        "guard_ready",
+        "ready_validation_evidence",
+        "ready_for_validation_evidence",
+        "ready_for_delivery",
+        "analysis_level_counts",
+        "guard_status_counts",
+        "order_readiness_status_counts",
+        "module_counts",
+    )
+    missing_keys = [key for key in required_summary_keys if key not in summary]
+    paths = {
+        "validation_index_tsv": Path(str(manifest.get("validation_index_tsv") or "")),
+        "validation_index_json": Path(str(manifest.get("validation_index_json") or "")),
+        "validation_summary_tsv": Path(str(manifest.get("validation_summary_tsv") or "")),
+        "report_html": Path(str(manifest.get("report_html") or "")),
+        "report_md": Path(str(manifest.get("report_md") or "")),
+    }
+    missing_paths = [name for name, path in paths.items() if not _nonempty(path)]
+    header = _tsv_header(paths["validation_index_tsv"])
+    required_columns = {
+        "module",
+        "evidence_status",
+        "order_readiness_status",
+        "production_approval_status",
+        "artifact_status",
+        "missing_or_gap",
+        "next_action",
+    }
+    missing_columns = sorted(required_columns - set(header))
+    n_runs = int(manifest.get("n_runs") or 0)
+    ready_evidence = int(summary.get("ready_validation_evidence") or 0)
+    gaps = []
+    if n_runs <= 0:
+        gaps.append("n_runs=0")
+    if ready_evidence <= 0:
+        gaps.append("ready_validation_evidence=0")
+    if missing_keys:
+        gaps.append(f"missing_summary_keys={','.join(missing_keys)}")
+    if missing_paths:
+        gaps.append(f"missing_paths={','.join(missing_paths)}")
+    if missing_columns:
+        gaps.append(f"missing_columns={','.join(missing_columns)}")
+    note = f"manifest={manifest_path} n_runs={n_runs} ready_validation_evidence={ready_evidence}"
+    if gaps:
+        note += " " + ";".join(gaps)
+    return not gaps, note
+
+
 def _prepared_job_dirs(root: Path) -> list[Path]:
     jobs_root = root / "jobs"
     if not jobs_root.exists():
@@ -869,6 +933,7 @@ def _prepared_job_delivery_gaps(job_dir: Path) -> list[str]:
         missing.append("run_manifest")
     elif run_manifest_data != mirrored_run_manifest_data:
         missing.append("latest_run_manifest_stale")
+    missing.extend(_delivery_index_gaps(required["latest_delivery_index"], run_manifest_data))
     latest_ready_run = _latest_ready_run_dir(job_dir)
     if latest_ready_run and latest_run_dir.resolve() != latest_ready_run.resolve():
         missing.append("latest_run_dir_not_latest_ready")
@@ -881,6 +946,81 @@ def _prepared_job_delivery_gaps(job_dir: Path) -> list[str]:
     if "large result objects remain referenced from the run directory" not in str(pointer.get("policy") or ""):
         missing.append("policy")
     return missing
+
+
+def _delivery_index_gaps(index_path: Path, run_manifest: dict[str, Any]) -> list[str]:
+    if not _nonempty(index_path):
+        return ["delivery_index_missing"]
+    try:
+        frame = pd.read_csv(index_path, sep="\t")
+    except Exception as exc:
+        return [f"delivery_index_unreadable:{type(exc).__name__}"]
+    required_columns = {"category", "path", "size_bytes"}
+    missing_columns = sorted(required_columns - set(frame.columns))
+    if missing_columns:
+        return [f"delivery_index_missing_columns:{','.join(missing_columns)}"]
+    gaps: list[str] = []
+    categories = set(frame["category"].fillna("").astype(str))
+    required_categories = {"figure", "table", "object", "report", "reproducible_code"}
+    missing_categories = sorted(required_categories - categories)
+    if missing_categories:
+        gaps.append(f"delivery_index_missing_categories:{','.join(missing_categories)}")
+    indexed_paths = {str(Path(value).expanduser().resolve()) for value in frame["path"].fillna("").astype(str) if value}
+    missing_index_paths = []
+    for value in frame["path"].fillna("").astype(str):
+        if not value:
+            continue
+        path = Path(value).expanduser()
+        if not _nonempty(path):
+            missing_index_paths.append(str(path))
+    if missing_index_paths:
+        gaps.append(f"delivery_index_paths_missing:{','.join(missing_index_paths[:3])}")
+
+    declared_paths = _declared_module_artifact_paths(run_manifest)
+    missing_declared = [str(path) for path in declared_paths if not _nonempty(path)]
+    if missing_declared:
+        gaps.append(f"declared_artifacts_missing:{','.join(missing_declared[:3])}")
+    unindexed_declared = [
+        str(path)
+        for path in declared_paths
+        if _nonempty(path) and str(path.expanduser().resolve()) not in indexed_paths
+    ]
+    if unindexed_declared:
+        gaps.append(f"declared_artifacts_not_indexed:{','.join(unindexed_declared[:3])}")
+    return gaps
+
+
+def _declared_module_artifact_paths(run_manifest: dict[str, Any]) -> list[Path]:
+    paths: list[Path] = []
+    modules = run_manifest.get("modules")
+    if not isinstance(modules, list):
+        return paths
+    for module in modules:
+        if not isinstance(module, dict):
+            continue
+        artifacts = module.get("artifacts")
+        if not isinstance(artifacts, dict):
+            continue
+        paths.extend(_artifact_paths_from_value(artifacts))
+    return paths
+
+
+def _artifact_paths_from_value(value: Any) -> list[Path]:
+    if isinstance(value, dict):
+        paths: list[Path] = []
+        for nested in value.values():
+            paths.extend(_artifact_paths_from_value(nested))
+        return paths
+    if isinstance(value, list):
+        paths: list[Path] = []
+        for nested in value:
+            paths.extend(_artifact_paths_from_value(nested))
+        return paths
+    if isinstance(value, str) and value:
+        path = Path(value)
+        if path.suffix or path.exists():
+            return [path]
+    return []
 
 
 def _nonempty(path: Path) -> bool:
@@ -941,6 +1081,17 @@ def _same_json_file(left: Path, right: Path) -> bool:
     if not _nonempty(left) or not _nonempty(right):
         return False
     return _read_json(left) == _read_json(right)
+
+
+def _tsv_header(path: Path) -> list[str]:
+    if not _nonempty(path):
+        return []
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            first_line = handle.readline().rstrip("\n")
+    except OSError:
+        return []
+    return first_line.split("\t") if first_line else []
 
 
 def _final_summary(rows: list[dict[str, Any]]) -> dict[str, int]:

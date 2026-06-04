@@ -5,7 +5,9 @@ from pathlib import Path
 
 from ultimate.demo import init_project
 from ultimate.config import dump_yaml, load_config
+from ultimate.constants import MODULE_ORDER
 from ultimate.job import prepare_job
+from ultimate.modules.common import MODULE_MVP_FIGURES, MODULE_MVP_OBJECTS, MODULE_MVP_TABLES
 from ultimate.pipeline import run_pipeline_from_config
 from ultimate.preflight import run_preflight
 
@@ -27,12 +29,14 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
     assert (run_dir / "reproducible_code" / "software_versions.tsv").exists()
     assert (run_dir / "reproducible_code" / "input_checksums.tsv").exists()
     assert (run_dir / "delivery_index.tsv").exists()
+    assert (run_dir / "logs" / "run_context.json").exists()
     assert run_manifest["analysis_request"]["analysis_presets"] == ["standard"]
     assert "reproducible_package" in run_manifest
+    assert run_manifest["logs"]["run_context"] == str(run_dir / "logs" / "run_context.json")
     assert "复现信息" in (run_dir / "reports" / "methods.md").read_text(encoding="utf-8")
     assert "analysis_level" in (run_dir / "reports" / "methods.md").read_text(encoding="utf-8")
     assert "analysis_level" in (run_dir / "reports" / "report.html").read_text(encoding="utf-8")
-    assert len(run_manifest["modules"]) >= 13
+    assert len(run_manifest["modules"]) == len(MODULE_ORDER)
     for module in run_manifest["modules"]:
         assert module["analysis_level"] in {"demo_result", "smoke_backend", "validated_backend", "production_backend"}
         assert module["delivery_allowed"] is False
@@ -43,6 +47,46 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
         assert Path(module["artifacts"]["figures"]["pca"]).exists()
         assert Path(module["artifacts"]["tables"]["differential_results"]).exists()
         assert Path(module["artifacts"]["objects"]["rds"]).exists()
+        module_log = run_dir / "logs" / f"{module['module']}.log"
+        assert module_log.exists()
+        assert "module_completed" in module_log.read_text(encoding="utf-8")
+
+
+def test_all_modules_emit_declared_mvp_artifacts(tmp_path: Path) -> None:
+    manifest = init_project("all", tmp_path / "declared_mvp", demo_data=True)
+    run_manifest = run_pipeline_from_config(Path(manifest["config_path"]))
+    run_dir = Path(run_manifest["output_dir"])
+
+    assert len(run_manifest["modules"]) == len(MODULE_ORDER)
+    modules = {module["module"]: module for module in run_manifest["modules"]}
+    assert set(modules) == set(MODULE_ORDER)
+    for module_name in MODULE_ORDER:
+        module = modules[module_name]
+        tables_dir = run_dir / "results" / "tables" / module_name
+        figures_dir = run_dir / "results" / "figures" / module_name
+        objects_dir = run_dir / "objects" / module_name
+        raw_qc_manifest = run_dir / "raw_qc" / module_name / "raw_qc_manifest.json"
+        assert raw_qc_manifest.exists() and raw_qc_manifest.stat().st_size > 0, module_name
+        assert (run_dir / "results" / "tables" / module_name).is_dir(), module_name
+        assert (run_dir / "results" / "figures" / module_name).is_dir(), module_name
+        assert (run_dir / "objects" / module_name).is_dir(), module_name
+        assert (run_dir / "logs" / f"{module_name}.log").exists(), module_name
+        assert module["limitations"], module_name
+        assert module["handoff"]["handoff_status"] == "template_ready", module_name
+        assert module["delivery_allowed"] is False, module_name
+        assert module["validation_evidence_allowed"] is False, module_name
+        for filename in MODULE_MVP_TABLES[module_name]:
+            path = tables_dir / filename
+            assert path.exists() and path.stat().st_size > 0, f"{module_name}:{filename}"
+        for filename in MODULE_MVP_FIGURES[module_name]:
+            path = figures_dir / filename
+            assert path.exists() and path.stat().st_size > 0, f"{module_name}:{filename}"
+        object_name = MODULE_MVP_OBJECTS.get(module_name, f"{module_name}_mvp_object.rds")
+        object_path = objects_dir / object_name
+        assert object_path.exists() and object_path.stat().st_size > 0, f"{module_name}:{object_name}"
+        assert (tables_dir / "module_qc_manifest.json").exists()
+        assert (tables_dir / "module_manifest.json").exists()
+        assert (run_dir / "reports" / module_name / f"{module_name}_methods.md").exists()
 
 
 def test_bulk_modules_use_python_formal_backend(tmp_path: Path) -> None:
@@ -113,6 +157,50 @@ def test_validated_run_dir_is_imported_by_unified_run(tmp_path: Path) -> None:
     assert module["artifacts"]["objects"]["h5ad"] == str(objects / "validated.h5ad")
 
 
+def test_validated_run_source_production_level_is_not_delivery_without_current_approval(tmp_path: Path) -> None:
+    manifest = init_project("scrna", tmp_path / "validated_source_production", demo_data=True)
+    config_path = Path(manifest["config_path"])
+    loaded = load_config(config_path)
+
+    source_run = tmp_path / "validated_source_production" / "validated" / "production_source"
+    figures = source_run / "results" / "figures"
+    tables = source_run / "results" / "tables"
+    objects = source_run / "objects"
+    for directory in (figures, tables, objects):
+        directory.mkdir(parents=True, exist_ok=True)
+    (figures / "umap.png").write_text("figure", encoding="utf-8")
+    (tables / "markers.tsv").write_text("gene\tscore\nA\t1\n", encoding="utf-8")
+    (objects / "production.h5ad").write_text("object", encoding="utf-8")
+    (source_run / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "analysis_level": "production_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": True,
+                "validation_evidence_allowed": True,
+                "figures": [str(figures / "umap.png")],
+                "tables": [str(tables / "markers.tsv")],
+                "objects": {"h5ad": str(objects / "production.h5ad")},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = loaded.raw
+    config["modules"]["scrna"]["validated_run_dir"] = "../validated/production_source"
+    dump_yaml(config, config_path)
+
+    run_manifest = run_pipeline_from_config(config_path)
+    module = run_manifest["modules"][0]
+
+    assert module["analysis_level"] == "validated_backend"
+    assert module["delivery_allowed"] is False
+    assert module["validation_evidence_allowed"] is True
+    assert "source_production_backend_downgraded:current_run_not_production_approved" in module["skip_reasons"]
+
+
 def test_preflight_blocks_existing_run_manifest_in_production_mode(tmp_path: Path) -> None:
     manifest = init_project("rnaseq", tmp_path / "overwrite_guard", demo_data=True)
     run_manifest = run_pipeline_from_config(Path(manifest["config_path"]))
@@ -154,6 +242,23 @@ def test_preflight_accepts_production_job_output_under_shared_jobs(tmp_path: Pat
     assert preflight["job_layout"]["status"] == "ready"
     assert preflight["status"] != "blocked:output_not_under_job_dir"
     assert preflight["status"] != "blocked:missing_job_id"
+
+
+def test_preflight_blocks_missing_analysis_request_in_production_job(tmp_path: Path) -> None:
+    source = init_project("rnaseq", tmp_path / "missing_request_source", demo_data=True)
+    root = tmp_path / "shared" / "shen" / "2026" / "ultimate"
+    job_manifest = prepare_job(config_path=Path(source["config_path"]), job_id="REQ001", root=root, run_mode="production")
+    job_config = Path(job_manifest["config_path"])
+    loaded = load_config(job_config)
+    config = loaded.raw
+    config.pop("analysis_request", None)
+    config.get("project", {}).pop("analysis_request", None)
+    config["modules"]["rnaseq"].setdefault("raw", {})["enabled"] = False
+
+    preflight = run_preflight(config, write=False)
+
+    assert preflight["status"] == "blocked:missing_analysis_request"
+    assert preflight["analysis_request_status"]["status"] == "missing"
 
 
 def test_unified_run_requires_production_approval_for_production_backend(tmp_path: Path) -> None:
@@ -232,3 +337,59 @@ def test_prepared_job_run_mirrors_latest_deliverables_to_job_root(tmp_path: Path
     assert mirrored_run_manifest == final_run_manifest
     assert mirrored_repro == run_repro
     assert "job_level_delivery" in run_repro
+
+
+def test_prepared_production_job_with_approval_writes_delivery_mirrors(tmp_path: Path) -> None:
+    source = init_project("rnaseq", tmp_path / "source_order", demo_data=True)
+    root = tmp_path / "shared" / "shen" / "2026" / "ultimate"
+    job_manifest = prepare_job(config_path=Path(source["config_path"]), job_id="PROD001", root=root, run_mode="production")
+    job_dir = Path(job_manifest["job_dir"])
+    job_config = job_dir / "config" / "project.yaml"
+
+    loaded = load_config(job_config)
+    config = loaded.raw
+    config["analysis_request"] = {"analysis_presets": ["standard"], "notes": "pytest production order"}
+    config["modules"]["rnaseq"]["analysis_level"] = "production_backend"
+    config["modules"]["rnaseq"].setdefault("raw", {})["enabled"] = False
+    dump_yaml(config, job_config)
+
+    approval_path = job_dir / "config" / "production_approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval.update(
+        {
+            "approved": True,
+            "approved_by": "pytest",
+            "approved_at": "2026-06-04T00:00:00Z",
+            "reason": "pytest prepared production job approval",
+        }
+    )
+    approval_path.write_text(json.dumps(approval, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    run_manifest = run_pipeline_from_config(job_config, production_approval_path=approval_path)
+
+    run_dir = job_dir / "runs" / "PROD001"
+    assert Path(run_manifest["output_dir"]) == run_dir
+    assert run_manifest["production_approval"]["approved"] is True
+    rnaseq = {module["module"]: module for module in run_manifest["modules"]}["rnaseq"]
+    assert rnaseq["analysis_level"] == "production_backend"
+    assert rnaseq["delivery_allowed"] is True
+    assert rnaseq["validation_evidence_allowed"] is True
+
+    assert (job_dir / "deliverables" / "latest_report.html").exists()
+    assert (job_dir / "deliverables" / "latest_methods.md").exists()
+    assert (job_dir / "deliverables" / "latest_run_manifest.json").exists()
+    assert (job_dir / "deliverables" / "latest_delivery_index.tsv").exists()
+    assert (job_dir / "deliverables" / "latest_run_pointer.json").exists()
+    assert (job_dir / "reproducible_code" / "rerun.sh").exists()
+    assert (job_dir / "reproducible_code" / "latest_repro_manifest.json").exists()
+
+    mirrored_run_manifest = json.loads((job_dir / "deliverables" / "latest_run_manifest.json").read_text(encoding="utf-8"))
+    final_run_manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert mirrored_run_manifest == final_run_manifest
+    assert mirrored_run_manifest["production_approval"]["approved"] is True
+    assert {module["module"]: module for module in mirrored_run_manifest["modules"]}["rnaseq"]["delivery_allowed"] is True
+
+    delivery_index = (job_dir / "deliverables" / "latest_delivery_index.tsv").read_text(encoding="utf-8")
+    assert "category\tpath\tsize_bytes" in delivery_index
+    for category in ("figure", "table", "object", "report", "reproducible_code"):
+        assert f"\n{category}\t" in delivery_index

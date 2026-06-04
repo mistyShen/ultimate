@@ -24,6 +24,7 @@ def run_preflight(config: dict[str, Any], *, write: bool = True) -> dict[str, An
     output_check = _output_safety_check(config, out_dir)
     job_layout = _job_layout_check(config, out_dir, strict=strict)
     analysis_request = load_analysis_request(config)
+    analysis_request_status = _analysis_request_status(analysis_request)
     module_reports = []
     for module_name in enabled_modules(config):
         module_reports.append(_check_module(config, samples, module_name, strict=strict))
@@ -32,6 +33,7 @@ def run_preflight(config: dict[str, Any], *, write: bool = True) -> dict[str, An
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project": config.get("project", {}),
         "analysis_request": analysis_request,
+        "analysis_request_status": analysis_request_status,
         "output_dir": str(out_dir),
         "organism": config.get("project", {}).get("organism"),
         "strict_mode": strict,
@@ -46,7 +48,7 @@ def run_preflight(config: dict[str, Any], *, write: bool = True) -> dict[str, An
         "modules": module_reports,
         "tool_checks": _global_tool_checks(),
     }
-    manifest["status"] = _overall_status(module_reports, samples, output_check, job_layout, strict=strict)
+    manifest["status"] = _overall_status(module_reports, samples, output_check, job_layout, analysis_request_status, strict=strict)
     if write:
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / "preflight_manifest.json"
@@ -361,11 +363,39 @@ def _candidate_env_names(module_name: str | None) -> list[str]:
     return specific + common
 
 
-def _overall_status(module_reports: list[dict[str, Any]], samples: pd.DataFrame, output_check: dict[str, Any], job_layout: dict[str, Any], *, strict: bool = False) -> str:
+def _analysis_request_status(analysis_request: dict[str, Any]) -> dict[str, Any]:
+    if not analysis_request:
+        return {
+            "status": "missing",
+            "reason": "analysis_request_not_configured",
+        }
+    if analysis_request.get("status") == "missing":
+        return {
+            "status": "missing",
+            "reason": "analysis_request_path_missing",
+            "source": str(analysis_request.get("source", "")),
+        }
+    return {
+        "status": "ready",
+        "reason": "analysis_request_loaded",
+    }
+
+
+def _overall_status(
+    module_reports: list[dict[str, Any]],
+    samples: pd.DataFrame,
+    output_check: dict[str, Any],
+    job_layout: dict[str, Any],
+    analysis_request_status: dict[str, Any],
+    *,
+    strict: bool = False,
+) -> str:
     if output_check["status"].startswith("blocked"):
         return output_check["status"]
     if strict and str(job_layout.get("status", "")).startswith("blocked"):
         return str(job_layout["status"])
+    if strict and analysis_request_status.get("status") != "ready":
+        return "blocked:missing_analysis_request"
     if samples.empty:
         return "blocked:no_samples"
     if any(report["checks"]["required_sample_columns"] for report in module_reports):

@@ -39,6 +39,16 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
     style_review = generate_style_review(out_dir / "reports" / "style_review")
     module_manifests = []
     for module_name in enabled_modules(config):
+        _write_module_log(
+            out_dir,
+            module_name,
+            {
+                "event": "module_started",
+                "module": module_name,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "config": config.get("_config_path", "<config.yaml>"),
+            },
+        )
         raw_manifest = run_raw_qc(
             module_name=module_name,
             config=config,
@@ -54,6 +64,21 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
         )
         module_manifest["raw_qc"] = raw_manifest
         module_manifests.append(module_manifest)
+        _write_module_log(
+            out_dir,
+            module_name,
+            {
+                "event": "module_completed",
+                "module": module_name,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "status": module_manifest.get("status"),
+                "analysis_level": module_manifest.get("analysis_level"),
+                "delivery_allowed": module_manifest.get("delivery_allowed"),
+                "validation_evidence_allowed": module_manifest.get("validation_evidence_allowed"),
+                "manifest_path": module_manifest.get("manifest_path"),
+                "skip_reasons": module_manifest.get("skip_reasons", []),
+            },
+        )
     run_summary = _summarize_run(module_manifests)
     manifest = {
         "run_id": _run_id(config),
@@ -84,9 +109,14 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
             "reports": str(out_dir / "reports"),
             "logs": str(out_dir / "logs"),
         },
+        "logs": {
+            "directory": str(out_dir / "logs"),
+            "module_logs": {module.get("module"): str(out_dir / "logs" / f"{module.get('module')}.log") for module in module_manifests},
+        },
     }
     manifest_path = out_dir / "run_manifest.json"
     manifest["run_manifest_path"] = str(manifest_path)
+    manifest["logs"]["run_context"] = str(_write_run_context_log(out_dir, manifest))
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     report_manifest = build_report(out_dir)
     manifest["report"] = report_manifest
@@ -99,6 +129,38 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     export_reproducible_package(out_dir)
     return manifest
+
+
+def _write_module_log(run_dir: Path, module_name: str, payload: dict[str, Any]) -> Path:
+    path = run_dir / "logs" / f"{module_name}.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+    return path
+
+
+def _write_run_context_log(run_dir: Path, manifest: dict[str, Any]) -> Path:
+    path = run_dir / "logs" / "run_context.json"
+    payload = {
+        "run_id": manifest.get("run_id"),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": manifest.get("status"),
+        "analysis_level_summary": [
+            {
+                "module": module.get("module"),
+                "status": module.get("status"),
+                "analysis_level": module.get("analysis_level"),
+                "delivery_allowed": module.get("delivery_allowed"),
+                "validation_evidence_allowed": module.get("validation_evidence_allowed"),
+            }
+            for module in manifest.get("modules", [])
+            if isinstance(module, dict)
+        ],
+        "slurm": manifest.get("slurm", {}),
+        "reproducible_command": manifest.get("reproducible_command"),
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
 
 
 def _load_pipeline_approval(

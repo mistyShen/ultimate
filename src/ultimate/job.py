@@ -57,6 +57,7 @@ def prepare_job(
     approval_template = _write_approval_template(approval_path, config_path=job_config, output_dir=job_dir / "runs" / clean_job_id)
     command_plan = _write_command_plan(job_dir / "config" / "command_plan.md", root=root, job_config=job_config, approval_path=approval_path, run_mode=run_mode)
     submit_script = _write_submit_script(job_dir / "config" / "submit.sh", root=root, job_config=job_config, approval_path=approval_path, run_mode=run_mode)
+    slurm_adapter = _slurm_adapter_status(root)
 
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -71,6 +72,12 @@ def prepare_job(
         "approval_template": str(approval_template),
         "command_plan": str(command_plan),
         "submit_script": str(submit_script),
+        "approval_gate": {
+            "required": run_mode == "production",
+            "status": "template_pending_approval" if run_mode == "production" else "not_required",
+            "approval_path": str(approval_template),
+        },
+        "slurm_adapter": slurm_adapter,
         "directories": {name: str(job_dir / name) for name in JOB_SUBDIRS},
         "safety": {
             "raw_data_policy": "read_only; do not copy or overwrite raw data; use raw_links for symlinks or manifests",
@@ -146,8 +153,23 @@ def _write_approval_template(path: Path, *, config_path: Path, output_dir: Path)
 def _write_command_plan(path: Path, *, root: Path, job_config: Path, approval_path: Path, run_mode: str) -> Path:
     approval_arg = f" {approval_path}" if run_mode == "production" else ""
     log_dir = job_config.parents[1] / "logs"
+    slurm_wrapper = root / "slurm" / "ultimate_run.sbatch"
+    slurm_note = (
+        f"Slurm wrapper 已检测到：`{slurm_wrapper}`。"
+        if slurm_wrapper.exists()
+        else f"警示：当前未检测到 Slurm wrapper `{slurm_wrapper}`；同步到服务器后必须存在该文件再提交。"
+    )
+    approval_note = (
+        f"Production 模式提交前必须把 `{approval_path}` 中的 `approved` 改为 `true`，否则 `submit.sh` 会阻断提交。"
+        if run_mode == "production"
+        else "Interactive 模式不需要 production approval JSON。"
+    )
     lines = [
         "# Ultimate job command plan",
+        "",
+        "## Approval gate",
+        "",
+        approval_note,
         "",
         "## Preflight",
         "",
@@ -157,8 +179,10 @@ def _write_command_plan(path: Path, *, root: Path, job_config: Path, approval_pa
         "",
         "## Slurm run",
         "",
+        slurm_note,
+        "",
         "```bash",
-        f"hpc-sbatch {root / 'slurm' / 'ultimate_run.sbatch'} {job_config}{approval_arg}",
+        f"hpc-sbatch {slurm_wrapper} {job_config}{approval_arg}",
         "```",
         "",
         f"运行日志会镜像到：`{log_dir}`。",
@@ -176,6 +200,31 @@ def _write_command_plan(path: Path, *, root: Path, job_config: Path, approval_pa
 
 def _write_submit_script(path: Path, *, root: Path, job_config: Path, approval_path: Path, run_mode: str) -> Path:
     approval_arg = f' "{approval_path}"' if run_mode == "production" else ""
+    approval_check = ""
+    if run_mode == "production":
+        approval_check = f'''
+python - "{approval_path}" "{job_config}" "{job_config.parents[1] / "runs" / job_config.parents[1].name}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+config_path = Path(sys.argv[2]).expanduser().resolve()
+output_dir = Path(sys.argv[3]).expanduser().resolve()
+payload = json.loads(path.read_text(encoding="utf-8"))
+if payload.get("approved") is not True:
+    raise SystemExit(f"production approval JSON is not approved=true: {{path}}")
+for field in ("approved_by", "approved_at", "project_id", "input_path", "output_dir", "reason"):
+    if payload.get(field) in (None, ""):
+        raise SystemExit(f"production approval JSON missing required field {{field}}: {{path}}")
+approved_input = Path(str(payload["input_path"])).expanduser().resolve()
+approved_output = Path(str(payload["output_dir"])).expanduser().resolve()
+if approved_input != config_path:
+    raise SystemExit(f"production approval input_path mismatch: expected {{config_path}}, got {{approved_input}}")
+if approved_output != output_dir:
+    raise SystemExit(f"production approval output_dir mismatch: expected {{output_dir}}, got {{approved_output}}")
+PY
+'''
     content = f"""#!/usr/bin/env bash
 set -euo pipefail
 
@@ -183,9 +232,21 @@ JOB_DIR="{job_config.parents[1]}"
 LOG_DIR="$JOB_DIR/logs"
 mkdir -p "$LOG_DIR"
 SUBMIT_LOG="$LOG_DIR/slurm_submit_$(date -u +%Y%m%dT%H%M%SZ).log"
+{approval_check}
 echo "hpc-sbatch {root / 'slurm' / 'ultimate_run.sbatch'} {job_config}{approval_arg}" | tee "$SUBMIT_LOG"
 hpc-sbatch "{root / 'slurm' / 'ultimate_run.sbatch'}" "{job_config}"{approval_arg} | tee -a "$SUBMIT_LOG"
 """
     path.write_text(content, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
     return path
+
+
+def _slurm_adapter_status(root: Path) -> dict[str, Any]:
+    wrapper = root / "slurm" / "ultimate_run.sbatch"
+    return {
+        "path": str(wrapper),
+        "exists": wrapper.exists(),
+        "is_file": wrapper.is_file(),
+        "status": "ready" if wrapper.is_file() else "missing",
+        "policy": "required before submitting formal jobs with hpc-sbatch",
+    }
