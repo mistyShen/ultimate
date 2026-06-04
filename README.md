@@ -232,7 +232,7 @@ ultimate audit-singlecell --root /shared/shen/2026/ultimate \
   --output-dir /shared/shen/2026/ultimate/audits/singlecell_latest
 ultimate validation-index --root /shared/shen/2026/ultimate \
   --output-dir /shared/shen/2026/ultimate/reports/validation_index
-ultimate audit-modules \
+ultimate audit-modules --root /shared/shen/2026/ultimate \
   --output-dir /shared/shen/2026/ultimate/audits/module_standardization_latest
 ROOT=/shared/shen/2026/ultimate
 $ROOT/.conda/envs/ultimate-core/bin/python $ROOT/01_tools/check_validation_manifests.py \
@@ -243,15 +243,18 @@ $ROOT/.conda/envs/ultimate-core/bin/python $ROOT/01_tools/check_validation_manif
 
 Interpretation policy:
 
-- `ready`: current environment, data contract, and smoke validation are usable.
+- `ready`: current dependency/data checks for that audit row pass. Use
+  `validation-index` and `audit-production` before treating a module as
+  validated evidence.
 - `module_standardization_matrix.tsv`: checks every module's shared shell
   (`contract/preflight/demo/validate/run/report/handoff/limitations/tests`),
   demo manifest guard fields, handoff template, limitations, and required
   output roots. This is a code/readiness audit only, not a scientific result.
 - `validation_guard_check.tsv`: checks validation `run_manifest.json` files for
   explicit `analysis_level`, demo/stub flags, delivery permission, evidence
-  permission, non-delivery reason, and Slurm metadata. Use `--normalize` only
-  after choosing a backup directory.
+  permission, and non-delivery reason. It records Slurm metadata when present,
+  but short command-line checks are not rejected solely for missing Slurm ids.
+  Use `--normalize` only after choosing a backup directory.
 - `partial:licensed_optional_missing`: open pipeline is usable; upstream vendor
   tools such as Cell Ranger, Cell Ranger ATAC/ARC, or Space Ranger require a
   user-provided licensed path.

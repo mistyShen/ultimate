@@ -27,6 +27,14 @@ export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 "$PYTHON" "$PROJECT_ROOT/01_tools/validate_genotype_demux_demo.py" \
   --output-dir "$PROJECT_ROOT/validations/slurm_genotype_demux_demo"
 
+GENOTYPE_PUBLIC_INPUT="${ULTIMATE_GENOTYPE_DEMUX_PUBLIC_INPUT:-$PROJECT_ROOT/public_data/genotype_demux/vireo/data/cellSNP_mat}"
+if [[ -s "$GENOTYPE_PUBLIC_INPUT/cellSNP.tag.AD.mtx" && -s "$GENOTYPE_PUBLIC_INPUT/cellSNP.tag.DP.mtx" ]]; then
+  "$PYTHON" "$PROJECT_ROOT/01_tools/validate_genotype_demux_demo.py" \
+    --input-dir "$GENOTYPE_PUBLIC_INPUT" \
+    --source-url "https://github.com/single-cell-genetics/vireo/tree/master/data/cellSNP_mat" \
+    --output-dir "$PROJECT_ROOT/validations/slurm_genotype_demux_vireo_public"
+fi
+
 "$PYTHON" -m ultimate.cli audit-production \
   --root "$PROJECT_ROOT" \
   --output-dir "$PROJECT_ROOT/audits/gapfill_specialty_post_validation"

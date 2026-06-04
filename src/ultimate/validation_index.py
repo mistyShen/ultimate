@@ -55,7 +55,7 @@ def build_validation_index(root: Path, output_dir: Path | None = None, validatio
     output_dir = (output_dir or root / "reports" / "validation_index").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    rows = [_row_from_manifest(path) for path in sorted(validations_dir.glob("*/run_manifest.json"))]
+    rows = [_row_from_manifest(path) for path in _iter_validation_manifests(root=root, validations_dir=validations_dir)]
     rows = [row for row in rows if row is not None]
 
     tsv_path = output_dir / "validation_index.tsv"
@@ -80,6 +80,13 @@ def build_validation_index(root: Path, output_dir: Path | None = None, validatio
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     _write_reports(md_path, html_path, rows, manifest)
     return manifest
+
+
+def _iter_validation_manifests(*, root: Path, validations_dir: Path) -> list[Path]:
+    paths = set(validations_dir.glob("*/run_manifest.json"))
+    paths.update((root / "validation_runs").glob("*/*/run_manifest.json"))
+    paths.update((root / "validations" / "bulk_demo_python" / "project" / "runs").glob("*/run_manifest.json"))
+    return sorted(path for path in paths if path.exists())
 
 
 def _row_from_manifest(path: Path) -> dict[str, str] | None:

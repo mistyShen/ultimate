@@ -55,3 +55,35 @@ def test_cli_validation_index(tmp_path: Path) -> None:
     assert "validation_index_tsv" in result.output
     text = (tmp_path / "index" / "validation_index.tsv").read_text(encoding="utf-8")
     assert "missing_guard_fields" in text
+
+
+def test_validation_index_includes_nested_validation_roots(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    for run in (
+        root / "validations" / "direct_run",
+        root / "validation_runs" / "scrna_mvp_validation" / "h5ad",
+        root / "validations" / "bulk_demo_python" / "project" / "runs" / "bulk_demo",
+    ):
+        run.mkdir(parents=True)
+        (run / "run_manifest.json").write_text(
+            json.dumps(
+                {
+                    "status": "ready",
+                    "analysis_level": "validated_backend",
+                    "is_demo": False,
+                    "is_stub": False,
+                    "delivery_allowed": False,
+                    "validation_evidence_allowed": True,
+                    "non_delivery_reason": "validation_evidence_only_not_customer_delivery",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    result = build_validation_index(root=root, output_dir=tmp_path / "index")
+
+    assert result["n_runs"] == 3
+    text = (tmp_path / "index" / "validation_index.tsv").read_text(encoding="utf-8")
+    assert "direct_run" in text
+    assert "h5ad" in text
+    assert "bulk_demo" in text

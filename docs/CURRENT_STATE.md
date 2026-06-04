@@ -14,9 +14,10 @@
 ## 已通过状态
 
 - 22 个模块标准外壳均为 `ready`。
-- production audit 当前为 `ready_basic=22`。
-- validation guard 当前无 non-ready 项。
-- final acceptance 当前通过 14 项。
+- 严格 guard 后 production audit 当前为 `ready_basic=19`，`partial:validation_manifest_not_ready=3`。
+- `perturb_seq`、`hto_demux`、`genotype_demux` 当前只有 synthetic/demo validation，按交付护栏不得作为 validated_backend 证据。
+- validation guard 当前无 non-ready 项；validation-index 当前汇总 31 个验证 run。
+- final acceptance 当前通过 13 项，1 项 partial，原因是 synthetic/demo validation 不再抬升为正式验证证据。
 - `tumor_sc` 已完成 NSCLC raw-count Slurm 专项验证，`analysis_level=validated_backend`，`delivery_allowed=false`。
 - `slurm_tumor_sc_maynard_raw_counts` 基于 Maynard raw h5ad 抽样 3000 细胞，输出 16 个表、4 张图、1 个 h5ad 对象，并纳入 validation index 和 production audit。
 - inferCNV、CopyKAT、Seurat 在 `ultimate-scrna-r` 中可用；Maynard 输入通过 raw integer count gate，CopyKAT/inferCNV 完整后端当前被人工放行 gate 阻断，阻断原因写入 `backend_attempts.tsv`。

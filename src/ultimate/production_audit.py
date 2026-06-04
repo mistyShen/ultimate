@@ -48,7 +48,7 @@ VALIDATION_HINTS = {
     "spatial": ("slurm_spatial_squidpy_visium", "Squidpy Visium public validation"),
     "perturb_seq": ("slurm_perturb_seq_demo", "Perturb-seq guide assignment and perturbation demo validation"),
     "hto_demux": ("slurm_hto_demux_demo", "HTO/Cell Hashing demultiplex demo validation"),
-    "genotype_demux": ("slurm_genotype_demux_demo", "Genotype demultiplex demo validation"),
+    "genotype_demux": ("slurm_genotype_demux_vireo_public", "Vireo/cellSNP public genotype demultiplex matrix validation"),
     "tumor_sc": ("slurm_tumor_sc_maynard_raw_counts", "NSCLC tumor single-cell raw-count specialty validation"),
     "method_tools": ("slurm_method_tools_nsclc", "NSCLC scRNA method-tools baseline validation"),
 }
@@ -200,8 +200,8 @@ VALIDATION_RUN_REQUIREMENTS = {
         "min_reports": 2,
     },
     "slurm_genotype_demux": {
-        "label_cn": "Genotype demultiplex 拆样 Slurm 验证",
-        "run_dir": "validations/slurm_genotype_demux_demo",
+        "label_cn": "Genotype demultiplex vireo/cellSNP 公开矩阵验证",
+        "run_dir": "validations/slurm_genotype_demux_vireo_public",
         "min_tables": 4,
         "min_figures": 3,
         "min_objects": 1,
@@ -343,7 +343,7 @@ def _validation_evidence(root: Path, module: str) -> dict[str, str]:
         validation_dir, validation_label = VALIDATION_HINTS[module]
         run_dir = root / "validations" / validation_dir
         manifest = run_dir / "run_manifest.json"
-        if _ready_manifest(manifest):
+        if _ready_validation_manifest(manifest):
             return {
                 "validation": "available",
                 "validation_label": validation_label,
@@ -363,7 +363,7 @@ def _validation_evidence(root: Path, module: str) -> dict[str, str]:
         manifest = run_dir / "run_manifest.json"
         artifacts = tuple(str(value) for value in hint["required_artifacts"])
         artifact_paths = [run_dir / artifact for artifact in artifacts]
-        if _ready_manifest(manifest) and all(path.exists() and path.stat().st_size > 0 for path in artifact_paths):
+        if _ready_validation_manifest(manifest) and all(path.exists() and path.stat().st_size > 0 for path in artifact_paths):
             return {
                 "validation": "available",
                 "validation_label": str(hint["validation_label"]),
@@ -388,6 +388,21 @@ def _ready_manifest(path: Path) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     return str(manifest.get("status", "")).lower() == "ready"
+
+
+def _ready_validation_manifest(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if str(manifest.get("status", "")).lower() != "ready":
+        return False
+    guard_status, _, _ = _manifest_guard_status(manifest)
+    if guard_status != "ready":
+        return False
+    return bool(manifest.get("validation_evidence_allowed") is True)
 
 
 def _backend_label(module: str, validation_status: str) -> str:
@@ -675,7 +690,7 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
         ),
         _requirement_row(
             "validation_manifest_guard_fields_ready",
-            "所有验证 run_manifest 显式记录 analysis_level 和交付边界",
+            "生产审计要求的验证 run_manifest 显式记录 analysis_level 和交付边界",
             all(str(row.get("guard_status")) == "ready" for row in validation_rows),
             ",".join(f"{row['validation_key']}={row.get('guard_status', 'missing')}" for row in validation_rows),
         ),

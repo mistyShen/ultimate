@@ -149,12 +149,18 @@ def audit_production_command(root: Path, output_dir: Path | None) -> None:
 
 @main.command("audit-modules")
 @click.option(
+    "--root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    default=None,
+    help="Project root to audit. Defaults to the installed ultimate package.",
+)
+@click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
     required=True,
     help="Where module standardization artifacts should be written.",
 )
-def audit_modules_command(output_dir: Path) -> None:
+def audit_modules_command(root: Path | None, output_dir: Path) -> None:
     from datetime import datetime, timezone
 
     import pandas as pd
@@ -162,7 +168,8 @@ def audit_modules_command(output_dir: Path) -> None:
     from ultimate.module_standardization import build_module_standardization_rows
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    rows = build_module_standardization_rows()
+    modules_root = root / "src" / "ultimate" / "modules" if root else None
+    rows = build_module_standardization_rows(modules_root=modules_root)
     matrix_path = output_dir / "module_standardization_matrix.tsv"
     pd.DataFrame(rows).to_csv(matrix_path, sep="\t", index=False)
     summary = {
@@ -171,6 +178,7 @@ def audit_modules_command(output_dir: Path) -> None:
     }
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "root": str(root.resolve()) if root else "",
         "output_dir": str(output_dir.resolve()),
         "module_count": len(rows),
         "summary": summary,
