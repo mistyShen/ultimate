@@ -5,6 +5,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from ultimate.cli import main
+from ultimate.modules.common import module_contract
 from ultimate.tool_registry import TOOL_REGISTRY, run_audit_tools, run_trial_tools
 
 
@@ -25,8 +26,44 @@ def test_tool_registry_covers_expected_packages() -> None:
         "inferCNV",
         "CopyKAT",
         "Quarto",
+        "WGCNA",
+        "GEOquery",
+        "TCGAbiolinks",
+        "lifelines",
+        "statsmodels",
+        "MACS3",
+        "bedtools",
+        "samtools",
+        "bcftools",
+        "pysam",
+        "pertpy",
+        "SCEPTRE",
+        "hashsolo",
+        "sopa",
     }:
         assert expected in names
+
+
+def test_high_value_tools_are_surfaced_by_module_contracts() -> None:
+    checks = {
+        "method_tools": {"cellxgene"},
+        "scrna": {"CellChat", "LIANA", "NicheNet", "pySCENIC"},
+        "tumor_sc": {"CellChat", "LIANA", "NicheNet", "inferCNV", "CopyKAT"},
+        "scatac": {"MACS3", "bedtools", "samtools"},
+        "multiome": {"MACS3", "bedtools", "samtools"},
+        "mtdna": {"samtools", "bcftools", "pysam"},
+        "scdna": {"samtools", "bcftools", "pysam"},
+        "perturb_seq": {"pertpy", "SCEPTRE"},
+        "hto_demux": {"hashsolo"},
+        "publicdb": {"GEOquery", "TCGAbiolinks"},
+        "wgcna": {"WGCNA"},
+        "clinical_assoc": {"lifelines", "statsmodels"},
+        "spatial": {"sopa"},
+    }
+    for module_name, expected in checks.items():
+        contract = module_contract(module_name)
+        surfaced = set(contract.primary_tools) | set(contract.handoff_tools)
+        assert expected <= surfaced, module_name
 
 
 def test_audit_tools_writes_registry_and_storage(tmp_path: Path) -> None:

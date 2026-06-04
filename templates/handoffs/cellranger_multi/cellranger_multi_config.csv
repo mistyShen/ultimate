@@ -1,0 +1,11 @@
+[gene-expression]
+reference,/shared/shen/2026/ultimate/references/10x/refdata-gex-GRCh38-2024-A
+create-bam,true
+
+[feature]
+reference,/shared/shen/2026/ultimate/jobs/<job_id>/config/feature_reference.csv
+
+[libraries]
+fastq_id,fastqs,feature_types
+S1_GEX,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/fastqs,Gene Expression
+S1_ADT,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/fastqs,Antibody Capture

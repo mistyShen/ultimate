@@ -1,0 +1,2 @@
+sample_id,fastqs,sample,transcriptome,expected_output_h5
+S1,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/fastqs,S1,/shared/shen/2026/ultimate/references/10x/refdata-gex-GRCh38-2024-A,/shared/shen/2026/ultimate/jobs/<job_id>/runs/cellranger_count/S1/outs/filtered_feature_bc_matrix.h5

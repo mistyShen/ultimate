@@ -10,6 +10,8 @@ if str(TOOLS_DIR) not in sys.path:
 
 from validation_manifest_utils import add_validation_guard_fields
 from check_validation_manifests import check_validation_manifests, normalize_validation_manifests, summarize_rows, write_tsv
+from ensure_validation_methods import ensure_validation_methods
+from ensure_validation_mvp_artifacts import ensure_validation_mvp_artifacts
 
 
 VALIDATION_SCRIPTS = (
@@ -136,3 +138,103 @@ def test_normalize_validation_manifests_backs_up_and_adds_guards(tmp_path: Path)
     text = manifest_path.read_text(encoding="utf-8")
     assert '"analysis_level": "validated_backend"' in text
     assert '"delivery_allowed": false' in text
+
+
+def test_ensure_validation_methods_creates_transparent_methods_file(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run = root / "validations" / "slurm_vdj_10x_pbmc"
+    run.mkdir(parents=True)
+    manifest = add_validation_guard_fields(
+        {
+            "status": "ready",
+            "module": "vdj",
+            "input_dir": "/shared/shen/2026/ultimate/public_data/vdj",
+            "tables": ["results/tables/clonotype_summary.tsv"],
+            "figures": ["results/figures/clone_size_distribution.png"],
+            "objects": {"h5ad": "objects/vdj_mvp.h5ad"},
+        },
+        validation_kind="public",
+    )
+    (run / "run_manifest.json").write_text(__import__("json").dumps(manifest), encoding="utf-8")
+
+    rows = ensure_validation_methods(root=root, validations_dir=root / "validations")
+
+    methods = run / "reports" / "methods.md"
+    assert rows[0]["action"] == "created"
+    assert methods.exists()
+    text = methods.read_text(encoding="utf-8")
+    assert "由 `ensure_validation_methods.py`" in text
+    assert "不新增分析结论" in text
+    assert "analysis_level：`validated_backend`" in text
+
+
+def test_ensure_validation_mvp_artifacts_creates_standard_vdj_aliases(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run = root / "validations" / "slurm_vdj_10x_pbmc"
+    (run / "results" / "tables").mkdir(parents=True)
+    (run / "results" / "figures").mkdir(parents=True)
+    (run / "objects").mkdir(parents=True)
+    (run / "results" / "tables" / "top_clonotypes.tsv").write_text("clonotype_id\tcell_count\nc1\t3\n", encoding="utf-8")
+    (run / "results" / "figures" / "top_clonotype_frequency.png").write_text("png", encoding="utf-8")
+    (run / "objects" / "vdj_validation_object.json").write_text("{}", encoding="utf-8")
+    manifest = add_validation_guard_fields(
+        {
+            "status": "ready",
+            "module": "vdj",
+            "tables": ["results/tables/top_clonotypes.tsv"],
+            "figures": ["results/figures/top_clonotype_frequency.png"],
+            "objects": {"json": "objects/vdj_validation_object.json"},
+        },
+        validation_kind="public",
+    )
+    (run / "run_manifest.json").write_text(__import__("json").dumps(manifest), encoding="utf-8")
+
+    rows = ensure_validation_mvp_artifacts(root=root, validations_dir=root / "validations")
+
+    actions = {(row["artifact_kind"], row["artifact_name"]): row["action"] for row in rows}
+    assert actions[("table", "clonotype_summary.tsv")] == "created"
+    assert (run / "results" / "tables" / "clonotype_summary.tsv").exists()
+    assert (run / "results" / "figures" / "clone_size_distribution.png").exists()
+    assert (run / "objects" / "vdj_mvp.h5ad").exists()
+    table_text = (run / "results" / "tables" / "clonotype_summary.tsv").read_text(encoding="utf-8")
+    assert "clonotype_id" in table_text
+    assert "antigen_specificity_status" in table_text
+    assert "analysis_level" in table_text
+    assert "input_artifact" in table_text
+    assert "derived_from_existing_validation_artifact" in table_text
+    updated = __import__("json").loads((run / "run_manifest.json").read_text(encoding="utf-8"))
+    assert "results/tables/clonotype_summary.tsv" in updated["tables"]
+    assert updated["objects"]["mvp_object"] == "objects/vdj_mvp.h5ad"
+    assert updated["mvp_artifact_standardization"]["status"] == "created_or_verified"
+
+
+def test_ensure_validation_mvp_artifacts_updates_existing_tables_missing_global_columns(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run = root / "validations" / "slurm_vdj_10x_pbmc"
+    (run / "results" / "tables").mkdir(parents=True)
+    (run / "results" / "figures").mkdir(parents=True)
+    (run / "objects").mkdir(parents=True)
+    (run / "results" / "tables" / "clonotype_summary.tsv").write_text(
+        "module\tclonotype_id\nvdj\tc1\n",
+        encoding="utf-8",
+    )
+    manifest = add_validation_guard_fields(
+        {
+            "status": "ready",
+            "module": "vdj",
+            "tables": ["results/tables/clonotype_summary.tsv"],
+            "figures": [],
+            "objects": {},
+        },
+        validation_kind="public",
+    )
+    (run / "run_manifest.json").write_text(__import__("json").dumps(manifest), encoding="utf-8")
+
+    rows = ensure_validation_mvp_artifacts(root=root, validations_dir=root / "validations")
+
+    actions = {(row["artifact_kind"], row["artifact_name"]): row["action"] for row in rows}
+    assert actions[("table", "clonotype_summary.tsv")] == "updated_schema"
+    header = (run / "results" / "tables" / "clonotype_summary.tsv").read_text(encoding="utf-8").splitlines()[0].split("\t")
+    assert "run_id" in header
+    assert "analysis_level" in header
+    assert "method_status" in header

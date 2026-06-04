@@ -1,0 +1,2 @@
+sample,fastq_1,fastq_2,image,slide,area
+S1,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S1_R1.fastq.gz,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S1_R2.fastq.gz,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/tissue_image.tif,<slide_id>,<area_id>

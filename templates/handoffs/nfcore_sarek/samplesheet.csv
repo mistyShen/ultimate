@@ -1,0 +1,3 @@
+patient,status,sample,lane,fastq_1,fastq_2
+P001,0,NORMAL,1,/shared/path/to/normal_R1.fastq.gz,/shared/path/to/normal_R2.fastq.gz
+P001,1,TUMOR,1,/shared/path/to/tumor_R1.fastq.gz,/shared/path/to/tumor_R2.fastq.gz

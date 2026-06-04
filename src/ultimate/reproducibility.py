@@ -63,8 +63,8 @@ def export_reproducible_package(run_dir: Path, *, checksum_max_bytes: int = DEFA
         analysis_request=analysis_request,
         samplesheet=samplesheet,
     )
-    delivery_index = _write_delivery_index(run_dir / "delivery_index.tsv", run_dir)
     _copy_report_deliverables(run_dir, deliverables_dir)
+    delivery_index = _write_delivery_index(run_dir / "delivery_index.tsv", run_dir)
 
     repro_manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -84,6 +84,10 @@ def export_reproducible_package(run_dir: Path, *, checksum_max_bytes: int = DEFA
     repro_manifest_path = package_dir / "repro_manifest.json"
     repro_manifest["manifest_path"] = str(repro_manifest_path)
     repro_manifest_path.write_text(json.dumps(repro_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    delivery_index = _write_delivery_index(run_dir / "delivery_index.tsv", run_dir)
+    repro_manifest["delivery_index"] = str(delivery_index)
+    repro_manifest_path.write_text(json.dumps(repro_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    _copy_if_exists(delivery_index, deliverables_dir / "delivery_index.tsv")
     job_level_delivery = _write_job_level_delivery(run_dir=run_dir, repro_manifest=repro_manifest, repro_manifest_path=repro_manifest_path)
     if job_level_delivery:
         repro_manifest["job_level_delivery"] = job_level_delivery
@@ -252,13 +256,28 @@ RUN_DIR="{run_dir}"
 CONFIG_PATH="{config_value}"
 PROJECT_ROOT="${{ULTIMATE_ROOT:-{code_root}}}"
 ENV_PREFIX="${{ULTIMATE_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-core}}"
-CONDA_SH="${{CONDA_SH:-/share/home/nshen/miniconda3/etc/profile.d/conda.sh}}"
+CONDA_SH="${{CONDA_SH:-}}"
 MODE="${{1:-report}}"
 
-if [ -f "$CONDA_SH" ]; then
+if [ -z "$CONDA_SH" ]; then
+  for candidate in \
+    "$PROJECT_ROOT/.conda/etc/profile.d/conda.sh" \
+    "$PROJECT_ROOT/miniconda3/etc/profile.d/conda.sh" \
+    "/shared/shen/2026/ultimate/.conda/etc/profile.d/conda.sh"
+  do
+    if [ -f "$candidate" ]; then
+      CONDA_SH="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -n "$CONDA_SH" ] && [ -f "$CONDA_SH" ]; then
   # shellcheck disable=SC1090
   source "$CONDA_SH"
   conda activate "$ENV_PREFIX"
+elif [ -x "$ENV_PREFIX/bin/python" ]; then
+  export PATH="$ENV_PREFIX/bin:$PATH"
 fi
 if [ -d "$PROJECT_ROOT/src" ]; then
   export PYTHONPATH="$PROJECT_ROOT/src${{PYTHONPATH:+:$PYTHONPATH}}"
@@ -268,7 +287,15 @@ if [ "$MODE" = "report" ]; then
   python -m ultimate.cli report --run-dir "$RUN_DIR"
   python -m ultimate.cli export-repro --run-dir "$RUN_DIR"
 elif [ "$MODE" = "full" ]; then
-  ULTIMATE_ALLOW_OVERWRITE=1 python -m ultimate.cli run --config "$CONFIG_PATH"
+  if [ -z "${{SLURM_JOB_ID:-}}" ]; then
+    echo "Full rerun must be submitted through Slurm; report-only rebuild is allowed locally." >&2
+    exit 3
+  fi
+  if [ "${{ULTIMATE_ALLOW_OVERWRITE:-}}" != "1" ]; then
+    echo "Full rerun requires ULTIMATE_ALLOW_OVERWRITE=1 inside the Slurm job." >&2
+    exit 4
+  fi
+  python -m ultimate.cli run --config "$CONFIG_PATH"
 else
   echo "Usage: $0 [report|full]" >&2
   exit 2
@@ -302,9 +329,9 @@ def _write_repro_readme(
         "## Rerun",
         "",
         f"- Rebuild report and reproducibility files: `{rerun_script} report`",
-        f"- Full rerun in the same output directory: `{rerun_script} full`",
+        f"- Full rerun in the same output directory: submit `{rerun_script} full` through Slurm with `ULTIMATE_ALLOW_OVERWRITE=1`.",
         "",
-        "Full rerun sets `ULTIMATE_ALLOW_OVERWRITE=1` because the original run directory already contains a manifest.",
+        "Full rerun is blocked outside Slurm to avoid heavy recomputation on a login node.",
     ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -323,9 +350,40 @@ def _write_delivery_index(path: Path, run_dir: Path) -> Path:
             continue
         for item in sorted(directory.rglob("*")):
             if item.is_file():
-                rows.append({"category": category, "path": str(item), "size_bytes": item.stat().st_size})
-    _write_tsv(path, rows, ("category", "path", "size_bytes"))
+                rows.append(_delivery_index_row(category, item, run_dir))
+    _write_tsv(path, rows, ("category", "path", "size_bytes", "module", "artifact_key", "artifact_scope"))
     return path
+
+
+def _delivery_index_row(category: str, item: Path, run_dir: Path) -> dict[str, Any]:
+    module = ""
+    artifact_key = item.stem
+    artifact_scope = "run"
+    indexed_category = category
+    try:
+        rel = item.relative_to(run_dir)
+    except ValueError:
+        rel = item
+    parts = rel.parts
+    if len(parts) >= 3 and parts[0] in {"results", "objects", "reports"}:
+        if parts[0] == "results" and len(parts) >= 4:
+            module = parts[2]
+            artifact_scope = "module"
+        elif parts[0] == "objects":
+            module = parts[1]
+            artifact_scope = "module"
+        elif parts[0] == "reports" and len(parts) >= 3:
+            module = parts[1]
+            artifact_scope = "module"
+            indexed_category = "module_report"
+    return {
+        "category": indexed_category,
+        "path": str(item),
+        "size_bytes": item.stat().st_size,
+        "module": module,
+        "artifact_key": artifact_key,
+        "artifact_scope": artifact_scope,
+    }
 
 
 def _copy_report_deliverables(run_dir: Path, deliverables_dir: Path) -> None:
@@ -357,13 +415,14 @@ def _write_job_level_delivery(run_dir: Path, repro_manifest: dict[str, Any], rep
         "input_checksums": _copy_if_exists(run_dir / "reproducible_code" / "input_checksums.tsv", package_dir / "input_checksums.tsv"),
         "repro_manifest": _copy_if_exists(repro_manifest_path, package_dir / "latest_repro_manifest.json"),
     }
+    copied["module_reports"] = _copy_module_report_mirrors(run_dir, deliverables_dir)
     pointer = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "job_dir": str(job_dir),
         "latest_run_dir": str(run_dir),
         "run_manifest": str(run_dir / "run_manifest.json"),
         "run_reproducible_package": repro_manifest,
-        "copied_artifacts": {key: str(value) for key, value in copied.items() if value},
+        "copied_artifacts": _stringify_copied_artifacts(copied),
         "policy": "job-level files are small latest-run mirrors; large result objects remain referenced from the run directory",
     }
     pointer_path = deliverables_dir / "latest_run_pointer.json"
@@ -378,6 +437,7 @@ def _write_job_level_delivery(run_dir: Path, repro_manifest: dict[str, Any], rep
                 f"- Latest run: `{run_dir}`",
                 f"- Report: `{deliverables_dir / 'latest_report.html'}`",
                 f"- Methods: `{deliverables_dir / 'latest_methods.md'}`",
+                f"- Module reports: `{deliverables_dir / 'module_reports'}`",
                 f"- Delivery index: `{deliverables_dir / 'latest_delivery_index.tsv'}`",
                 f"- Reproducible code: `{package_dir}`",
                 "",
@@ -394,6 +454,48 @@ def _write_job_level_delivery(run_dir: Path, repro_manifest: dict[str, Any], rep
         "latest_run_pointer": str(pointer_path),
         "readme": str(readme_path),
     }
+
+
+def _copy_module_report_mirrors(run_dir: Path, deliverables_dir: Path) -> dict[str, dict[str, Path]]:
+    manifest_path = run_dir / "run_manifest.json"
+    if not manifest_path.exists():
+        return {}
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    mirrors: dict[str, dict[str, Path]] = {}
+    modules = manifest.get("modules")
+    if not isinstance(modules, list):
+        return mirrors
+    for module in modules:
+        if not isinstance(module, dict):
+            continue
+        module_name = str(module.get("module") or "unknown")
+        reports = (((module.get("artifacts") or {}).get("reports") or {}) if isinstance(module.get("artifacts"), dict) else {})
+        if not isinstance(reports, dict):
+            continue
+        for key, value in reports.items():
+            source = Path(str(value))
+            if not source.is_absolute():
+                source = run_dir / source
+            target_name = {
+                "report_html": "report.html",
+                "methods_md": "methods.md",
+                "run_manifest": "run_manifest.json",
+            }.get(str(key), Path(str(value)).name)
+            copied = _copy_if_exists(source, deliverables_dir / "module_reports" / module_name / target_name)
+            if copied:
+                mirrors.setdefault(module_name, {})[str(key)] = copied
+    return mirrors
+
+
+def _stringify_copied_artifacts(value: Any) -> Any:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _stringify_copied_artifacts(nested) for key, nested in value.items() if nested}
+    return str(value) if value else ""
 
 
 def _prepared_job_dir(run_dir: Path) -> Path | None:

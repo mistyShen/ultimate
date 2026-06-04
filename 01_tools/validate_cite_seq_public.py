@@ -110,7 +110,7 @@ def run_validation(input_h5: Path, output_dir: Path, max_cells_object: int) -> d
         validation_scope="CITE-seq public 10x feature-barcode matrix validation",
     )
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    _write_report(manifest, reports / "report.md", reports / "report.html")
+    _write_report(manifest, reports / "report.md", reports / "report.html", reports / "methods.md")
     return manifest
 
 
@@ -163,7 +163,7 @@ def _plot_top_adt(frame: pd.DataFrame, path: Path) -> None:
     plt.close()
 
 
-def _write_report(manifest: dict, md_path: Path, html_path: Path) -> None:
+def _write_report(manifest: dict, md_path: Path, html_path: Path, methods_path: Path) -> None:
     md = [
         "# CITE-seq 公开数据验证报告",
         "",
@@ -179,6 +179,19 @@ def _write_report(manifest: dict, md_path: Path, html_path: Path) -> None:
     ]
     md_path.write_text("\n".join(md) + "\n", encoding="utf-8")
     html_path.write_text("<html><body>" + "".join(f"<p>{line}</p>" for line in md) + "</body></html>", encoding="utf-8")
+    methods_path.write_text(
+        "\n".join(
+            [
+                "# CITE-seq/ADT 验证方法",
+                "",
+                "使用公开 10x feature-barcode H5 作为输入，读取 Gene Expression 与 Antibody Capture 两类 feature。",
+                "本验证只完成 ADT/RNA 输入读取、细胞 QC、feature 类型统计、ADT 平均丰度和基础图表输出。",
+                "ADT 背景校正、DSB normalization、totalVI/WNN 等高级分析在正式项目中作为可选 backend 或 handoff。",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

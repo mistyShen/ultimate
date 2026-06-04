@@ -26,13 +26,17 @@ def test_prepare_job_creates_shared_layout_and_command_plan(tmp_path: Path) -> N
     assert (job_dir / "config" / "project.yaml").exists()
     assert (job_dir / "config" / "production_approval.json").exists()
     assert (job_dir / "config" / "submit.sh").exists()
+    assert (job_dir / "config" / "run_ultimate.sbatch").exists()
+    assert manifest["job_slurm_script"] == str(job_dir / "config" / "run_ultimate.sbatch")
     assert manifest["approval_gate"]["required"] is True
     assert manifest["approval_gate"]["status"] == "template_pending_approval"
     assert manifest["slurm_adapter"]["status"] == "missing"
     assert manifest["slurm_adapter"]["path"] == str(root / "slurm" / "ultimate_run.sbatch")
     command_plan = (job_dir / "config" / "command_plan.md").read_text(encoding="utf-8")
     assert "hpc-sbatch" in command_plan
+    assert f"hpc-sbatch {job_dir / 'config' / 'run_ultimate.sbatch'}" in command_plan
     assert "ultimate_run.sbatch" in command_plan
+    assert "只接收一个远端脚本路径" in command_plan
     assert "未检测到 Slurm wrapper" in command_plan
     assert "production_approval.json" in command_plan
     assert "approved" in command_plan
@@ -45,6 +49,12 @@ def test_prepare_job_creates_shared_layout_and_command_plan(tmp_path: Path) -> N
     assert "production approval input_path mismatch" in submit_script
     assert "production approval output_dir mismatch" in submit_script
     assert "hpc-sbatch" in submit_script
+    assert str(job_dir / "config" / "run_ultimate.sbatch") in submit_script
+    assert "ultimate_run.sbatch" not in submit_script
+    job_slurm = (job_dir / "config" / "run_ultimate.sbatch").read_text(encoding="utf-8")
+    assert "ultimate_run.sbatch" in job_slurm
+    assert str(job_dir / "config" / "project.yaml") in job_slurm
+    assert str(job_dir / "config" / "production_approval.json") in job_slurm
 
     config = load_config(job_dir / "config" / "project.yaml").raw
     assert config["project"]["job_id"] == "ORDER_001"
@@ -104,6 +114,35 @@ def test_prepare_job_interactive_submit_does_not_require_approval(tmp_path: Path
     assert "production approval JSON is not approved=true" not in submit_script
     config = load_config(job_dir / "config" / "project.yaml").raw
     assert "production_approval" not in config["project"]
+
+
+def test_prepare_job_copies_explicit_samplesheet_and_analysis_request(tmp_path: Path) -> None:
+    source = init_project("rnaseq", tmp_path / "source_explicit", demo_data=True)
+    root = tmp_path / "shared" / "shen" / "2026" / "ultimate"
+    samplesheet = tmp_path / "explicit_samples.tsv"
+    samplesheet.write_text("sample_id\tcondition\nS1\tcontrol\nS2\ttreated\n", encoding="utf-8")
+    analysis_request = tmp_path / "explicit_request.yaml"
+    analysis_request.write_text("analysis_presets:\n  - standard\nnotes: explicit pytest request\n", encoding="utf-8")
+
+    manifest = prepare_job(
+        config_path=Path(source["config_path"]),
+        job_id="EXPLICIT001",
+        root=root,
+        samplesheet=samplesheet,
+        analysis_request=analysis_request,
+        run_mode="interactive",
+    )
+
+    job_dir = Path(manifest["job_dir"])
+    copied_samplesheet = job_dir / "samples" / samplesheet.name
+    copied_request = job_dir / "config" / analysis_request.name
+    assert copied_samplesheet.read_text(encoding="utf-8") == samplesheet.read_text(encoding="utf-8")
+    assert copied_request.read_text(encoding="utf-8") == analysis_request.read_text(encoding="utf-8")
+    config = load_config(job_dir / "config" / "project.yaml").raw
+    assert Path(config["samples"]["samplesheet"]) == copied_samplesheet
+    assert Path(config["analysis_request"]) == copied_request
+    assert manifest["samplesheet"] == str(copied_samplesheet)
+    assert manifest["analysis_request"] == str(copied_request)
 
 
 def test_cli_prepare_job(tmp_path: Path) -> None:

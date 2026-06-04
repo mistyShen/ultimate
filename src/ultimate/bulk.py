@@ -23,6 +23,7 @@ from ultimate.modules.common import (
     known_limitations,
     write_module_methods_fragment,
     write_module_qc_manifest,
+    write_module_report_bundle,
     write_mvp_figures,
     write_mvp_object,
     write_mvp_tables,
@@ -87,8 +88,10 @@ def run_bulk_module(
     level = classify_analysis_level(
         requested_level=module_cfg.get("analysis_level"),
         input_path=input_matrix,
+        is_demo=_module_is_demo(config, module_cfg),
         is_stub=inputs.source == "demo_generated_matrix",
     )
+    level_fields = level.to_manifest_fields()
     matrix = _normalize_matrix(module_name, inputs.matrix)
     stats = _differential_stats(matrix, samples, design)
     artifacts = {"tables": {}, "figures": {}, "objects": {}}
@@ -98,12 +101,24 @@ def run_bulk_module(
     artifacts["figures"].update(_write_common_figures(module_name, matrix, stats, samples, figures_dir, design))
     artifacts["figures"].update(_write_module_figures(module_name, matrix, stats, samples, inputs, figures_dir, module_cfg))
     artifacts["objects"].update(_write_bulk_objects(module_name, matrix, stats, inputs, objects_dir))
-    artifacts["tables"].update(write_mvp_tables(module_name=module_name, tables_dir=tables_dir, matrix=matrix, stats=stats, samples=samples))
+    artifacts["tables"].update(
+        write_mvp_tables(
+            module_name=module_name,
+            tables_dir=tables_dir,
+            matrix=matrix,
+            stats=stats,
+            samples=samples,
+            analysis_fields=level_fields,
+            run_id=_run_id(config, module_name),
+            source_dataset=_source_dataset(config, module_name),
+            input_artifact=str(input_matrix or inputs.source),
+            input_modality=module_name,
+        )
+    )
     artifacts["figures"].update(write_mvp_figures(module_name=module_name, figures_dir=figures_dir, matrix=matrix))
     artifacts["objects"].update(write_mvp_object(module_name=module_name, objects_dir=objects_dir, matrix=matrix, stats=stats))
     artifacts["reports"] = {"methods_fragment": write_module_methods_fragment(module_name, reports_dir)}
     artifacts["tables"]["tool_coverage"] = write_tool_coverage_table(module_name, tables_dir)
-    level_fields = level.to_manifest_fields()
     artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
         module_name=module_name,
         tables_dir=tables_dir,
@@ -145,14 +160,37 @@ def run_bulk_module(
         module_manifest["restricted_resources"] = {
             "CIBERSORT": "requires user-provided licensed signature/script; open signature-score fallback is used",
         }
+    artifacts["reports"].update(write_module_report_bundle(module_manifest, reports_dir))
     manifest_path = tables_dir / "module_manifest.json"
-    manifest_path.write_text(json.dumps(module_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     module_manifest["manifest_path"] = str(manifest_path)
+    manifest_path.write_text(json.dumps(module_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_module_report_bundle(module_manifest, reports_dir)
     return module_manifest
 
 
 def bulk_requirement_checks(module_name: str) -> dict[str, bool]:
     return {pkg: importlib.util.find_spec(pkg) is not None for pkg in BULK_PYTHON_REQUIREMENTS.get(module_name, ())}
+
+
+def _module_is_demo(config: dict[str, Any], module_cfg: dict[str, Any]) -> bool | None:
+    if "is_demo" in module_cfg:
+        return bool(module_cfg.get("is_demo"))
+    project = config.get("project") or {}
+    if "is_demo" in project:
+        return bool(project.get("is_demo"))
+    return None
+
+
+def _run_id(config: dict[str, Any], module_name: str) -> str:
+    if config.get("_run_id"):
+        return str(config["_run_id"])
+    project = config.get("project") or {}
+    return str(project.get("job_id") or project.get("name") or module_name)
+
+
+def _source_dataset(config: dict[str, Any], module_name: str) -> str:
+    project = config.get("project") or {}
+    return str(project.get("name") or project.get("job_id") or module_name)
 
 
 def _load_bulk_inputs(module_name: str, module_cfg: dict[str, Any], samples: pd.DataFrame) -> BulkInputs:

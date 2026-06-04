@@ -55,8 +55,23 @@ def prepare_job(
 
     job_config = dump_yaml(config, job_dir / "config" / "project.yaml")
     approval_template = _write_approval_template(approval_path, config_path=job_config, output_dir=job_dir / "runs" / clean_job_id)
-    command_plan = _write_command_plan(job_dir / "config" / "command_plan.md", root=root, job_config=job_config, approval_path=approval_path, run_mode=run_mode)
-    submit_script = _write_submit_script(job_dir / "config" / "submit.sh", root=root, job_config=job_config, approval_path=approval_path, run_mode=run_mode)
+    job_slurm_script = _write_job_slurm_script(job_dir / "config" / "run_ultimate.sbatch", root=root, job_config=job_config, approval_path=approval_path, run_mode=run_mode)
+    command_plan = _write_command_plan(
+        job_dir / "config" / "command_plan.md",
+        root=root,
+        job_config=job_config,
+        approval_path=approval_path,
+        run_mode=run_mode,
+        job_slurm_script=job_slurm_script,
+    )
+    submit_script = _write_submit_script(
+        job_dir / "config" / "submit.sh",
+        root=root,
+        job_config=job_config,
+        approval_path=approval_path,
+        run_mode=run_mode,
+        job_slurm_script=job_slurm_script,
+    )
     slurm_adapter = _slurm_adapter_status(root)
 
     manifest = {
@@ -70,6 +85,7 @@ def prepare_job(
         "samplesheet": str(copied_samplesheet) if copied_samplesheet else "",
         "analysis_request": str(copied_request) if copied_request else "",
         "approval_template": str(approval_template),
+        "job_slurm_script": str(job_slurm_script),
         "command_plan": str(command_plan),
         "submit_script": str(submit_script),
         "approval_gate": {
@@ -150,8 +166,7 @@ def _write_approval_template(path: Path, *, config_path: Path, output_dir: Path)
     return path
 
 
-def _write_command_plan(path: Path, *, root: Path, job_config: Path, approval_path: Path, run_mode: str) -> Path:
-    approval_arg = f" {approval_path}" if run_mode == "production" else ""
+def _write_command_plan(path: Path, *, root: Path, job_config: Path, approval_path: Path, run_mode: str, job_slurm_script: Path) -> Path:
     log_dir = job_config.parents[1] / "logs"
     slurm_wrapper = root / "slurm" / "ultimate_run.sbatch"
     slurm_note = (
@@ -182,8 +197,12 @@ def _write_command_plan(path: Path, *, root: Path, job_config: Path, approval_pa
         slurm_note,
         "",
         "```bash",
-        f"hpc-sbatch {slurm_wrapper} {job_config}{approval_arg}",
+        f"hpc-sbatch {job_slurm_script}",
         "```",
+        "",
+        "说明：本地 `hpc-sbatch` wrapper 只接收一个远端脚本路径；`run_ultimate.sbatch` 已固定 config 和 approval 参数。",
+        f"底层运行：`bash {slurm_wrapper} {job_config}{' ' + str(approval_path) if run_mode == 'production' else ''}`。",
+        "",
         "",
         f"运行日志会镜像到：`{log_dir}`。",
         "",
@@ -198,8 +217,7 @@ def _write_command_plan(path: Path, *, root: Path, job_config: Path, approval_pa
     return path
 
 
-def _write_submit_script(path: Path, *, root: Path, job_config: Path, approval_path: Path, run_mode: str) -> Path:
-    approval_arg = f' "{approval_path}"' if run_mode == "production" else ""
+def _write_submit_script(path: Path, *, root: Path, job_config: Path, approval_path: Path, run_mode: str, job_slurm_script: Path) -> Path:
     approval_check = ""
     if run_mode == "production":
         approval_check = f'''
@@ -233,8 +251,29 @@ LOG_DIR="$JOB_DIR/logs"
 mkdir -p "$LOG_DIR"
 SUBMIT_LOG="$LOG_DIR/slurm_submit_$(date -u +%Y%m%dT%H%M%SZ).log"
 {approval_check}
-echo "hpc-sbatch {root / 'slurm' / 'ultimate_run.sbatch'} {job_config}{approval_arg}" | tee "$SUBMIT_LOG"
-hpc-sbatch "{root / 'slurm' / 'ultimate_run.sbatch'}" "{job_config}"{approval_arg} | tee -a "$SUBMIT_LOG"
+echo "hpc-sbatch {job_slurm_script}" | tee "$SUBMIT_LOG"
+hpc-sbatch "{job_slurm_script}" | tee -a "$SUBMIT_LOG"
+"""
+    path.write_text(content, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
+    return path
+
+
+def _write_job_slurm_script(path: Path, *, root: Path, job_config: Path, approval_path: Path, run_mode: str) -> Path:
+    approval_arg = f' "{approval_path}"' if run_mode == "production" else ""
+    job_id = job_config.parents[1].name
+    content = f"""#!/usr/bin/env bash
+#SBATCH --job-name=ult_{job_id[:20]}
+#SBATCH --output={job_config.parents[1]}/logs/%x_%j.out
+#SBATCH --error={job_config.parents[1]}/logs/%x_%j.err
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
+#SBATCH --time=08:00:00
+
+set -euo pipefail
+
+mkdir -p "{job_config.parents[1]}/logs"
+bash "{root / 'slurm' / 'ultimate_run.sbatch'}" "{job_config}"{approval_arg}
 """
     path.write_text(content, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)

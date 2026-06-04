@@ -1,0 +1,10 @@
+input: "/shared/shen/2026/ultimate/jobs/<job_id>/config/nfcore_rnaseq_samplesheet.csv"
+outdir: "/shared/shen/2026/ultimate/jobs/<job_id>/runs/nfcore_rnaseq"
+genome: "GRCh38"
+aligner: "star_salmon"
+skip_bbsplit: true
+skip_umi_extract: true
+save_reference: false
+max_cpus: 16
+max_memory: "96.GB"
+max_time: "48.h"

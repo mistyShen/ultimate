@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ from ultimate.bulk import BULK_MODULES
 from ultimate.constants import MODULE_ORDER, MODULE_SPECS, SUPPORTED_ORGANISMS
 from ultimate.module_maturity import build_module_maturity_rows
 from ultimate.module_standardization import build_module_standardization_rows
-from ultimate.modules.common import tool_coverage_rows
+from ultimate.modules.common import MODULE_MVP_FIGURES, MODULE_MVP_OBJECTS, MODULE_MVP_TABLES, module_mvp_table_schemas, tool_coverage_rows
 from ultimate.plot_style import available_styles
 from ultimate.raw_qc import RAW_CONTRACTS
 from ultimate.tool_registry import TOOL_REGISTRY
@@ -44,7 +45,7 @@ VALIDATION_HINTS = {
     "vdj": ("slurm_vdj_10x_pbmc", "10x PBMC VDJ public validation"),
     "scdna": ("slurm_scdna_0518", "Existing 0518 scDNA/genome baseline validation"),
     "mtdna": ("slurm_mtdna_0518", "Existing 0518 mtDNA validation"),
-    "cite_seq": ("cite_seq_10x_pbmc_cli", "10x PBMC CITE-seq public validation"),
+    "cite_seq": ("slurm_cite_seq_10x_pbmc", "10x PBMC CITE-seq public validation"),
     "spatial": ("slurm_spatial_squidpy_visium", "Squidpy Visium public validation"),
     "perturb_seq": ("slurm_perturb_seq_adamson_public", "Adamson public Perturb-seq h5ad validation"),
     "hto_demux": ("slurm_hto_demux_seurat_public", "Seurat public HTO count demultiplex matrix validation"),
@@ -122,6 +123,7 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_scatac": {
         "label_cn": "10x PBMC scATAC Slurm 验证",
         "run_dir": "validations/slurm_scatac_10x_pbmc",
+        "module": "scatac",
         "min_tables": 3,
         "min_figures": 3,
         "min_objects": 1,
@@ -130,6 +132,7 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_multiome": {
         "label_cn": "10x PBMC Multiome Slurm 验证",
         "run_dir": "validations/slurm_multiome_10x_pbmc",
+        "module": "multiome",
         "min_tables": 3,
         "min_figures": 3,
         "min_objects": 1,
@@ -138,6 +141,7 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_vdj": {
         "label_cn": "10x PBMC VDJ Slurm 验证",
         "run_dir": "validations/slurm_vdj_10x_pbmc",
+        "module": "vdj",
         "min_tables": 3,
         "min_figures": 3,
         "min_objects": 1,
@@ -146,6 +150,16 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_spatial": {
         "label_cn": "Visium/Squidpy 空间 Slurm 验证",
         "run_dir": "validations/slurm_spatial_squidpy_visium",
+        "module": "spatial",
+        "min_tables": 3,
+        "min_figures": 3,
+        "min_objects": 1,
+        "min_reports": 2,
+    },
+    "slurm_cite_seq": {
+        "label_cn": "10x PBMC CITE-seq/ADT Slurm 验证",
+        "run_dir": "validations/slurm_cite_seq_10x_pbmc",
+        "module": "cite_seq",
         "min_tables": 3,
         "min_figures": 3,
         "min_objects": 1,
@@ -154,6 +168,7 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_scdna": {
         "label_cn": "0518 scDNA/genome Slurm 验证",
         "run_dir": "validations/slurm_scdna_0518",
+        "module": "scdna",
         "min_tables": 5,
         "min_figures": 3,
         "min_objects": 1,
@@ -162,6 +177,7 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_mtdna": {
         "label_cn": "0518 mtDNA Slurm 验证",
         "run_dir": "validations/slurm_mtdna_0518",
+        "module": "mtdna",
         "min_tables": 5,
         "min_figures": 3,
         "min_objects": 1,
@@ -170,6 +186,7 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_method_tools": {
         "label_cn": "NSCLC 方法学工具 Slurm 验证",
         "run_dir": "validations/slurm_method_tools_nsclc",
+        "module": "method_tools",
         "min_tables": 3,
         "min_figures": 3,
         "min_objects": 1,
@@ -178,6 +195,7 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_tumor_sc": {
         "label_cn": "NSCLC 肿瘤单细胞 raw-count 专项 Slurm 验证",
         "run_dir": "validations/slurm_tumor_sc_maynard_raw_counts",
+        "module": "tumor_sc",
         "min_tables": 8,
         "min_figures": 3,
         "min_objects": 1,
@@ -186,6 +204,7 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_perturb_seq": {
         "label_cn": "Adamson Perturb-seq/CRISPR 筛选公开 h5ad 验证",
         "run_dir": "validations/slurm_perturb_seq_adamson_public",
+        "module": "perturb_seq",
         "min_tables": 6,
         "min_figures": 3,
         "min_objects": 1,
@@ -194,6 +213,7 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_hto_demux": {
         "label_cn": "HTO/Cell Hashing Seurat 公开矩阵验证",
         "run_dir": "validations/slurm_hto_demux_seurat_public",
+        "module": "hto_demux",
         "min_tables": 3,
         "min_figures": 3,
         "min_objects": 1,
@@ -202,6 +222,7 @@ VALIDATION_RUN_REQUIREMENTS = {
     "slurm_genotype_demux": {
         "label_cn": "Genotype demultiplex vireo/cellSNP 公开矩阵验证",
         "run_dir": "validations/slurm_genotype_demux_vireo_public",
+        "module": "genotype_demux",
         "min_tables": 4,
         "min_figures": 3,
         "min_objects": 1,
@@ -216,6 +237,138 @@ VALIDATION_RUN_REQUIREMENTS = {
         "min_reports": 2,
         "min_modules": len(MODULE_ORDER),
         "min_raw_qc_manifests": len(MODULE_ORDER),
+        "allow_smoke_backend": True,
+    },
+}
+
+VALIDATION_RUN_COMMANDS = {
+    "scrna_mvp_h5ad": {
+        "slurm_script": "slurm/scrna_mvp_validation.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/scrna_mvp_validation.sbatch",
+        "prerequisite_command": "hpc-sbatch {root}/slurm/download_public_singlecell_data.sbatch",
+        "module_or_scope": "scrna",
+        "compute_policy": "slurm_required_for_real_public_validation",
+    },
+    "scrna_mvp_10x_mtx": {
+        "slurm_script": "slurm/scrna_mvp_validation.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/scrna_mvp_validation.sbatch",
+        "prerequisite_command": "hpc-sbatch {root}/slurm/download_public_singlecell_data.sbatch",
+        "module_or_scope": "scrna",
+        "compute_policy": "slurm_required_for_real_public_validation",
+    },
+    "slurm_scrna": {
+        "slurm_script": "slurm/singlecell_validation_suite.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/singlecell_validation_suite.sbatch",
+        "prerequisite_command": "",
+        "module_or_scope": "scrna",
+        "compute_policy": "slurm_required_for_internal_validation",
+    },
+    "slurm_scatac": {
+        "slurm_script": "slurm/singlecell_validation_suite.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/singlecell_validation_suite.sbatch",
+        "prerequisite_command": "hpc-sbatch {root}/slurm/download_public_singlecell_data.sbatch",
+        "module_or_scope": "scatac,scepi",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
+    "slurm_multiome": {
+        "slurm_script": "slurm/singlecell_validation_suite.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/singlecell_validation_suite.sbatch",
+        "prerequisite_command": "hpc-sbatch {root}/slurm/download_public_singlecell_data.sbatch",
+        "module_or_scope": "multiome",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
+    "slurm_vdj": {
+        "slurm_script": "slurm/singlecell_validation_suite.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/singlecell_validation_suite.sbatch",
+        "prerequisite_command": "hpc-sbatch {root}/slurm/download_public_singlecell_data.sbatch",
+        "module_or_scope": "vdj",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
+    "slurm_spatial": {
+        "slurm_script": "slurm/singlecell_validation_suite.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/singlecell_validation_suite.sbatch",
+        "prerequisite_command": "hpc-sbatch {root}/slurm/download_public_singlecell_data.sbatch",
+        "module_or_scope": "spatial",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
+    "slurm_cite_seq": {
+        "slurm_script": "slurm/cite_seq_validation.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/cite_seq_validation.sbatch",
+        "prerequisite_command": "hpc-sbatch {root}/slurm/download_public_singlecell_data.sbatch",
+        "module_or_scope": "cite_seq",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
+    "slurm_scdna": {
+        "slurm_script": "slurm/scdna_validation.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/scdna_validation.sbatch",
+        "prerequisite_command": "",
+        "module_or_scope": "scdna",
+        "compute_policy": "slurm_required_for_internal_validation",
+    },
+    "slurm_mtdna": {
+        "slurm_script": "slurm/singlecell_validation_suite.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/singlecell_validation_suite.sbatch",
+        "prerequisite_command": "",
+        "module_or_scope": "mtdna",
+        "compute_policy": "slurm_required_for_internal_validation",
+    },
+    "slurm_method_tools": {
+        "slurm_script": "slurm/method_tools_validation.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/method_tools_validation.sbatch",
+        "prerequisite_command": "",
+        "module_or_scope": "method_tools",
+        "compute_policy": "slurm_required_for_internal_validation",
+    },
+    "slurm_tumor_sc": {
+        "slurm_script": "slurm/tumor_sc_maynard_raw_counts.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/tumor_sc_maynard_raw_counts.sbatch",
+        "prerequisite_command": "",
+        "module_or_scope": "tumor_sc",
+        "compute_policy": "slurm_required_for_internal_validation",
+    },
+    "slurm_perturb_seq": {
+        "slurm_script": "slurm/gapfill_specialty_validation.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/gapfill_specialty_validation.sbatch",
+        "prerequisite_command": "hpc-sbatch {root}/slurm/download_public_singlecell_data.sbatch",
+        "module_or_scope": "perturb_seq",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
+    "slurm_hto_demux": {
+        "slurm_script": "slurm/gapfill_specialty_validation.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/gapfill_specialty_validation.sbatch",
+        "prerequisite_command": "hpc-sbatch {root}/slurm/download_public_singlecell_data.sbatch",
+        "module_or_scope": "hto_demux",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
+    "slurm_genotype_demux": {
+        "slurm_script": "slurm/gapfill_specialty_validation.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/gapfill_specialty_validation.sbatch",
+        "prerequisite_command": "hpc-sbatch {root}/slurm/download_public_singlecell_data.sbatch",
+        "module_or_scope": "genotype_demux",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
+    "bulk_all_demo": {
+        "slurm_script": "slurm/bulk_validation_suite.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/bulk_validation_suite.sbatch",
+        "prerequisite_command": "",
+        "module_or_scope": "rnaseq,methylation,clinical_assoc,publicdb,wgcna,single_gene,functional_state",
+        "compute_policy": "slurm_required_for_bulk_suite_validation",
     },
 }
 
@@ -249,6 +402,12 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
     validation_path = output_dir / "validation_evidence_matrix.tsv"
     pd.DataFrame(validation_rows).to_csv(validation_path, sep="\t", index=False)
 
+    validation_gap_rows = _validation_gap_plan_rows(root, validation_rows)
+    validation_gap_path = output_dir / "validation_gap_plan.tsv"
+    validation_gap_json_path = output_dir / "validation_gap_plan.json"
+    pd.DataFrame(validation_gap_rows).to_csv(validation_gap_path, sep="\t", index=False)
+    validation_gap_json_path.write_text(json.dumps(validation_gap_rows, indent=2, ensure_ascii=False), encoding="utf-8")
+
     final_rows = _final_acceptance_rows(root, capability_rows, validation_rows)
     final_path = output_dir / "final_acceptance_checklist.tsv"
     pd.DataFrame(final_rows).to_csv(final_path, sep="\t", index=False)
@@ -264,6 +423,12 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
     coverage_rows = [row for module in MODULE_ORDER for row in tool_coverage_rows(module)]
     coverage_path = output_dir / "tool_coverage_by_module.tsv"
     pd.DataFrame(coverage_rows).to_csv(coverage_path, sep="\t", index=False)
+
+    registry_rows = _tool_registry_snapshot_rows()
+    registry_path = output_dir / "tool_registry_snapshot.tsv"
+    registry_json_path = output_dir / "tool_registry_snapshot.json"
+    pd.DataFrame(registry_rows).to_csv(registry_path, sep="\t", index=False)
+    registry_json_path.write_text(json.dumps(registry_rows, indent=2, ensure_ascii=False), encoding="utf-8")
 
     next_steps_path = output_dir / "next_steps.md"
     next_steps_path.write_text(_next_steps_markdown(capability_rows, final_rows), encoding="utf-8")
@@ -283,10 +448,16 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
         "dependency_report": str(dependency_path),
         "order_readiness_checklist": str(order_path),
         "validation_evidence_matrix": str(validation_path),
+        "validation_gap_plan": str(validation_gap_path),
+        "validation_gap_plan_json": str(validation_gap_json_path),
+        "validation_gap_summary": _validation_gap_summary(validation_gap_rows),
         "final_acceptance_checklist": str(final_path),
         "module_maturity_table": str(maturity_path),
         "module_standardization_matrix": str(standardization_path),
         "tool_coverage_by_module": str(coverage_path),
+        "tool_registry_snapshot": str(registry_path),
+        "tool_registry_snapshot_json": str(registry_json_path),
+        "tool_registry_summary": _tool_registry_summary(registry_rows),
         "final_acceptance_summary": _final_summary(final_rows),
         "module_standardization_summary": _standardization_summary(standardization_rows),
         "next_steps": str(next_steps_path),
@@ -402,7 +573,8 @@ def _ready_validation_manifest(path: Path) -> bool:
     guard_status, _, _ = _manifest_guard_status(manifest)
     if guard_status != "ready":
         return False
-    return bool(manifest.get("validation_evidence_allowed") is True)
+    real_ready, _ = require_real_evidence(manifest)
+    return real_ready
 
 
 def _backend_label(module: str, validation_status: str) -> str:
@@ -507,6 +679,9 @@ def _order_readiness_rows(capability_rows: list[dict[str, Any]]) -> list[dict[st
                         "objects",
                         "reports/report.html",
                         "reports/methods.md",
+                        "reports/<module>/report.html",
+                        "reports/<module>/methods.md",
+                        "reports/<module>/run_manifest.json",
                     ]
                 ),
                 "compute_policy": "slurm_for_raw_or_large_runs; cli_ok_for_preflight_style_and_small_matrix_smoke",
@@ -522,6 +697,96 @@ def _validation_evidence_rows(root: Path) -> list[dict[str, Any]]:
     for key, requirement in VALIDATION_RUN_REQUIREMENTS.items():
         rows.append(_validation_evidence_row(root, key, requirement))
     return rows
+
+
+def _validation_gap_plan_rows(root: Path, validation_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_validation_gap_plan_row(root, row) for row in validation_rows]
+
+
+def _validation_gap_plan_row(root: Path, row: dict[str, Any]) -> dict[str, Any]:
+    key = str(row["validation_key"])
+    requirement = VALIDATION_RUN_REQUIREMENTS[key]
+    command_info = VALIDATION_RUN_COMMANDS.get(key, {})
+    run_dir = root / str(requirement["run_dir"])
+    slurm_script = str(command_info.get("slurm_script", ""))
+    slurm_script_path = root / slurm_script if slurm_script else None
+    expected_report_html = run_dir / "reports" / "report.html"
+    expected_methods_md = run_dir / "reports" / "methods.md"
+    missing_or_gap = str(row.get("missing_or_gap", ""))
+    status = str(row.get("status", "partial"))
+    recommended_command = _format_audit_command(str(command_info.get("recommended_command", "")), root)
+    prerequisite_command = _format_audit_command(str(command_info.get("prerequisite_command", "")), root)
+    next_action = _validation_next_action(status, missing_or_gap, recommended_command, prerequisite_command)
+
+    return {
+        "validation_key": key,
+        "label_cn": row["label_cn"],
+        "module_or_scope": command_info.get("module_or_scope", _scope_from_validation_key(key)),
+        "run_dir": str(run_dir),
+        "status": status,
+        "missing_or_gap": missing_or_gap,
+        "recommended_entrypoint": command_info.get("recommended_entrypoint", "hpc-sbatch"),
+        "recommended_command": recommended_command,
+        "prerequisite_command": prerequisite_command,
+        "slurm_script": str(slurm_script_path) if slurm_script_path else "",
+        "slurm_script_status": "present" if slurm_script_path and slurm_script_path.is_file() else "missing",
+        "expected_manifest": str(run_dir / "run_manifest.json"),
+        "expected_report_html": str(expected_report_html),
+        "expected_methods_md": str(expected_methods_md),
+        "expected_min_tables": int(requirement.get("min_tables", 0)),
+        "expected_min_figures": int(requirement.get("min_figures", 0)),
+        "expected_min_objects": int(requirement.get("min_objects", 0)),
+        "expected_min_reports": int(requirement.get("min_reports", 0)),
+        "expected_min_modules": int(requirement.get("min_modules", 0)),
+        "expected_min_raw_qc_manifests": int(requirement.get("min_raw_qc_manifests", 0)),
+        "compute_policy": command_info.get("compute_policy", "slurm_required_for_validation"),
+        "next_action_cn": next_action,
+    }
+
+
+def _format_audit_command(command: str, root: Path) -> str:
+    return command.format(root=str(root)) if command else ""
+
+
+def _scope_from_validation_key(key: str) -> str:
+    if key.startswith("scrna"):
+        return "scrna"
+    if key.startswith("slurm_"):
+        return key.removeprefix("slurm_")
+    if key.startswith("bulk"):
+        return "bulk_tabular"
+    return "unknown"
+
+
+def _validation_next_action(status: str, missing_or_gap: str, recommended_command: str, prerequisite_command: str) -> str:
+    if status == "ready":
+        return "已完成；后续只需定期刷新 validation-index 和 audit-production。"
+    if "manifest_status=missing" in missing_or_gap:
+        prefix = f"先运行前置数据准备：{prerequisite_command}；再" if prerequisite_command else "运行"
+        return f"{prefix}验证命令：{recommended_command}"
+    if "partial:data_required" in missing_or_gap or "data_required" in missing_or_gap:
+        if prerequisite_command:
+            return f"先补公开/内部验证数据：{prerequisite_command}；数据就绪后运行：{recommended_command}"
+        return f"补齐输入数据后运行验证命令：{recommended_command}"
+    if "dependency_required" in missing_or_gap:
+        return f"先安装或激活对应环境；环境就绪后运行：{recommended_command}"
+    if "guard_status=" in missing_or_gap or "artifact_status=" in missing_or_gap:
+        return f"修复验证脚本/manifest 产物声明后重新运行：{recommended_command}"
+    if "report.html_missing" in missing_or_gap or "methods.md_missing" in missing_or_gap:
+        return f"补齐报告产物生成逻辑后重新运行：{recommended_command}"
+    return f"按缺口字段修复后运行验证命令：{recommended_command}"
+
+
+def _validation_gap_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
+    total = len(rows)
+    ready = sum(1 for row in rows if row.get("status") == "ready")
+    script_missing = sum(1 for row in rows if row.get("slurm_script_status") != "present")
+    return {
+        "total": total,
+        "ready": ready,
+        "partial": total - ready,
+        "slurm_script_missing": script_missing,
+    }
 
 
 def _validation_evidence_row(root: Path, key: str, requirement: dict[str, Any]) -> dict[str, Any]:
@@ -552,14 +817,28 @@ def _validation_evidence_row(root: Path, key: str, requirement: dict[str, Any]) 
         missing.append(f"modules<{requirement.get('min_modules')}")
     if raw_qc_count < int(requirement.get("min_raw_qc_manifests", 0)):
         missing.append(f"raw_qc_manifests<{requirement.get('min_raw_qc_manifests')}")
+    if not (run_dir / "reports" / "report.html").is_file() or (run_dir / "reports" / "report.html").stat().st_size <= 0:
+        missing.append("report.html_missing")
+    if not (run_dir / "reports" / "methods.md").is_file() or (run_dir / "reports" / "methods.md").stat().st_size <= 0:
+        missing.append("methods.md_missing")
     guard_status, guard_missing, guard_invalid = _manifest_guard_status(manifest or {})
     if guard_status != "ready":
         missing.append(f"guard_status={guard_status}")
+    artifact_status, artifact_gaps = _manifest_artifact_status(manifest or {}, run_dir)
+    if artifact_status != "ready":
+        missing.append(f"artifact_status={artifact_status}")
+        missing.extend(artifact_gaps[:10])
+    mvp_status, mvp_gaps = _module_mvp_artifact_status(manifest or {}, run_dir, str(requirement.get("module", "")))
+    if mvp_status not in {"ready", "not_required"}:
+        missing.append(f"mvp_artifact_status={mvp_status}")
+        missing.extend(mvp_gaps[:10])
     real_evidence_note = ""
-    if requirement.get("require_real_evidence"):
+    if requirement.get("allow_smoke_backend"):
+        real_ready, real_evidence_note = _require_smoke_or_real_run(manifest or {})
+    else:
         real_ready, real_evidence_note = require_real_evidence(manifest or {})
-        if not real_ready:
-            missing.append(real_evidence_note)
+    if not real_ready:
+        missing.append(real_evidence_note)
 
     return {
         "validation_key": key,
@@ -581,6 +860,10 @@ def _validation_evidence_row(root: Path, key: str, requirement: dict[str, Any]) 
         "guard_status": guard_status,
         "guard_missing_fields": ",".join(guard_missing),
         "guard_invalid_fields": ",".join(guard_invalid),
+        "artifact_status": artifact_status,
+        "artifact_gaps": ",".join(artifact_gaps),
+        "mvp_artifact_status": mvp_status,
+        "mvp_artifact_gaps": ",".join(mvp_gaps),
         "real_evidence_note": real_evidence_note,
         "missing_or_gap": ";".join(missing),
     }
@@ -594,6 +877,157 @@ def _manifest_guard_status(manifest: dict[str, Any]) -> tuple[str, list[str], li
     if invalid:
         return "invalid_guard_fields", missing, invalid
     return "ready", missing, invalid
+
+
+def _manifest_artifact_status(manifest: dict[str, Any], run_dir: Path) -> tuple[str, list[str]]:
+    gaps: list[str] = []
+    declared_any = False
+    for key in ("figures", "tables"):
+        values = manifest.get(key)
+        if not isinstance(values, list):
+            continue
+        declared_any = True
+        if not values:
+            gaps.append(f"{key}_empty")
+        for value in values:
+            artifact_path = _resolve_manifest_artifact(run_dir, value)
+            if not _nonempty(artifact_path):
+                gaps.append(f"missing_{key}:{value}")
+    objects = manifest.get("objects")
+    if isinstance(objects, dict):
+        declared_any = True
+        if not objects:
+            gaps.append("objects_empty")
+        for key, value in objects.items():
+            artifact_path = _resolve_manifest_artifact(run_dir, value)
+            if not _nonempty(artifact_path):
+                gaps.append(f"missing_object:{key}")
+    for module in manifest.get("modules", []) or []:
+        if not isinstance(module, dict):
+            continue
+        artifacts = module.get("artifacts")
+        if not isinstance(artifacts, dict):
+            continue
+        for artifact_kind in ("figures", "tables", "objects", "reports"):
+            values = artifacts.get(artifact_kind)
+            if not isinstance(values, dict):
+                continue
+            declared_any = True
+            if not values:
+                gaps.append(f"module_{artifact_kind}_empty:{module.get('module', 'unknown')}")
+            for artifact_name, artifact_value in values.items():
+                artifact_path = _resolve_manifest_artifact(run_dir, artifact_value)
+                if not _nonempty(artifact_path):
+                    gaps.append(f"missing_module_{artifact_kind}:{module.get('module', 'unknown')}:{artifact_name}")
+    if gaps:
+        return "missing_or_empty_artifacts", gaps
+    if not declared_any:
+        return "not_declared", ["manifest_artifacts_not_declared"]
+    return "ready", gaps
+
+
+def _module_mvp_artifact_status(manifest: dict[str, Any], run_dir: Path, module_name: str) -> tuple[str, list[str]]:
+    if not module_name:
+        return "not_required", []
+    expected_tables = MODULE_MVP_TABLES.get(module_name, ())
+    expected_figures = MODULE_MVP_FIGURES.get(module_name, ())
+    expected_object = MODULE_MVP_OBJECTS.get(module_name, f"{module_name}_mvp_object.rds")
+    if not expected_tables and not expected_figures and not expected_object:
+        return "not_required", []
+
+    module_manifest = _find_module_manifest(manifest, module_name)
+    artifact_paths = _collect_declared_artifact_paths(manifest, run_dir, module_manifest)
+    gaps: list[str] = []
+    table_schemas = module_mvp_table_schemas(module_name)
+    for filename in expected_tables:
+        matches = _artifact_filename_matches(filename, artifact_paths, run_dir / "results" / "tables")
+        if not matches:
+            gaps.append(f"missing_mvp_table:{filename}")
+            continue
+        missing_columns = _missing_table_schema_columns(matches[0], table_schemas.get(filename, []))
+        if missing_columns:
+            gaps.append(f"mvp_table_schema_missing:{filename}:{','.join(missing_columns)}")
+    for filename in expected_figures:
+        if not _artifact_filename_present(filename, artifact_paths, run_dir / "results" / "figures"):
+            gaps.append(f"missing_mvp_figure:{filename}")
+    if expected_object and not _artifact_filename_present(expected_object, artifact_paths, run_dir / "objects"):
+        gaps.append(f"missing_mvp_object:{expected_object}")
+    if gaps:
+        return "missing_mvp_artifacts", gaps
+    return "ready", []
+
+
+def _find_module_manifest(manifest: dict[str, Any], module_name: str) -> dict[str, Any]:
+    for module in manifest.get("modules", []) or []:
+        if isinstance(module, dict) and module.get("module") == module_name:
+            return module
+    return {}
+
+
+def _collect_declared_artifact_paths(manifest: dict[str, Any], run_dir: Path, module_manifest: dict[str, Any]) -> list[Path]:
+    paths: list[Path] = []
+    for key in ("figures", "tables"):
+        values = manifest.get(key)
+        if isinstance(values, list):
+            paths.extend(_resolve_manifest_artifact(run_dir, value) for value in values)
+    objects = manifest.get("objects")
+    if isinstance(objects, dict):
+        paths.extend(_resolve_manifest_artifact(run_dir, value) for value in objects.values())
+    artifacts = module_manifest.get("artifacts") if isinstance(module_manifest, dict) else {}
+    if isinstance(artifacts, dict):
+        for artifact_kind in ("figures", "tables", "objects", "reports"):
+            values = artifacts.get(artifact_kind)
+            if isinstance(values, dict):
+                paths.extend(_resolve_manifest_artifact(run_dir, value) for value in values.values())
+    return paths
+
+
+def _artifact_filename_present(filename: str, artifact_paths: list[Path], fallback_dir: Path) -> bool:
+    return bool(_artifact_filename_matches(filename, artifact_paths, fallback_dir))
+
+
+def _artifact_filename_matches(filename: str, artifact_paths: list[Path], fallback_dir: Path) -> list[Path]:
+    matches = [path for path in artifact_paths if path.name == filename and _nonempty(path)]
+    matches.extend(path for path in (fallback_dir.rglob(filename) if fallback_dir.exists() else []) if _nonempty(path))
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in matches:
+        key = str(path)
+        if key not in seen:
+            unique.append(path)
+            seen.add(key)
+    return unique
+
+
+def _missing_table_schema_columns(path: Path, expected_columns: list[str]) -> list[str]:
+    if not expected_columns:
+        return []
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            header = handle.readline().rstrip("\n").split("\t")
+    except OSError:
+        return expected_columns
+    header_set = set(header)
+    return [column for column in expected_columns if column not in header_set]
+
+
+def _require_smoke_or_real_run(manifest: dict[str, Any]) -> tuple[bool, str]:
+    status = str(manifest.get("status", "")).lower()
+    level = str(manifest.get("analysis_level", ""))
+    if status != "ready":
+        return False, f"manifest_status={status or 'missing'}"
+    if level not in VALID_ANALYSIS_LEVELS:
+        return False, f"analysis_level={level or 'missing'}"
+    if manifest.get("delivery_allowed") is True and level != "production_backend":
+        return False, "delivery_allowed_requires_production_backend"
+    if level in {"demo_result", "smoke_backend"} and manifest.get("validation_evidence_allowed") is True:
+        return False, "smoke_or_demo_cannot_be_validation_evidence"
+    return True, "ready_smoke_or_real_run"
+
+
+def _resolve_manifest_artifact(run_dir: Path, value: Any) -> Path:
+    path = Path(str(value))
+    return path if path.is_absolute() else run_dir / path
 
 
 def _invalid_guard_fields(manifest: dict[str, Any]) -> list[str]:
@@ -619,6 +1053,8 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
     latest_tool_manifest = _latest_tool_manifest(root)
     tool_manifest = _read_json(latest_tool_manifest) if latest_tool_manifest else {}
     tool_matrix = _read_tool_matrix(tool_manifest)
+    registry_rows = _tool_registry_snapshot_rows()
+    registry_ready, registry_note = _tool_registry_triage_status(registry_rows)
     validation_status = {str(row["validation_key"]): str(row["status"]) for row in validation_rows}
     ready_capabilities = [row for row in capability_rows if str(row["production_status"]) == "ready_basic"]
     partial_capabilities = [row for row in capability_rows if str(row["production_status"]) != "ready_basic"]
@@ -629,8 +1065,8 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
         _requirement_row(
             "tool_registry_all_candidates_triaged",
             "所有候选工具都有留存/淘汰结论",
-            bool(tool_manifest) and int(tool_manifest.get("tool_count", 0)) >= len(TOOL_REGISTRY) and _count_tsv_rows(Path(str(tool_manifest.get("registry_tsv", "")))) >= len(TOOL_REGISTRY),
-            f"tool_count={tool_manifest.get('tool_count', 0)} expected>={len(TOOL_REGISTRY)} manifest={latest_tool_manifest or ''}",
+            registry_ready,
+            registry_note,
         ),
         _requirement_row(
             "tool_install_plan_empty",
@@ -673,6 +1109,7 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
                     "slurm_multiome",
                     "slurm_vdj",
                     "slurm_spatial",
+                    "slurm_cite_seq",
                     "slurm_scdna",
                     "slurm_mtdna",
                     "slurm_method_tools",
@@ -730,7 +1167,7 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
             "slurm_adapter_files_present",
             "正式验证和上游适配 Slurm 脚本存在",
             _slurm_adapter_files_present(root),
-            "required=singlecell_validation_suite,scrna_mvp_validation,bulk_validation_suite,ultimate_run,tool_trial_batch",
+            "required=singlecell_validation_suite,scrna_mvp_validation,cite_seq_validation,bulk_validation_suite,ultimate_run,tool_trial_batch,gapfill_specialty_validation,readiness_refresh",
         ),
         _requirement_row(
             "prepared_job_delivery_mirror_ready",
@@ -749,6 +1186,52 @@ def _requirement_row(requirement: str, label_cn: str, passed: bool, evidence: st
         "status": "pass" if passed else "partial",
         "evidence": evidence,
     }
+
+
+def _tool_registry_snapshot_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for tool in TOOL_REGISTRY:
+        row = asdict(tool)
+        row["triage_ready"] = bool(tool.decision and tool.reason_cn and tool.decision in {
+            "keep_default",
+            "keep_optional",
+            "adapter_only",
+            "reference_only",
+            "licensed_path_only",
+            "rejected_cleaned",
+        })
+        rows.append(row)
+    return rows
+
+
+def _tool_registry_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    decision_counts: dict[str, int] = {}
+    module_counts: dict[str, int] = {}
+    for row in rows:
+        decision = str(row.get("decision") or "missing")
+        module = str(row.get("module") or "missing")
+        decision_counts[decision] = decision_counts.get(decision, 0) + 1
+        module_counts[module] = module_counts.get(module, 0) + 1
+    return {
+        "tool_count": len(rows),
+        "triage_ready_count": sum(1 for row in rows if row.get("triage_ready") is True),
+        "decision_counts": decision_counts,
+        "module_counts": module_counts,
+    }
+
+
+def _tool_registry_triage_status(rows: list[dict[str, Any]]) -> tuple[bool, str]:
+    missing = [
+        str(row.get("name") or "unknown")
+        for row in rows
+        if row.get("triage_ready") is not True
+    ]
+    decisions = sorted({str(row.get("decision") or "") for row in rows})
+    ready = len(rows) >= len(TOOL_REGISTRY) and not missing
+    note = f"registry_tool_count={len(rows)} expected={len(TOOL_REGISTRY)} decisions={','.join(decisions)}"
+    if missing:
+        note += " missing_triage=" + ",".join(missing[:10])
+    return ready, note
 
 
 def _latest_tool_manifest(root: Path) -> Path | None:
@@ -809,10 +1292,12 @@ def _slurm_adapter_files_present(root: Path) -> bool:
     required = (
         root / "slurm" / "singlecell_validation_suite.sbatch",
         root / "slurm" / "scrna_mvp_validation.sbatch",
+        root / "slurm" / "cite_seq_validation.sbatch",
         root / "slurm" / "bulk_validation_suite.sbatch",
         root / "slurm" / "ultimate_run.sbatch",
         root / "slurm" / "tool_trial_batch.sbatch",
         root / "slurm" / "gapfill_specialty_validation.sbatch",
+        root / "slurm" / "readiness_refresh.sbatch",
     )
     return all(path.exists() and path.stat().st_size > 0 for path in required)
 
@@ -853,6 +1338,7 @@ def _validation_index_status(root: Path) -> tuple[bool, str]:
         "analysis_level_counts",
         "guard_status_counts",
         "order_readiness_status_counts",
+        "delivery_gate_status_counts",
         "module_counts",
     )
     missing_keys = [key for key in required_summary_keys if key not in summary]
@@ -870,11 +1356,14 @@ def _validation_index_status(root: Path) -> tuple[bool, str]:
         "evidence_status",
         "order_readiness_status",
         "production_approval_status",
+        "delivery_gate_status",
+        "delivery_gate_allowed",
         "artifact_status",
         "missing_or_gap",
         "next_action",
     }
     missing_columns = sorted(required_columns - set(header))
+    stale_rows = _validation_index_stale_rows(paths["validation_index_tsv"])
     n_runs = int(manifest.get("n_runs") or 0)
     ready_evidence = int(summary.get("ready_validation_evidence") or 0)
     gaps = []
@@ -888,10 +1377,51 @@ def _validation_index_status(root: Path) -> tuple[bool, str]:
         gaps.append(f"missing_paths={','.join(missing_paths)}")
     if missing_columns:
         gaps.append(f"missing_columns={','.join(missing_columns)}")
+    if stale_rows:
+        gaps.append(f"stale_rows={','.join(stale_rows[:5])}")
     note = f"manifest={manifest_path} n_runs={n_runs} ready_validation_evidence={ready_evidence}"
     if gaps:
         note += " " + ";".join(gaps)
     return not gaps, note
+
+
+def _validation_index_stale_rows(index_path: Path) -> list[str]:
+    if not _nonempty(index_path):
+        return ["validation_index_missing"]
+    try:
+        frame = pd.read_csv(index_path, sep="\t").fillna("")
+    except Exception as exc:
+        return [f"validation_index_unreadable:{type(exc).__name__}"]
+    required = {"run_name", "manifest_path", "status", "analysis_level", "evidence_status", "order_readiness_status"}
+    if not required.issubset(frame.columns):
+        return []
+    stale: list[str] = []
+    for _, row in frame.iterrows():
+        run_name = str(row.get("run_name") or row.get("manifest_path") or "unknown")
+        manifest_path = Path(str(row.get("manifest_path") or ""))
+        manifest = _read_json(manifest_path)
+        if not manifest:
+            stale.append(f"{run_name}:manifest_missing_or_invalid")
+            continue
+        current_status = str(manifest.get("status", "")).lower()
+        current_level = str(manifest.get("analysis_level", ""))
+        if str(row.get("status", "")).lower() != current_status:
+            stale.append(f"{run_name}:status_changed")
+            continue
+        if str(row.get("analysis_level", "")) != current_level:
+            stale.append(f"{run_name}:analysis_level_changed")
+            continue
+        if str(row.get("evidence_status", "")) == "ready_real_evidence":
+            ready, reason = require_real_evidence(manifest)
+            if not ready:
+                stale.append(f"{run_name}:evidence_changed:{reason}")
+                continue
+        if str(row.get("order_readiness_status", "")) in {"ready_for_delivery", "ready_for_validation_evidence"}:
+            guard_status, _, _ = _manifest_guard_status(manifest)
+            if guard_status != "ready":
+                stale.append(f"{run_name}:guard_changed:{guard_status}")
+                continue
+    return stale
 
 
 def _prepared_job_dirs(root: Path) -> list[Path]:
@@ -927,6 +1457,7 @@ def _prepared_job_delivery_gaps(job_dir: Path) -> list[str]:
     for copied_key in ("run_manifest", "report_html", "methods_md", "delivery_index"):
         if not _nonempty(Path(str(copied.get(copied_key) or ""))):
             missing.append(f"copied_artifacts.{copied_key}")
+    missing.extend(_module_report_mirror_gaps(latest_run_dir, run_manifest_data, copied))
     if not _is_relative_to(latest_run_dir, job_dir / "runs") or not latest_run_dir.exists():
         missing.append("latest_run_dir")
     if not _nonempty(run_manifest):
@@ -940,12 +1471,67 @@ def _prepared_job_delivery_gaps(job_dir: Path) -> list[str]:
     module_guard_status, module_guard_note = _pipeline_module_guard_status(run_manifest_data)
     if module_guard_status != "ready":
         missing.append(f"module_guard:{module_guard_note}")
+    missing.extend(_delivery_gate_gaps(run_manifest_data))
     run_repro_manifest = latest_run_dir / "reproducible_code" / "repro_manifest.json"
     if not _same_json_file(run_repro_manifest, required["latest_repro_manifest"]):
         missing.append("latest_repro_manifest_stale")
     if "large result objects remain referenced from the run directory" not in str(pointer.get("policy") or ""):
         missing.append("policy")
     return missing
+
+
+def _delivery_gate_gaps(manifest: dict[str, Any]) -> list[str]:
+    gate = manifest.get("delivery_gate")
+    if gate is None:
+        return []
+    if not isinstance(gate, dict):
+        return ["delivery_gate:not_object"]
+    required = {"status", "delivery_allowed", "validation_evidence_allowed", "approval_status", "blocked_modules"}
+    missing = sorted(required - set(gate))
+    gaps = [f"delivery_gate:missing:{','.join(missing)}"] if missing else []
+    modules = manifest.get("modules") if isinstance(manifest.get("modules"), list) else []
+    production_modules = [
+        str(module.get("module") or "unknown")
+        for module in modules
+        if isinstance(module, dict) and (module.get("analysis_level") == "production_backend" or module.get("delivery_allowed") is True)
+    ]
+    if production_modules and gate.get("delivery_allowed") is not True:
+        gaps.append("delivery_gate:production_not_deliverable")
+    if gate.get("delivery_allowed") is True:
+        if gate.get("status") != "ready":
+            gaps.append("delivery_gate:status_not_ready")
+        if gate.get("approval_status") != "approved":
+            gaps.append("delivery_gate:approval_not_approved")
+        if gate.get("blocked_modules"):
+            gaps.append("delivery_gate:blocked_modules_present")
+    return gaps
+
+
+def _module_report_mirror_gaps(latest_run_dir: Path, run_manifest: dict[str, Any], copied: dict[str, Any]) -> list[str]:
+    gaps: list[str] = []
+    modules = run_manifest.get("modules")
+    if not isinstance(modules, list):
+        return gaps
+    copied_reports = copied.get("module_reports") if isinstance(copied.get("module_reports"), dict) else {}
+    for module in modules:
+        if not isinstance(module, dict):
+            continue
+        module_name = str(module.get("module") or "unknown")
+        artifacts = module.get("artifacts") if isinstance(module.get("artifacts"), dict) else {}
+        reports = artifacts.get("reports") if isinstance(artifacts.get("reports"), dict) else {}
+        if not reports:
+            continue
+        copied_module = copied_reports.get(module_name) if isinstance(copied_reports.get(module_name), dict) else {}
+        for key, source_value in reports.items():
+            source = Path(str(source_value))
+            if not source.is_absolute():
+                source = latest_run_dir / source
+            mirror = Path(str(copied_module.get(str(key)) or ""))
+            if not _nonempty(mirror):
+                gaps.append(f"module_report_mirror_missing:{module_name}:{key}")
+            elif _nonempty(source) and not _same_file_bytes(source, mirror):
+                gaps.append(f"module_report_mirror_stale:{module_name}:{key}")
+    return gaps
 
 
 def _delivery_index_gaps(index_path: Path, run_manifest: dict[str, Any]) -> list[str]:
@@ -962,6 +1548,8 @@ def _delivery_index_gaps(index_path: Path, run_manifest: dict[str, Any]) -> list
     gaps: list[str] = []
     categories = set(frame["category"].fillna("").astype(str))
     required_categories = {"figure", "table", "object", "report", "reproducible_code"}
+    if _declares_module_reports(run_manifest):
+        required_categories.add("module_report")
     missing_categories = sorted(required_categories - categories)
     if missing_categories:
         gaps.append(f"delivery_index_missing_categories:{','.join(missing_categories)}")
@@ -988,6 +1576,22 @@ def _delivery_index_gaps(index_path: Path, run_manifest: dict[str, Any]) -> list
     if unindexed_declared:
         gaps.append(f"declared_artifacts_not_indexed:{','.join(unindexed_declared[:3])}")
     return gaps
+
+
+def _declares_module_reports(run_manifest: dict[str, Any]) -> bool:
+    modules = run_manifest.get("modules")
+    if not isinstance(modules, list):
+        return False
+    for module in modules:
+        if not isinstance(module, dict):
+            continue
+        artifacts = module.get("artifacts")
+        if not isinstance(artifacts, dict):
+            continue
+        reports = artifacts.get("reports")
+        if isinstance(reports, dict) and reports:
+            return True
+    return False
 
 
 def _declared_module_artifact_paths(run_manifest: dict[str, Any]) -> list[Path]:
@@ -1081,6 +1685,15 @@ def _same_json_file(left: Path, right: Path) -> bool:
     if not _nonempty(left) or not _nonempty(right):
         return False
     return _read_json(left) == _read_json(right)
+
+
+def _same_file_bytes(left: Path, right: Path) -> bool:
+    if not _nonempty(left) or not _nonempty(right):
+        return False
+    try:
+        return left.read_bytes() == right.read_bytes()
+    except OSError:
+        return False
 
 
 def _tsv_header(path: Path) -> list[str]:

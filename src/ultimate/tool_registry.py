@@ -254,6 +254,21 @@ TOOL_REGISTRY: tuple[ToolSpec, ...] = (
     _tool("zellkonverter", "https://bioconductor.org/packages/release/bioc/html/zellkonverter.html", "interop", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="zellkonverter", size_class="medium", reason_cn="Bioconductor h5ad/SCE 互转默认路线，替代旧 SeuratDisk 主路径。"),
     _tool("seurat-object", "https://github.com/satijalab/seurat-object", "interop", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="SeuratObject", size_class="medium", reason_cn="Seurat 对象基础。"),
     _tool("SingleCellExperiment", "https://bioconductor.org/packages/release/bioc/html/SingleCellExperiment.html", "interop", "keep_default", "r_compat", env="ultimate-scrna-r", r_package="SingleCellExperiment", size_class="medium", reason_cn="Bioconductor 单细胞对象标准。"),
+    # Plan-completeness additions surfaced by the multiomics module audit.
+    _tool("WGCNA", "https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA/", "wgcna", "keep_optional", "r_compat", env="ultimate-rnaseq", r_package="WGCNA", size_class="medium", reason_cn="bulk/pseudobulk 共表达网络 R backend；样本数不足时只做 handoff。"),
+    _tool("GEOquery", "https://bioconductor.org/packages/release/bioc/html/GEOquery.html", "publicdb", "keep_optional", "r_compat", env="ultimate-rnaseq", r_package="GEOquery", size_class="medium", reason_cn="GEO 数据下载和元数据读取；默认先支持 cached table。"),
+    _tool("TCGAbiolinks", "https://github.com/BioinformaticsFMRP/TCGAbiolinks", "publicdb", "keep_optional", "r_compat", env="ultimate-rnaseq", r_package="TCGAbiolinks", size_class="large", reason_cn="TCGA 下载和整理；大下载走 Slurm/cache。"),
+    _tool("lifelines", "https://github.com/CamDavidsonPilon/lifelines", "clinical_assoc", "keep_optional", "core", env="ultimate-core", python_import="lifelines", size_class="small", reason_cn="Python 生存分析候选；样本量不足时只输出 handoff。"),
+    _tool("statsmodels", "https://github.com/statsmodels/statsmodels", "clinical_assoc", "keep_default", "core", env="ultimate-core", python_import="statsmodels", size_class="medium", reason_cn="临床关联、协变量和基础统计模型。"),
+    _tool("MACS3", "https://github.com/macs3-project/MACS", "scatac", "keep_default", "specialized_light", env="ultimate-scatac-py", python_import="MACS3", command="macs3", size_class="medium", reason_cn="ATAC peak calling 标准工具；第一版 fragments/peak matrix 优先。"),
+    _tool("bedtools", "https://github.com/arq5x/bedtools2", "scatac", "keep_default", "genome_tools", env="ultimate-genome-mtdna", command="bedtools", size_class="medium", reason_cn="区间交集、FRiP、peak/gene annotation 基础命令。"),
+    _tool("samtools", "https://github.com/samtools/samtools", "genome", "keep_default", "genome_tools", env="ultimate-genome-mtdna", command="samtools", size_class="medium", reason_cn="BAM/CRAM 读写、depth、index 基础命令。"),
+    _tool("bcftools", "https://github.com/samtools/bcftools", "genome", "keep_default", "genome_tools", env="ultimate-genome-mtdna", command="bcftools", size_class="medium", reason_cn="VCF/BCF variant QC 和过滤基础命令。"),
+    _tool("pysam", "https://github.com/pysam-developers/pysam", "genome", "keep_default", "genome_tools", env="ultimate-genome-mtdna", python_import="pysam", size_class="medium", reason_cn="Python BAM/VCF 读取，mtDNA/scDNA 轻量 backend。"),
+    _tool("pertpy", "https://github.com/scverse/pertpy", "perturb_seq", "keep_optional", "specialized_heavy_py", env="ultimate-scrna-heavy", python_import="pertpy", size_class="large", reason_cn="Perturb-seq/scverse 专项模型；MVP 先做 guide assignment 和 design-ready 输出。"),
+    _tool("SCEPTRE", "https://github.com/Katsevich-Lab/sceptre", "perturb_seq", "keep_optional", "specialized_heavy", env="ultimate-scrna-r", r_package="sceptre", install_method="optional_deferred: project-specific R backend", size_class="medium", reason_cn="CRISPR perturbation effect 专项统计；第一版只做 handoff。"),
+    _tool("hashsolo", "https://github.com/calico/solo", "hto_demux", "keep_optional", "scrna_core", env="ultimate-scrna", python_import="solo", install_method="optional_deferred: package naming varies", size_class="medium", reason_cn="HTO/cell hashing demux 候选；MVP 保持矩阵级 assignment summary。"),
+    _tool("sopa", "https://github.com/gustaveroussy/sopa", "spatial", "keep_optional", "specialized_heavy_py", env="ultimate-spatial-py", python_import="sopa", size_class="large", reason_cn="Xenium/CosMX/MERSCOPE/Visium HD 空间生态；第一版作为 handoff/optional backend。"),
 )
 
 

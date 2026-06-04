@@ -10,6 +10,7 @@ from typing import Any
 
 from ultimate.approval_gate import load_production_approval
 from ultimate.config import dump_yaml, enabled_modules, load_analysis_request, load_config, load_samples, output_dir
+from ultimate.manifest_schema import build_delivery_gate
 from ultimate.modules import run_module
 from ultimate.plot_style import generate_style_review, set_active_style_from_config
 from ultimate.preflight import run_preflight
@@ -26,6 +27,8 @@ def run_pipeline_from_config(config_path: Path, *, production_approval_path: Pat
 
 def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, production_approval_path: Path | None = None) -> dict[str, Any]:
     out_dir = output_dir(config)
+    run_id = str(config.get("_run_id") or _run_id(config))
+    config["_run_id"] = run_id
     production_approval = _load_pipeline_approval(config, config_path=config_path, output_dir=out_dir, approval_path=production_approval_path)
     for directory in ("results/figures", "results/tables", "objects", "reports", "logs", "raw_qc"):
         (out_dir / directory).mkdir(parents=True, exist_ok=True)
@@ -80,8 +83,14 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
             },
         )
     run_summary = _summarize_run(module_manifests)
+    approval_summary = _approval_summary(production_approval)
+    delivery_gate = build_delivery_gate(
+        modules=module_manifests,
+        production_approval=approval_summary,
+        run_status=run_summary["status"],
+    )
     manifest = {
-        "run_id": _run_id(config),
+        "run_id": run_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": run_summary["status"],
         "project": config.get("project", {}),
@@ -98,7 +107,8 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
         "preflight": preflight,
         "figure_style": active_style,
         "style_review": style_review,
-        "production_approval": _approval_summary(production_approval),
+        "production_approval": approval_summary,
+        "delivery_gate": delivery_gate,
         "modules": module_manifests,
         "module_status": run_summary["module_status"],
         "summary": run_summary,
@@ -145,6 +155,7 @@ def _write_run_context_log(run_dir: Path, manifest: dict[str, Any]) -> Path:
         "run_id": manifest.get("run_id"),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": manifest.get("status"),
+        "delivery_gate": manifest.get("delivery_gate", {}),
         "analysis_level_summary": [
             {
                 "module": module.get("module"),
@@ -206,6 +217,8 @@ def _approval_summary(approval: dict[str, Any] | None) -> dict[str, Any]:
         "approved_by": str(approval.get("approved_by", "")),
         "approved_at": str(approval.get("approved_at", "")),
         "project_id": str(approval.get("project_id", "")),
+        "input_path": str(approval.get("input_path", "")),
+        "output_dir": str(approval.get("output_dir", "")),
         "reason": str(approval.get("reason", "")),
         "approval_path": str(approval.get("_approval_path", "")),
     }

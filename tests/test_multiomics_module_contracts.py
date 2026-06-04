@@ -37,6 +37,7 @@ def test_every_module_has_outline_skeleton_files() -> None:
         for filename in REQUIRED_MODULE_FILES:
             assert (module_dir / filename).exists(), f"{module_name}/{filename}"
         assert (module_dir / "tests").is_dir(), module_name
+        assert (module_dir / "tests" / "test_contract.py").exists(), module_name
 
 
 def test_every_module_contract_and_guard_fields_are_exposed() -> None:
@@ -94,5 +95,6 @@ def test_module_standardization_matrix_is_ready() -> None:
     assert len(rows) == len(MODULE_ORDER)
     assert set(rows[0]) == set(STANDARDIZATION_COLUMNS)
     assert all(row["overall_status"] == "ready" for row in rows)
+    assert all(row["tests_status"] == "ready" for row in rows)
     assert all(row["demo_manifest_status"] == "ready" for row in rows)
     assert all(row["handoff_status"] == "ready" for row in rows)

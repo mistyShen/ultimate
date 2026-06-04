@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import html
 import json
 from pathlib import Path
 from typing import Any
@@ -202,14 +203,42 @@ MODULE_MVP_FIGURES: dict[str, tuple[str, ...]] = {
 }
 
 MODULE_MVP_OBJECTS: dict[str, str] = {
+    "rnaseq": "rnaseq_mvp_object.rds",
     "scrna": "scrna_mvp.h5ad",
     "scatac": "scatac_mvp.h5ad",
     "multiome": "multiome_mvp.h5mu",
     "vdj": "vdj_mvp.h5ad",
+    "scdna": "scdna_mvp_object.rds",
+    "mtdna": "mtdna_mvp_object.rds",
+    "scepi": "scepi_mvp_object.rds",
     "cite_seq": "cite_mvp.h5mu",
     "spatial": "spatial_mvp.h5ad",
+    "perturb_seq": "perturb_seq_mvp_object.rds",
+    "hto_demux": "hto_demux_mvp_object.rds",
+    "genotype_demux": "genotype_demux_mvp_object.rds",
+    "functional_state": "functional_state_mvp_object.rds",
+    "tumor_sc": "tumor_sc_mvp_object.rds",
+    "clinical_assoc": "clinical_assoc_mvp_object.rds",
     "method_tools": "cellxgene_ready.h5ad",
+    "methylation": "methylation_mvp_object.rds",
+    "proteomics": "proteomics_mvp_object.rds",
+    "publicdb": "publicdb_mvp_object.rds",
+    "wgcna": "wgcna_mvp_object.rds",
+    "single_gene": "single_gene_mvp_object.rds",
 }
+
+GLOBAL_MVP_TABLE_COLUMNS: tuple[str, ...] = (
+    "module",
+    "run_id",
+    "sample_id",
+    "source_dataset",
+    "input_artifact",
+    "input_modality",
+    "analysis_level",
+    "result_scope",
+    "method_status",
+    "delivery_allowed",
+)
 
 
 def module_contract(module_name: str) -> ModuleContract:
@@ -235,7 +264,12 @@ def module_mvp_output_spec(module_name: str) -> dict[str, Any]:
         "tables": list(MODULE_MVP_TABLES.get(module_name, ("mvp_summary.tsv",))),
         "figures": list(MODULE_MVP_FIGURES.get(module_name, ("mvp_overview.png",))),
         "object": MODULE_MVP_OBJECTS.get(module_name, f"{module_name}_mvp_object.rds"),
+        "table_schemas": module_mvp_table_schemas(module_name),
     }
+
+
+def module_mvp_table_schemas(module_name: str) -> dict[str, list[str]]:
+    return {filename: _mvp_table_schema(module_name, filename) for filename in MODULE_MVP_TABLES.get(module_name, ("mvp_summary.tsv",))}
 
 
 def preflight_contract(module_name: str, config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -394,6 +428,133 @@ def write_module_methods_fragment(module_name: str, reports_dir: Path) -> str:
     return str(path)
 
 
+def write_module_report_bundle(module_manifest: dict[str, Any], reports_dir: Path) -> dict[str, str]:
+    """Write module-local report, methods, and manifest files for independent review."""
+
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    module_name = str(module_manifest.get("module", "unknown"))
+    contract = module_contract(module_name) if module_name in MODULE_MVP_TABLES else None
+    title = str(module_manifest.get("title_cn") or (contract.title_cn if contract else module_name))
+    analysis_level = str(module_manifest.get("analysis_level", "unknown"))
+    delivery_allowed = bool(module_manifest.get("delivery_allowed", False))
+    validation_allowed = bool(module_manifest.get("validation_evidence_allowed", False))
+    non_delivery_reason = str(module_manifest.get("non_delivery_reason") or "")
+    status = str(module_manifest.get("status", "unknown"))
+    artifacts = module_manifest.setdefault("artifacts", {})
+    tables = (artifacts.get("tables") or {}) if isinstance(artifacts.get("tables"), dict) else {}
+    figures = (artifacts.get("figures") or {}) if isinstance(artifacts.get("figures"), dict) else {}
+    objects = (artifacts.get("objects") or {}) if isinstance(artifacts.get("objects"), dict) else {}
+    limitations = [str(item) for item in module_manifest.get("limitations", [])]
+    handoff = module_manifest.get("handoff") if isinstance(module_manifest.get("handoff"), dict) else {}
+
+    methods_path = reports_dir / "methods.md"
+    report_path = reports_dir / "report.html"
+    run_manifest_path = reports_dir / "run_manifest.json"
+
+    methods_lines = [
+        f"# {title} (`{module_name}`) 模块方法与交付说明",
+        "",
+        "## 运行级别",
+        "",
+        f"- status: `{status}`",
+        f"- analysis_level: `{analysis_level}`",
+        f"- delivery_allowed: `{str(delivery_allowed).lower()}`",
+        f"- validation_evidence_allowed: `{str(validation_allowed).lower()}`",
+        f"- non_delivery_reason: `{non_delivery_reason or 'none'}`",
+        "",
+        "## 输入与输出契约",
+        "",
+    ]
+    if contract is not None:
+        methods_lines.extend(
+            [
+                f"- 支持输入：`{', '.join(contract.supported_input_types)}`",
+                f"- 标准输出：`{contract.standard_output}`",
+            ]
+        )
+    methods_lines.extend(
+        [
+            "",
+            "## 本模块产物",
+            "",
+            f"- 表格数量：`{len(tables)}`",
+            f"- 图表数量：`{len(figures)}`",
+            f"- 对象数量：`{len(objects)}`",
+            f"- 模块 manifest：`{run_manifest_path}`",
+            "",
+            "## 解释边界",
+            "",
+        ]
+    )
+    methods_lines.extend([f"- {item}" for item in limitations] or ["- 未记录额外限制。"])
+    methods_lines.extend(
+        [
+            "",
+            "## 高级工具状态",
+            "",
+            f"- handoff_status: `{handoff.get('handoff_status', 'not_recorded')}`",
+            "- 未正式接入的高级工具只作为 handoff/optional backend，不写成 fully automatic。",
+            "",
+        ]
+    )
+    methods_path.write_text("\n".join(methods_lines), encoding="utf-8")
+
+    def list_items(values: dict[str, Any]) -> str:
+        if not values:
+            return "<li>none</li>"
+        return "\n".join(f"<li><code>{html.escape(str(key))}</code>: {html.escape(str(value))}</li>" for key, value in sorted(values.items()))
+
+    report_html = f"""<!doctype html>
+<html lang=\"zh-CN\">
+<head>
+  <meta charset=\"utf-8\">
+  <title>{html.escape(title)} - {html.escape(module_name)}</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 32px; color: #243142; background: #ffffff; }}
+    h1 {{ color: #1f4e79; }}
+    .badge {{ display: inline-block; padding: 4px 8px; border-radius: 6px; background: #e8eef5; margin-right: 8px; }}
+    .warn {{ color: #8a2d2d; }}
+    code {{ background: #f3f6f9; padding: 1px 4px; border-radius: 4px; }}
+  </style>
+</head>
+<body>
+  <h1>{html.escape(title)} <code>{html.escape(module_name)}</code></h1>
+  <p>
+    <span class=\"badge\">status: {html.escape(status)}</span>
+    <span class=\"badge\">analysis_level: {html.escape(analysis_level)}</span>
+    <span class=\"badge\">delivery_allowed: {str(delivery_allowed).lower()}</span>
+  </p>
+  <p class=\"warn\">{html.escape(non_delivery_reason or 'production_backend requires approval gate; validated_backend is evidence only.')}</p>
+  <h2>Tables</h2>
+  <ul>{list_items(tables)}</ul>
+  <h2>Figures</h2>
+  <ul>{list_items(figures)}</ul>
+  <h2>Objects</h2>
+  <ul>{list_items(objects)}</ul>
+  <h2>Known Limitations</h2>
+  <ul>{''.join(f'<li>{html.escape(item)}</li>' for item in limitations) or '<li>未记录额外限制。</li>'}</ul>
+</body>
+</html>
+"""
+    report_path.write_text(report_html, encoding="utf-8")
+
+    report_artifacts = artifacts.setdefault("reports", {})
+    report_artifacts.update(
+        {
+            "report_html": str(report_path),
+            "methods_md": str(methods_path),
+            "run_manifest": str(run_manifest_path),
+        }
+    )
+    module_manifest["module_report"] = {
+        "report_html": str(report_path),
+        "methods_md": str(methods_path),
+        "run_manifest": str(run_manifest_path),
+    }
+    run_manifest_path.write_text(json.dumps(module_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    return dict(report_artifacts)
+
+
 def write_mvp_tables(
     *,
     module_name: str,
@@ -401,6 +562,11 @@ def write_mvp_tables(
     matrix: pd.DataFrame | None = None,
     stats: pd.DataFrame | None = None,
     samples: pd.DataFrame | None = None,
+    analysis_fields: dict[str, Any] | None = None,
+    run_id: str | None = None,
+    source_dataset: str | None = None,
+    input_artifact: str | None = None,
+    input_modality: str | None = None,
 ) -> dict[str, str]:
     tables_dir.mkdir(parents=True, exist_ok=True)
     paths: dict[str, str] = {}
@@ -408,6 +574,18 @@ def write_mvp_tables(
     for filename in MODULE_MVP_TABLES.get(module_name, ("mvp_summary.tsv",)):
         path = tables_dir / filename
         frame = _table_frame_for_name(module_name, filename, base, matrix=matrix, stats=stats, samples=samples)
+        frame = _coerce_mvp_table_schema(
+            module_name,
+            filename,
+            frame,
+            matrix=matrix,
+            samples=samples,
+            analysis_fields=analysis_fields,
+            run_id=run_id,
+            source_dataset=source_dataset,
+            input_artifact=input_artifact,
+            input_modality=input_modality,
+        )
         frame.to_csv(path, sep="\t", index=False)
         paths[_artifact_key(filename)] = str(path)
     return paths
@@ -542,6 +720,275 @@ def _table_frame_for_name(
     return base.assign(artifact=filename)
 
 
+def _mvp_table_schema(module_name: str, filename: str) -> list[str]:
+    exact: dict[tuple[str, str], list[str]] = {
+        ("vdj", "vdj_qc.tsv"): ["module", "sample_id", "productive_contig_count", "paired_chain_count", "vdj_input_status", "delivery_allowed"],
+        ("vdj", "clonotype_summary.tsv"): ["module", "clonotype_id", "chain", "cdr3_aa", "cell_count", "sample_count", "antigen_specificity_status", "delivery_allowed"],
+        ("vdj", "clone_expansion.tsv"): ["module", "sample_id", "clonotype_id", "clone_size", "expansion_class", "delivery_allowed"],
+        ("vdj", "clone_sharing.tsv"): ["module", "sample_id_a", "sample_id_b", "shared_clonotype_count", "sharing_metric", "interpretation_warning"],
+        ("vdj", "v_gene_usage.tsv"): ["module", "sample_id", "v_gene", "productive_chain_count", "usage_fraction", "delivery_allowed"],
+        ("vdj", "j_gene_usage.tsv"): ["module", "sample_id", "j_gene", "productive_chain_count", "usage_fraction", "delivery_allowed"],
+        ("vdj", "cdr3_length.tsv"): ["module", "sample_id", "chain", "cdr3_length_aa", "cell_count", "delivery_allowed"],
+        ("vdj", "clone_condition_summary.tsv"): ["module", "condition", "clonotype_id", "clone_size", "clone_state_handoff_status", "delivery_allowed"],
+        ("scdna", "coverage_qc.tsv"): ["module", "cell_id", "mean_depth", "covered_loci", "dropout_warning", "delivery_allowed"],
+        ("scdna", "variant_qc.tsv"): ["module", "variant_id", "chrom", "pos", "ref", "alt", "depth", "vaf", "filter_status"],
+        ("scdna", "cell_variant_matrix.tsv"): ["module", "cell_id", "variant_id", "genotype_call", "alt_count", "ref_count", "assay_limitation"],
+        ("scdna", "cell_vaf_matrix.tsv"): ["module", "cell_id", "variant_id", "chrom", "pos", "ref", "alt", "vaf", "depth", "assay_limitation"],
+        ("scdna", "cell_cnv_matrix.tsv"): ["module", "cell_id", "chrom", "start", "end", "copy_number_state", "confidence"],
+        ("scdna", "clone_summary.tsv"): ["module", "clone_id", "cell_count", "marker_variants", "clone_call_status", "interpretation_warning"],
+        ("scdna", "mutation_cooccurrence.tsv"): ["module", "variant_id_a", "variant_id_b", "cooccurrence_count", "cooccurrence_status"],
+        ("scdna", "phylogeny_input.tsv"): ["module", "cell_id", "variant_id", "binary_state", "phylogeny_handoff_status"],
+        ("mtdna", "mtdna_depth_by_cell.tsv"): ["module", "cell_id", "mt_chromosome", "mean_mtdna_depth", "dropout_flag", "lineage_ready"],
+        ("mtdna", "mtdna_depth_by_position.tsv"): ["module", "mt_chromosome", "position", "depth", "homopolymer_warning"],
+        ("mtdna", "variant_candidates.tsv"): ["module", "variant_id", "mt_chromosome", "position", "ref", "alt", "heteroplasmy", "filter_status"],
+        ("mtdna", "high_confidence_variants.tsv"): ["module", "variant_id", "mt_chromosome", "position", "ref", "alt", "heteroplasmy", "high_confidence_status"],
+        ("mtdna", "cell_variant_vaf_matrix.tsv"): ["module", "cell_id", "variant_id", "vaf", "depth", "lineage_ready"],
+        ("mtdna", "cell_variant_alt_count_matrix.tsv"): ["module", "cell_id", "variant_id", "alt_count", "depth", "lineage_ready"],
+        ("mtdna", "shared_variant_matrix.tsv"): ["module", "cell_id", "paired_cell_id", "variant_id", "shared_high_confidence", "interpretation_warning"],
+        ("mtdna", "lineage_input.tsv"): ["module", "cell_id", "variant_id", "binary_state", "lineage_handoff_status"],
+        ("hto_demux", "hto_assignment.tsv"): ["module", "cell_id", "hashtag_id", "assigned_sample", "assignment_class", "confidence", "threshold_note"],
+        ("hto_demux", "hto_qc.tsv"): ["module", "cell_id", "total_hto_counts", "background_status", "positive_hashtag_count", "delivery_allowed"],
+        ("hto_demux", "sample_assignment_summary.tsv"): ["module", "sample_id", "singlet_count", "doublet_count", "negative_count", "assignment_status"],
+        ("hto_demux", "doublet_summary.tsv"): ["module", "sample_id", "hto_doublet_count", "doublet_rate", "threshold_note"],
+        ("hto_demux", "cell_metadata_with_sample.tsv"): ["module", "cell_id", "assigned_sample", "assignment_class", "confidence", "metadata_handoff_status"],
+        ("genotype_demux", "snp_qc.tsv"): ["module", "snp_id", "chrom", "pos", "covered_cell_count", "reference_vcf_status"],
+        ("genotype_demux", "assignment.tsv"): ["module", "cell_id", "assigned_genotype", "doublet_status", "assignment_probability", "snp_count", "reference_vcf_status"],
+        ("genotype_demux", "doublet_summary.tsv"): ["module", "assigned_genotype", "doublet_count", "doublet_rate", "method_status"],
+        ("genotype_demux", "sample_composition.tsv"): ["module", "assigned_genotype", "cell_count", "composition_fraction", "assignment_status"],
+        ("genotype_demux", "assignment_confidence.tsv"): ["module", "cell_id", "assigned_genotype", "assignment_probability", "confidence_class"],
+        ("genotype_demux", "cell_metadata_with_genotype.tsv"): ["module", "cell_id", "assigned_genotype", "doublet_status", "assignment_probability", "metadata_handoff_status"],
+        ("perturb_seq", "guide_qc.tsv"): ["module", "cell_id", "guide_id", "guide_count", "assignment_status", "multiplet_warning"],
+        ("perturb_seq", "guide_assignment.tsv"): ["module", "cell_id", "guide_id", "target_gene", "assignment_class", "confidence", "multiplet_strategy"],
+        ("perturb_seq", "perturbation_summary.tsv"): ["module", "perturbation", "target_gene", "cell_count", "control_status", "delivery_allowed"],
+        ("perturb_seq", "perturbation_expression_effect.tsv"): ["module", "perturbation", "target_gene", "feature_id", "effect_size", "model_status"],
+        ("perturb_seq", "pseudobulk_by_perturbation.tsv"): ["module", "perturbation", "sample_id", "feature_id", "count_value", "design_ready_status"],
+        ("perturb_seq", "target_response.tsv"): ["module", "target_gene", "response_feature", "effect_size", "mechanism_warning"],
+        ("cite_seq", "adt_qc.tsv"): ["module", "cell_id", "adt_total_counts", "background_status", "isotype_control_status"],
+        ("cite_seq", "antibody_panel.tsv"): ["module", "antibody_id", "target_protein", "isotype_control", "panel_scope_note"],
+        ("cite_seq", "adt_normalized_matrix.tsv"): ["module", "cell_id", "antibody_id", "normalized_adt", "normalization_method"],
+        ("cite_seq", "adt_marker_summary.tsv"): ["module", "cluster_id", "antibody_id", "target_protein", "marker_score", "delivery_allowed"],
+        ("cite_seq", "rna_protein_consistency.tsv"): ["module", "cell_id", "gene_symbol", "antibody_id", "correlation_proxy", "mechanism_warning"],
+        ("spatial", "spatial_qc.tsv"): ["module", "spot_id", "total_counts", "detected_genes", "in_tissue", "platform_note"],
+        ("spatial", "spot_metadata.tsv"): ["module", "spot_id", "array_row", "array_col", "pxl_row", "pxl_col", "in_tissue"],
+        ("spatial", "coordinate_check.tsv"): ["module", "spot_id", "coordinate_status", "image_status", "coordinate_system"],
+        ("spatial", "domain_summary.tsv"): ["module", "domain_id", "spot_count", "domain_method_status", "visium_spot_warning"],
+        ("spatial", "spatial_neighbors.tsv"): ["module", "spot_id", "neighbor_spot_id", "distance", "graph_status"],
+        ("scatac", "cell_qc.tsv"): ["module", "cell_id", "n_fragments", "peak_region_fragments", "tss_enrichment_status", "frip_status"],
+        ("scatac", "fragment_qc.tsv"): ["module", "fragments_file", "fragment_count", "barcode_count", "fragments_available"],
+        ("scatac", "peak_matrix_summary.tsv"): ["module", "peak_id", "chrom", "start", "end", "detected_cell_count", "accessibility_status"],
+        ("scatac", "marker_peaks.tsv"): ["module", "cluster_id", "peak_id", "log2fc", "accessibility_not_expression_warning"],
+        ("multiome", "barcode_overlap.tsv"): ["module", "rna_barcode_count", "atac_barcode_count", "overlap_count", "overlap_fraction", "overlap_status"],
+        ("multiome", "modality_consistency.tsv"): ["module", "cell_id", "rna_qc_status", "atac_qc_status", "joint_object_status", "modality_warning"],
+    }
+    if (module_name, filename) in exact:
+        return _with_global_mvp_columns(exact[(module_name, filename)])
+    if "handoff" in filename or "placeholder" in filename:
+        return _with_global_mvp_columns(["module", "artifact", "status", "handoff_tool", "required_input", "delivery_allowed", "note"])
+    if "qc" in filename:
+        return _with_global_mvp_columns(["module", "sample_id", "qc_metric", "qc_value", "qc_status", "delivery_allowed"])
+    if "matrix" in filename or "counts" in filename or "scores" in filename:
+        return _with_global_mvp_columns(["module", "feature_id", "sample_id", "value", "matrix_status", "delivery_allowed"])
+    if "summary" in filename:
+        return _with_global_mvp_columns(["module", "summary_id", "summary_metric", "summary_value", "summary_status", "delivery_allowed"])
+    if "correlation" in filename:
+        return _with_global_mvp_columns(["module", "feature_id_a", "feature_id_b", "correlation", "correlation_warning", "delivery_allowed"])
+    return _with_global_mvp_columns(["module", "artifact", "feature_id", "value", "mvp_status", "delivery_allowed"])
+
+
+def _with_global_mvp_columns(columns: list[str]) -> list[str]:
+    deduped = list(dict.fromkeys([*GLOBAL_MVP_TABLE_COLUMNS, *columns]))
+    return deduped
+
+
+def _coerce_mvp_table_schema(
+    module_name: str,
+    filename: str,
+    frame: pd.DataFrame,
+    *,
+    matrix: pd.DataFrame | None,
+    samples: pd.DataFrame | None,
+    analysis_fields: dict[str, Any] | None = None,
+    run_id: str | None = None,
+    source_dataset: str | None = None,
+    input_artifact: str | None = None,
+    input_modality: str | None = None,
+) -> pd.DataFrame:
+    schema = _mvp_table_schema(module_name, filename)
+    frame = frame.copy()
+    if frame.empty:
+        frame = pd.DataFrame(index=range(1))
+    for column in schema:
+        if column not in frame.columns:
+            frame[column] = _default_schema_column(
+                column,
+                module_name,
+                filename,
+                len(frame),
+                matrix=matrix,
+                samples=samples,
+                analysis_fields=analysis_fields,
+                run_id=run_id,
+                source_dataset=source_dataset,
+                input_artifact=input_artifact,
+                input_modality=input_modality,
+            )
+    for column in GLOBAL_MVP_TABLE_COLUMNS:
+        if column in frame.columns and column not in {"module", "sample_id"}:
+            frame[column] = _default_schema_column(
+                column,
+                module_name,
+                filename,
+                len(frame),
+                matrix=matrix,
+                samples=samples,
+                analysis_fields=analysis_fields,
+                run_id=run_id,
+                source_dataset=source_dataset,
+                input_artifact=input_artifact,
+                input_modality=input_modality,
+            )
+    extras = [column for column in frame.columns if column not in schema]
+    return frame[schema + extras]
+
+
+def _default_schema_column(
+    column: str,
+    module_name: str,
+    filename: str,
+    n_rows: int,
+    *,
+    matrix: pd.DataFrame | None,
+    samples: pd.DataFrame | None,
+    analysis_fields: dict[str, Any] | None = None,
+    run_id: str | None = None,
+    source_dataset: str | None = None,
+    input_artifact: str | None = None,
+    input_modality: str | None = None,
+) -> list[Any]:
+    sample_ids = _sample_ids(samples=samples, matrix=matrix)
+    feature_ids = _feature_ids(module_name, matrix=matrix)
+    def cycle(values: list[Any]) -> list[Any]:
+        return [values[idx % len(values)] for idx in range(n_rows)] if values else [""] * n_rows
+
+    if column == "module":
+        return [module_name] * n_rows
+    if column == "run_id":
+        return [run_id or "not_recorded"] * n_rows
+    if column == "source_dataset":
+        return [source_dataset or "not_recorded"] * n_rows
+    if column == "input_artifact":
+        return [input_artifact or "not_recorded"] * n_rows
+    if column == "input_modality":
+        return [input_modality or module_name] * n_rows
+    if column == "analysis_level":
+        return [str((analysis_fields or {}).get("analysis_level") or "not_recorded")] * n_rows
+    if column == "result_scope":
+        return [_result_scope(filename)] * n_rows
+    if column == "method_status":
+        return [_method_status(filename)] * n_rows
+    if column == "delivery_allowed":
+        allowed = bool((analysis_fields or {}).get("delivery_allowed")) and not _is_handoff_or_placeholder_table(filename)
+        return [allowed] * n_rows
+    if column in {"lineage_ready", "fragments_available", "in_tissue", "isotype_control", "shared_high_confidence"}:
+        return [False] * n_rows
+    if column in {"sample_id", "sample_id_a", "assigned_sample", "condition"}:
+        return cycle(sample_ids)
+    if column == "sample_id_b":
+        return cycle(list(reversed(sample_ids)))
+    if column in {"cell_id", "paired_cell_id", "spot_id", "neighbor_spot_id"}:
+        prefix = "SPOT" if "spatial" in module_name else "CELL"
+        return [f"{prefix}_{idx+1:04d}" for idx in range(n_rows)]
+    if column in {"feature_id", "response_feature"}:
+        return cycle(feature_ids)
+    if column in {"gene_symbol", "target_gene"}:
+        return cycle(["TP53", "MKI67", "IFNG", "EPCAM"])
+    if column in {"variant_id", "variant_id_a", "variant_id_b"}:
+        return [f"VAR_{idx+1:04d}" for idx in range(n_rows)]
+    if column == "snp_id":
+        return [f"rs{100000+idx}" for idx in range(n_rows)]
+    if column == "peak_id":
+        return [f"chr1:{1000+idx*100}-{1050+idx*100}" for idx in range(n_rows)]
+    if column == "region_id":
+        return [f"region_{idx+1:04d}" for idx in range(n_rows)]
+    if column in {"chrom", "mt_chromosome"}:
+        return ["chrM" if module_name == "mtdna" else "chr1"] * n_rows
+    if column in {"pos", "position", "start"}:
+        return [1000 + idx * 10 for idx in range(n_rows)]
+    if column == "end":
+        return [1050 + idx * 10 for idx in range(n_rows)]
+    if column == "ref":
+        return ["A"] * n_rows
+    if column == "alt":
+        return ["G"] * n_rows
+    if column in {"chain"}:
+        return cycle(["TRA", "TRB"])
+    if column == "clonotype_id":
+        return [f"clonotype_{idx+1}" for idx in range(n_rows)]
+    if column == "clone_id":
+        return [f"clone_{idx+1}" for idx in range(n_rows)]
+    if column in {"cdr3_aa"}:
+        return [f"CASSLGQG{idx}EQYF" for idx in range(n_rows)]
+    if column == "v_gene":
+        return cycle(["TRBV7-2", "TRBV20-1", "IGHV3-23"])
+    if column == "j_gene":
+        return cycle(["TRBJ2-7", "TRBJ1-2", "IGHJ4"])
+    if column in {"hashtag_id", "antibody_id", "guide_id"}:
+        prefix = {"hashtag_id": "HTO", "antibody_id": "ADT", "guide_id": "gRNA"}[column]
+        return [f"{prefix}_{idx+1}" for idx in range(n_rows)]
+    if column == "assigned_genotype":
+        return cycle(["donor_1", "donor_2", "unassigned"])
+    if column == "perturbation":
+        return cycle(["non_targeting", "TP53_KO", "IFNG_KO"])
+    if column in {"status", "mvp_status", "matrix_status", "summary_status", "qc_status", "filter_status", "assignment_status", "metadata_handoff_status", "lineage_handoff_status", "phylogeny_handoff_status", "vdj_input_status", "joint_object_status", "overlap_status", "normalization_method", "domain_method_status", "graph_status", "clone_call_status", "model_status", "design_ready_status", "high_confidence_status", "reference_vcf_status", "coordinate_status", "image_status", "background_status", "tss_enrichment_status", "frip_status"}:
+        return ["mvp_design_ready_or_handoff"] * n_rows
+    if column in {"note", "interpretation_warning", "mechanism_warning", "assay_limitation", "dropout_warning", "homopolymer_warning", "modality_warning", "accessibility_not_expression_warning", "visium_spot_warning", "threshold_note", "panel_scope_note", "correlation_warning", "multiplet_warning"}:
+        return ["MVP/handoff field; not a final biological conclusion."] * n_rows
+    if column in {"handoff_tool"}:
+        return ["optional_backend"] * n_rows
+    if column in {"required_input"}:
+        return [filename] * n_rows
+    if column in {"artifact", "qc_metric", "summary_metric"}:
+        return [Path(filename).stem] * n_rows
+    if column in {"assignment_class", "doublet_status", "confidence_class", "expansion_class", "clone_state_handoff_status", "control_status", "antigen_specificity_status", "multiplet_strategy", "copy_number_state", "coordinate_system"}:
+        return ["not_asserted_mvp"] * n_rows
+    if column in {"cell_count", "sample_count", "productive_contig_count", "paired_chain_count", "clone_size", "productive_chain_count", "cdr3_length_aa", "shared_clonotype_count", "mean_depth", "covered_loci", "depth", "alt_count", "ref_count", "covered_cell_count", "snp_count", "doublet_count", "singlet_count", "negative_count", "hto_doublet_count", "guide_count", "total_hto_counts", "positive_hashtag_count", "adt_total_counts", "detected_genes", "total_counts", "spot_count", "detected_cell_count", "fragment_count", "barcode_count", "n_fragments", "peak_region_fragments", "rna_barcode_count", "atac_barcode_count", "overlap_count"}:
+        return [idx + 1 for idx in range(n_rows)]
+    if column in {"usage_fraction", "sharing_metric", "vaf", "heteroplasmy", "confidence", "assignment_probability", "composition_fraction", "doublet_rate", "effect_size", "count_value", "normalized_adt", "marker_score", "correlation_proxy", "distance", "overlap_fraction", "log2fc", "qc_value", "summary_value", "value", "correlation"}:
+        return [round((idx + 1) / max(n_rows, 1), 4) for idx in range(n_rows)]
+    return [f"{column}_{idx+1}" for idx in range(n_rows)]
+
+
+def _is_handoff_or_placeholder_table(filename: str) -> bool:
+    name = filename.lower()
+    return "handoff" in name or "placeholder" in name
+
+
+def _result_scope(filename: str) -> str:
+    if _is_handoff_or_placeholder_table(filename):
+        return "mvp_handoff_not_biological_conclusion"
+    return "mvp_smoke_or_design_ready"
+
+
+def _method_status(filename: str) -> str:
+    if _is_handoff_or_placeholder_table(filename):
+        return "handoff_or_placeholder_not_fully_automatic"
+    return "mvp_design_ready_or_basic_backend"
+
+
+def _sample_ids(*, samples: pd.DataFrame | None, matrix: pd.DataFrame | None) -> list[str]:
+    if samples is not None and "sample_id" in samples.columns and not samples.empty:
+        return samples["sample_id"].astype(str).tolist()
+    if matrix is not None and not matrix.empty:
+        return matrix.columns.astype(str).tolist()
+    return ["sample_1"]
+
+
+def _feature_ids(module_name: str, *, matrix: pd.DataFrame | None) -> list[str]:
+    if matrix is not None and not matrix.empty:
+        return matrix.index.astype(str).tolist()
+    return [f"{module_name}_feature_{idx+1}" for idx in range(12)]
+
+
 def _plot_mvp_figure(module_name: str, filename: str, path: Path, *, matrix: pd.DataFrame | None) -> None:
     tokens = apply_clinical_journal_style()
     values = _plot_matrix_values(matrix)
@@ -619,11 +1066,11 @@ def _module_aliases(module_name: str) -> set[str]:
     if module_name == "rnaseq":
         aliases.update({"bulk_rnaseq", "statistics", "pathway", "upstream"})
     if module_name == "scrna":
-        aliases.update({"scrna_core", "scrna_r", "scrna_upstream", "scrna_non10x", "annotation", "qc", "integration", "mapping", "pathway", "trajectory", "velocity"})
+        aliases.update({"scrna_core", "scrna_r", "scrna_upstream", "scrna_non10x", "annotation", "qc", "integration", "mapping", "pathway", "trajectory", "velocity", "communication", "regulatory", "browser", "reference"})
     if module_name in {"scatac", "scepi"}:
-        aliases.update({"scatac", "scatac_upstream", "atac", "specialized_light"})
+        aliases.update({"scatac", "scatac_upstream", "atac", "genome"})
     if module_name == "multiome":
-        aliases.update({"multiome", "multiome_upstream", "scatac"})
+        aliases.update({"multiome", "multiome_upstream", "scatac", "genome", "regulatory"})
     if module_name == "vdj":
         aliases.update({"vdj", "vdj_upstream", "demultiplex"})
     if module_name in {"scdna", "mtdna", "genotype_demux"}:
@@ -631,7 +1078,11 @@ def _module_aliases(module_name: str) -> set[str]:
     if module_name == "cite_seq":
         aliases.update({"cite_seq", "multiome"})
     if module_name == "spatial":
-        aliases.update({"spatial", "spatial_upstream"})
+        aliases.update({"spatial", "spatial_upstream", "browser"})
     if module_name in {"functional_state", "tumor_sc", "clinical_assoc", "single_gene", "wgcna", "publicdb"}:
         aliases.update({"statistics", "pathway"})
+    if module_name in {"functional_state", "tumor_sc"}:
+        aliases.update({"regulatory", "communication"})
+    if module_name == "method_tools":
+        aliases.update({"browser", "reference"})
     return aliases

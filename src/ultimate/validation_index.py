@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ultimate.analysis_levels import require_real_evidence
+from ultimate.constants import MODULE_ORDER
 
 
 INDEX_FIELDS = (
@@ -42,6 +43,11 @@ INDEX_FIELDS = (
     "has_methods_md",
     "has_slurm_evidence",
     "production_approval_status",
+    "delivery_gate_status",
+    "delivery_gate_allowed",
+    "delivery_gate_validation_evidence_allowed",
+    "delivery_gate_approval_status",
+    "delivery_gate_blockers",
     "artifact_status",
     "raw_qc_manifest",
     "log_status",
@@ -128,12 +134,13 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
         for module in modules
         if isinstance(module, dict) and (module.get("module") or module.get("module_name"))
     ]
-    module_label = _module_label(manifest, module_names)
+    module_label = _module_label(manifest, module_names, run_dir)
     ready_module_count = _ready_module_count(manifest, modules)
     slurm_job_id = str(manifest.get("slurm_job_id") or ((manifest.get("slurm") or {}).get("job_id") or ""))
     guard_status, guard_missing, guard_invalid = _guard_status(manifest)
     evidence_status = _evidence_status(manifest, guard_status)
     approval_status = _production_approval_status(manifest)
+    delivery_gate = _delivery_gate_fields(manifest)
     artifact_status, artifact_gaps = _artifact_status(manifest, run_dir)
     log_status = _log_status(run_dir)
     order_readiness, missing_or_gap, next_action = _order_readiness(
@@ -188,6 +195,7 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
         "has_methods_md": _stringify_bool(methods.exists() and methods.stat().st_size > 0),
         "has_slurm_evidence": _stringify_bool(bool(slurm_job_id)),
         "production_approval_status": approval_status,
+        **delivery_gate,
         "artifact_status": artifact_status,
         "raw_qc_manifest": str(raw_qc_manifest) if raw_qc_manifest else "",
         "log_status": log_status,
@@ -225,21 +233,53 @@ def _run_kind(path: Path) -> str:
     return "unknown"
 
 
-def _module_label(manifest: dict[str, Any], module_names: list[str]) -> str:
+def _module_label(manifest: dict[str, Any], module_names: list[str], run_dir: Path) -> str:
     direct = manifest.get("module") or manifest.get("module_name")
     if direct:
         return str(direct)
     if module_names:
         return ",".join(module_names)
+    inferred = _infer_module_from_run_dir(run_dir)
+    if inferred:
+        return inferred
+    return ""
+
+
+def _infer_module_from_run_dir(run_dir: Path) -> str:
+    run_name = run_dir.name
+    parent_name = run_dir.parent.name
+    if parent_name == "scrna_mvp_validation":
+        return "scrna"
+    if "bulk_demo_python" in run_dir.parts:
+        return ",".join(MODULE_ORDER)
+    aliases = {
+        "scrna": "scrna",
+        "scatac": "scatac",
+        "multiome": "multiome",
+        "vdj": "vdj",
+        "spatial": "spatial",
+        "cite_seq": "cite_seq",
+        "scdna": "scdna",
+        "mtdna": "mtdna",
+        "method_tools": "method_tools",
+        "tumor_sc": "tumor_sc",
+        "perturb_seq": "perturb_seq",
+        "hto_demux": "hto_demux",
+        "genotype_demux": "genotype_demux",
+    }
+    normalized = run_name.removeprefix("slurm_")
+    for token, module in aliases.items():
+        if normalized == token or normalized.startswith(f"{token}_"):
+            return module
     return ""
 
 
 def _artifact_count(manifest: dict[str, Any], key: str, directory: Path) -> int:
     values = manifest.get(key)
     if isinstance(values, list):
-        return len(values)
+        return sum(1 for value in values if _nonempty(_resolve_artifact_path(directory.parents[1], value)))
     if isinstance(values, dict):
-        return len(values)
+        return sum(1 for value in values.values() if _nonempty(_resolve_artifact_path(directory.parents[1], value)))
     if directory.exists():
         return sum(1 for item in directory.rglob("*") if item.is_file() and item.stat().st_size > 0)
     return 0
@@ -286,6 +326,13 @@ def _resolve_artifact_path(run_dir: Path, value: Any) -> Path:
     return run_dir / path
 
 
+def _nonempty(path: Path) -> bool:
+    try:
+        return path.exists() and path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
 def _log_status(run_dir: Path) -> str:
     logs_dir = run_dir / "logs"
     if not logs_dir.exists():
@@ -325,14 +372,42 @@ def _production_approval_status(manifest: dict[str, Any]) -> str:
     if manifest.get("analysis_level") == "production_backend" or manifest.get("delivery_allowed") is True:
         if not isinstance(approval, dict) or not approval:
             return "missing"
-        if approval.get("approved") is True:
+        required = ("approved_by", "approved_at", "project_id", "input_path", "output_dir", "reason")
+        missing = [field for field in required if approval.get(field) in (None, "")]
+        if approval.get("approved") is True and not missing:
             return "approved"
+        if approval.get("approved") is True and missing:
+            return "invalid_missing_fields:" + ",".join(missing)
         return "invalid_or_unapproved"
     if not isinstance(approval, dict) or not approval:
         return "not_applicable"
     if approval.get("approved") is True:
         return "approved"
     return "present_not_approved"
+
+
+def _delivery_gate_fields(manifest: dict[str, Any]) -> dict[str, str]:
+    gate = manifest.get("delivery_gate")
+    if not isinstance(gate, dict):
+        return {
+            "delivery_gate_status": "",
+            "delivery_gate_allowed": "",
+            "delivery_gate_validation_evidence_allowed": "",
+            "delivery_gate_approval_status": "",
+            "delivery_gate_blockers": "",
+        }
+    blockers = gate.get("blockers")
+    if isinstance(blockers, list):
+        blocker_text = ";".join(str(item) for item in blockers)
+    else:
+        blocker_text = str(blockers or gate.get("non_delivery_reason") or "")
+    return {
+        "delivery_gate_status": str(gate.get("status", "")),
+        "delivery_gate_allowed": _stringify_bool(gate.get("delivery_allowed", "")),
+        "delivery_gate_validation_evidence_allowed": _stringify_bool(gate.get("validation_evidence_allowed", "")),
+        "delivery_gate_approval_status": str(gate.get("approval_status", "")),
+        "delivery_gate_blockers": blocker_text,
+    }
 
 
 def _evidence_status(manifest: dict[str, Any], guard_status: str) -> str:
@@ -365,6 +440,8 @@ def _order_readiness(
         gaps.append(f"guard_status={guard_status}")
     if artifact_status == "missing_or_empty_artifacts":
         gaps.extend(artifact_gaps[:10])
+    if artifact_status == "not_checked":
+        gaps.append("artifact_status=not_checked")
     if not has_report:
         gaps.append("missing_report_html")
     if not has_methods:
@@ -442,6 +519,8 @@ def _summary(rows: list[dict[str, str]]) -> dict[str, Any]:
     delivery_counts: dict[str, int] = {}
     evidence_counts: dict[str, int] = {}
     approval_counts: dict[str, int] = {}
+    delivery_gate_status_counts: dict[str, int] = {}
+    delivery_gate_allowed_counts: dict[str, int] = {}
     evidence_status_counts: dict[str, int] = {}
     order_readiness_counts: dict[str, int] = {}
     artifact_status_counts: dict[str, int] = {}
@@ -461,6 +540,10 @@ def _summary(rows: list[dict[str, str]]) -> dict[str, Any]:
         evidence_counts[evidence] = evidence_counts.get(evidence, 0) + 1
         approval = row["production_approval_status"] or "unknown"
         approval_counts[approval] = approval_counts.get(approval, 0) + 1
+        gate_status = row["delivery_gate_status"] or "not_recorded"
+        delivery_gate_status_counts[gate_status] = delivery_gate_status_counts.get(gate_status, 0) + 1
+        gate_delivery = row["delivery_gate_allowed"] or "not_recorded"
+        delivery_gate_allowed_counts[gate_delivery] = delivery_gate_allowed_counts.get(gate_delivery, 0) + 1
         evidence_status = row["evidence_status"] or "unknown"
         evidence_status_counts[evidence_status] = evidence_status_counts.get(evidence_status, 0) + 1
         order_status = row["order_readiness_status"] or "unknown"
@@ -507,6 +590,8 @@ def _summary(rows: list[dict[str, str]]) -> dict[str, Any]:
         "delivery_allowed_counts": delivery_counts,
         "validation_evidence_allowed_counts": evidence_counts,
         "production_approval_counts": approval_counts,
+        "delivery_gate_status_counts": delivery_gate_status_counts,
+        "delivery_gate_allowed_counts": delivery_gate_allowed_counts,
         "evidence_status_counts": evidence_status_counts,
         "order_readiness_status_counts": order_readiness_counts,
         "artifact_status_counts": artifact_status_counts,
@@ -548,6 +633,8 @@ def _write_reports(md_path: Path, html_path: Path, rows: list[dict[str, str]], m
         f"- guard ready: {manifest['summary']['guard_ready']}",
         f"- ready validation evidence: {manifest['summary']['ready_validation_evidence']}",
         f"- production delivery runs: {manifest['summary']['production_delivery_runs']}",
+        f"- delivery gate ready: {manifest['summary']['delivery_gate_status_counts'].get('ready', 0)}",
+        f"- delivery gate blocked: {manifest['summary']['delivery_gate_status_counts'].get('blocked', 0)}",
         f"- ready for validation evidence: {manifest['summary']['ready_for_validation_evidence']}",
         f"- ready for delivery: {manifest['summary']['ready_for_delivery']}",
         f"- ready runs missing Slurm job id: {manifest['summary']['slurm_job_id_missing_for_ready_runs']}",
@@ -584,7 +671,7 @@ def _write_reports(md_path: Path, html_path: Path, rows: list[dict[str, str]], m
         "<tr>"
         f"<td>{row['run_name']}</td><td><code>{row['status']}</code></td><td><code>{row['guard_status']}</code></td>"
         f"<td>{row['analysis_level'] or '-'}</td><td>{row['order_readiness_status'] or '-'}</td><td>{row['delivery_allowed'] or '-'}</td>"
-        f"<td>{row['n_figures']}</td><td>{row['n_tables']}</td><td>{row['object_keys'] or '-'}</td>"
+        f"<td>{row['delivery_gate_status'] or '-'}</td><td>{row['n_figures']}</td><td>{row['n_tables']}</td><td>{row['object_keys'] or '-'}</td>"
         f"<td>{row['run_dir']}</td>"
         "</tr>"
         for row in rows
@@ -601,11 +688,13 @@ def _write_reports(md_path: Path, html_path: Path, rows: list[dict[str, str]], m
 <li>guard ready: {manifest['summary']['guard_ready']}</li>
 <li>ready validation evidence: {manifest['summary']['ready_validation_evidence']}</li>
 <li>production delivery runs: {manifest['summary']['production_delivery_runs']}</li>
+<li>delivery gate ready: {manifest['summary']['delivery_gate_status_counts'].get('ready', 0)}</li>
+<li>delivery gate blocked: {manifest['summary']['delivery_gate_status_counts'].get('blocked', 0)}</li>
 <li>ready for validation evidence: {manifest['summary']['ready_for_validation_evidence']}</li>
 <li>ready for delivery: {manifest['summary']['ready_for_delivery']}</li>
 <li>ready runs missing Slurm job id: {manifest['summary']['slurm_job_id_missing_for_ready_runs']}</li>
 </ul>
-<table><thead><tr><th>Run</th><th>状态</th><th>Guard</th><th>analysis_level</th><th>order_readiness</th><th>delivery_allowed</th><th>图</th><th>表</th><th>对象</th><th>目录</th></tr></thead>
+<table><thead><tr><th>Run</th><th>状态</th><th>Guard</th><th>analysis_level</th><th>order_readiness</th><th>delivery_allowed</th><th>delivery_gate</th><th>图</th><th>表</th><th>对象</th><th>目录</th></tr></thead>
 <tbody>{html_rows}</tbody></table></body></html>""",
         encoding="utf-8",
     )

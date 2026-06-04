@@ -12,7 +12,7 @@ CONFIG_PATH="${1:?Usage: ultimate_run.sbatch <config.yaml> [production_approval.
 PRODUCTION_APPROVAL="${2:-}"
 PROJECT_ROOT="${ULTIMATE_ROOT:-/shared/shen/2026/ultimate}"
 ENV_PREFIX="${ULTIMATE_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-core}"
-CONDA_SH="${CONDA_SH:-/share/home/nshen/miniconda3/etc/profile.d/conda.sh}"
+CONDA_SH="${CONDA_SH:-}"
 CONFIG_PATH="$(readlink -f "$CONFIG_PATH")"
 
 mkdir -p "$PROJECT_ROOT/logs"
@@ -42,8 +42,27 @@ cat > "$JOB_LOG_DIR/${JOB_LOG_PREFIX}_slurm_context.json" <<JSON
   "project_root": "$PROJECT_ROOT"
 }
 JSON
-source "$CONDA_SH"
-conda activate "$ENV_PREFIX"
+if [[ -z "$CONDA_SH" ]]; then
+  for candidate in \
+    "$PROJECT_ROOT/.conda/etc/profile.d/conda.sh" \
+    "$PROJECT_ROOT/miniconda3/etc/profile.d/conda.sh" \
+    "/shared/shen/2026/ultimate/.conda/etc/profile.d/conda.sh"
+  do
+    if [[ -f "$candidate" ]]; then
+      CONDA_SH="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -n "$CONDA_SH" && -f "$CONDA_SH" ]]; then
+  source "$CONDA_SH"
+  conda activate "$ENV_PREFIX"
+elif [[ -x "$ENV_PREFIX/bin/python" ]]; then
+  export PATH="$ENV_PREFIX/bin:$PATH"
+else
+  echo "Unable to locate conda.sh or Python env: $ENV_PREFIX" >&2
+  exit 2
+fi
 cd "$PROJECT_ROOT"
 if [[ -n "$PRODUCTION_APPROVAL" ]]; then
   PRODUCTION_APPROVAL="$(readlink -f "$PRODUCTION_APPROVAL")"

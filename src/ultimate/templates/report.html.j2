@@ -21,6 +21,24 @@
   <p>物种：{{ manifest.project.organism }}；输出目录：<code>{{ manifest.output_dir }}</code></p>
   <p>出图风格：{{ manifest.figure_style.style_cn | default("临床期刊版") }}；审阅图清单：<code>{{ manifest.style_review.figure_manifest }}</code></p>
 
+  <h2>交付门控</h2>
+  {% set gate = delivery_gate or manifest.get("delivery_gate") or {} %}
+  <table>
+    <tbody>
+      <tr><th>门控状态</th><td><code>{{ gate.get("status", "not_recorded") }}</code></td></tr>
+      <tr><th>运行状态</th><td><code>{{ gate.get("run_status", manifest.get("status", "not_recorded")) }}</code></td></tr>
+      <tr><th>正式交付许可</th><td><code>{{ gate.get("delivery_allowed", false) }}</code></td></tr>
+      <tr><th>验证证据许可</th><td><code>{{ gate.get("validation_evidence_allowed", false) }}</code></td></tr>
+      <tr><th>生产审批</th><td><code>{{ gate.get("approval_status", "not_recorded") }}</code></td></tr>
+      <tr><th>生产模块</th><td><code>{{ (gate.get("production_modules") or []) | join(", ") or "none" }}</code></td></tr>
+      <tr><th>阻断原因</th><td><code>{{ (gate.get("blockers") or []) | join("; ") or gate.get("non_delivery_reason", "none") }}</code></td></tr>
+      <tr><th>不可交付模块</th><td><code>{% for item in gate.get("blocked_modules") or [] %}{{ item.get("module", "unknown") }}={{ item.get("analysis_level", "not_recorded") }}{% if not loop.last %}; {% endif %}{% endfor %}{{ "" if gate.get("blocked_modules") else "none" }}</code></td></tr>
+    </tbody>
+  </table>
+  {% if gate.get("delivery_allowed") is not true %}
+    <p class="warn">当前运行不是正式交付结果；demo、smoke、placeholder 或未审批生产运行不得作为客户正式结论。</p>
+  {% endif %}
+
   <h2>运行概览</h2>
   <table>
     <thead><tr><th>模块</th><th>状态</th><th>analysis_level</th><th>交付许可</th><th>Raw QC</th><th>特征数</th><th>样本数</th><th>R后端</th></tr></thead>

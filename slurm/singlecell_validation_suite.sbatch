@@ -38,11 +38,32 @@ manifest = {
     "generated_at": datetime.now(timezone.utc).isoformat(),
     "output_dir": str(out),
     "status": status,
+    "analysis_level": "smoke_backend",
+    "is_demo": False,
+    "is_stub": True,
+    "delivery_allowed": False,
+    "validation_evidence_allowed": False,
+    "non_delivery_reason": f"validation_not_completed:{reason}",
     "skip_reason": reason,
+    "tables": [],
+    "figures": [],
+    "objects": {},
 }
 (out / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-(out / "reports" / "report.md").write_text(f"# 验证跳过\n\n状态：`{status}`\n\n原因：{reason}\n", encoding="utf-8")
-(out / "reports" / "report.html").write_text(f"<html><body><h1>验证跳过</h1><p>{reason}</p></body></html>", encoding="utf-8")
+(out / "reports" / "report.md").write_text(
+    f"# 验证跳过\n\nanalysis_level：`smoke_backend`\n\n"
+    f"delivery_allowed：`false`\n\nvalidation_evidence_allowed：`false`\n\n"
+    f"状态：`{status}`\n\n原因：{reason}\n",
+    encoding="utf-8",
+)
+(out / "reports" / "report.html").write_text(
+    "<html><body><h1>验证跳过</h1>"
+    "<p>analysis_level: smoke_backend</p>"
+    "<p>delivery_allowed: false</p>"
+    "<p>validation_evidence_allowed: false</p>"
+    f"<p>{reason}</p></body></html>",
+    encoding="utf-8",
+)
 PY
 }
 

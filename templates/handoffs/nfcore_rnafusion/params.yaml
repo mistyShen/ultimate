@@ -1,0 +1,4 @@
+input: samplesheet.csv
+outdir: /shared/shen/2026/ultimate/external/nfcore_rnafusion/results
+genome: GRCh38
+all: true

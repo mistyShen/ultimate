@@ -1,0 +1,3 @@
+fastqs,sample,library_type
+/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/gex_fastqs,S1,Gene Expression
+/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/atac_fastqs,S1,Chromatin Accessibility

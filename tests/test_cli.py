@@ -10,6 +10,23 @@ from ultimate.cli import main
 from ultimate.config import dump_yaml, load_config
 
 
+def _write_real_matrix(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                "feature_id\tCTRL_1\tCTRL_2\tTRT_1\tTRT_2",
+                "GENE_A\t10\t12\t30\t32",
+                "GENE_B\t20\t21\t18\t17",
+                "GENE_C\t5\t4\t14\t15",
+                "GENE_D\t40\t42\t38\t37",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_cli_init_preflight_run(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "cli_demo"
@@ -68,12 +85,15 @@ def test_cli_run_requires_approval_for_production_backend(tmp_path: Path) -> Non
 def test_cli_run_accepts_production_approval(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "cli_approved_order"
-    result = runner.invoke(main, ["init-project", "--type", "rnaseq", "--output-dir", str(project_dir), "--demo-data"])
+    result = runner.invoke(main, ["init-project", "--type", "rnaseq", "--output-dir", str(project_dir)])
     assert result.exit_code == 0, result.output
     config_path = project_dir / "config" / "project.yaml"
     loaded = load_config(config_path)
     config = loaded.raw
+    _write_real_matrix(Path(config["modules"]["rnaseq"]["input_matrix"]))
     config["modules"]["rnaseq"]["analysis_level"] = "production_backend"
+    config["modules"]["rnaseq"]["is_demo"] = False
+    config["modules"]["rnaseq"].setdefault("raw", {})["enabled"] = False
     dump_yaml(config, config_path)
     output_dir = Path(load_config(config_path).raw["project"]["output_dir"])
     approval_path = tmp_path / "approval.json"

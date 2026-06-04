@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from ultimate.analysis_levels import classify_analysis_level
+from ultimate.analysis_levels import classify_analysis_level, require_real_evidence
 from ultimate.constants import MODULE_SPECS
 from ultimate.bulk import is_bulk_module, run_bulk_module
 from ultimate.modules.common import (
@@ -22,6 +22,7 @@ from ultimate.modules.common import (
     known_limitations,
     write_module_methods_fragment,
     write_module_qc_manifest,
+    write_module_report_bundle,
     write_mvp_figures,
     write_mvp_object,
     write_mvp_tables,
@@ -57,6 +58,7 @@ def run_module(
             config=config,
             run_dir=validated_run_dir,
             tables_dir=tables_dir,
+            reports_dir=reports_dir,
         )
 
     input_matrix = module_cfg.get("input_matrix")
@@ -64,8 +66,10 @@ def run_module(
     level = classify_analysis_level(
         requested_level=module_cfg.get("analysis_level"),
         input_path=input_matrix,
+        is_demo=_module_is_demo(config, module_cfg),
         is_stub=matrix_is_stub,
     )
+    level_fields = level.to_manifest_fields()
     matrix = _load_matrix(input_matrix, samples)
     design = config.get("design") or {}
     stats = _differential_stats(matrix, samples, design)
@@ -81,13 +85,25 @@ def run_module(
     artifacts["figures"].update(figures)
     objects = _write_objects(module_name, matrix, stats, objects_dir)
     artifacts["objects"].update(objects)
-    artifacts["tables"].update(write_mvp_tables(module_name=module_name, tables_dir=tables_dir, matrix=matrix, stats=stats, samples=samples))
+    artifacts["tables"].update(
+        write_mvp_tables(
+            module_name=module_name,
+            tables_dir=tables_dir,
+            matrix=matrix,
+            stats=stats,
+            samples=samples,
+            analysis_fields=level_fields,
+            run_id=_run_id(config, module_name),
+            source_dataset=_source_dataset(config, module_name),
+            input_artifact=str(input_matrix or "demo_generated_matrix"),
+            input_modality=module_name,
+        )
+    )
     artifacts["figures"].update(write_mvp_figures(module_name=module_name, figures_dir=figures_dir, matrix=matrix))
     artifacts["objects"].update(write_mvp_object(module_name=module_name, objects_dir=objects_dir, matrix=matrix, stats=stats))
     artifacts.setdefault("reports", {})
     artifacts["tables"]["tool_coverage"] = write_tool_coverage_table(module_name, tables_dir)
     artifacts["reports"]["methods_fragment"] = write_module_methods_fragment(module_name, reports_dir)
-    level_fields = level.to_manifest_fields()
     artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
         module_name=module_name,
         tables_dir=tables_dir,
@@ -119,9 +135,11 @@ def run_module(
         module_manifest["restricted_resources"] = {
             "CIBERSORT": "requires user-provided licensed signature/script; open fallback is recorded in config",
         }
+    artifacts["reports"].update(write_module_report_bundle(module_manifest, reports_dir))
     manifest_path = tables_dir / "module_manifest.json"
-    manifest_path.write_text(json.dumps(module_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     module_manifest["manifest_path"] = str(manifest_path)
+    manifest_path.write_text(json.dumps(module_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_module_report_bundle(module_manifest, reports_dir)
     return module_manifest
 
 
@@ -133,12 +151,34 @@ def _validated_run_dir(module_cfg: dict[str, Any]) -> Path | None:
     return Path(str(value)).expanduser() if value else None
 
 
+def _module_is_demo(config: dict[str, Any], module_cfg: dict[str, Any]) -> bool | None:
+    if "is_demo" in module_cfg:
+        return bool(module_cfg.get("is_demo"))
+    project = config.get("project") or {}
+    if "is_demo" in project:
+        return bool(project.get("is_demo"))
+    return None
+
+
+def _run_id(config: dict[str, Any], module_name: str) -> str:
+    if config.get("_run_id"):
+        return str(config["_run_id"])
+    project = config.get("project") or {}
+    return str(project.get("job_id") or project.get("name") or module_name)
+
+
+def _source_dataset(config: dict[str, Any], module_name: str) -> str:
+    project = config.get("project") or {}
+    return str(project.get("name") or project.get("job_id") or module_name)
+
+
 def _run_validated_run_backend(
     *,
     module_name: str,
     config: dict[str, Any],
     run_dir: Path,
     tables_dir: Path,
+    reports_dir: Path,
 ) -> dict[str, Any]:
     run_dir = run_dir.resolve()
     source_manifest_path = run_dir / "run_manifest.json"
@@ -189,6 +229,11 @@ def _run_validated_run_backend(
     try:
         current_module_cfg = (config.get("modules") or {}).get(module_name) or {}
         requested_level = str(source_manifest.get("analysis_level") or "validated_backend")
+        real_ready, real_note = require_real_evidence(source_manifest)
+        if not real_ready:
+            status = "partial:validated_run_not_real_evidence"
+            skip_reasons.append(f"source_not_real_evidence:{real_note}")
+            requested_level = "smoke_backend"
         if requested_level == "production_backend" and current_module_cfg.get("analysis_level") != "production_backend":
             requested_level = "validated_backend"
             skip_reasons.append("source_production_backend_downgraded:current_run_not_production_approved")
@@ -241,9 +286,12 @@ def _run_validated_run_backend(
         },
         "skip_reasons": skip_reasons,
     }
+    artifacts.setdefault("reports", {})
+    artifacts["reports"].update(write_module_report_bundle(module_manifest, reports_dir))
     manifest_path = tables_dir / "module_manifest.json"
-    manifest_path.write_text(json.dumps(module_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     module_manifest["manifest_path"] = str(manifest_path)
+    manifest_path.write_text(json.dumps(module_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_module_report_bundle(module_manifest, reports_dir)
     return module_manifest
 
 

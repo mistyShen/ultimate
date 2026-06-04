@@ -188,6 +188,14 @@ def test_readme_documents_scrna_mvp_validation() -> None:
     assert "validated_backend" in readme
 
 
+def test_readme_uses_prepared_job_slurm_entrypoint() -> None:
+    readme = (_ultimate_root() / "README.md").read_text(encoding="utf-8")
+    assert "ultimate prepare-job --config" in readme
+    assert "jobs/demo_all_001/config/run_ultimate.sbatch" in readme
+    assert "Do not rely on passing extra\nconfig arguments through the wrapper" in readme
+    assert "hpc-sbatch /shared/shen/2026/ultimate/slurm/ultimate_run.sbatch projects/demo_all/config/project.yaml" not in readme
+
+
 def _write_approval(path: Path, *, input_path: Path, output_dir: Path, approved: bool = True) -> None:
     path.write_text(
         json.dumps(
@@ -206,7 +214,4 @@ def _write_approval(path: Path, *, input_path: Path, output_dir: Path, approved:
 
 
 def _ultimate_root() -> Path:
-    nested = Path("ultimate")
-    if (nested / "pyproject.toml").exists():
-        return nested
-    return Path(".")
+    return Path(__file__).resolve().parents[1]

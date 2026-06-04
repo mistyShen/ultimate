@@ -40,6 +40,7 @@ def init_project(project_type: str, output_dir: Path, *, demo_data: bool = False
         module_config[module_name] = {
             "enabled": enabled,
             "analysis_level": "demo_result" if demo_data else "smoke_backend",
+            "is_demo": bool(demo_data),
             "samplesheet": "../samples/samples.tsv",
             "input_matrix": f"../data/{module_name}_matrix.tsv",
             "r_entrypoint": f"scripts/R/{module_name}.R",
@@ -69,6 +70,7 @@ def init_project(project_type: str, output_dir: Path, *, demo_data: bool = False
             "server_root": "/shared/shen/2026/ultimate",
             "run_mode": "interactive",
             "job_id": output_dir.name,
+            "is_demo": bool(demo_data),
         },
         "analysis_request": "../config/analysis_request.yaml",
         "samples": {

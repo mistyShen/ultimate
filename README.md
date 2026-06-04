@@ -187,8 +187,16 @@ large h5ad/RDS/RData files stay where the validated backend wrote them.
 cd /shared/shen/2026/ultimate
 bash 01_tools/setup_server_env.sh
 ultimate init-project --type all --output-dir projects/demo_all --demo-data
-hpc-sbatch /shared/shen/2026/ultimate/slurm/ultimate_run.sbatch projects/demo_all/config/project.yaml
+ultimate prepare-job --config projects/demo_all/config/project.yaml --job-id demo_all_001 --root /shared/shen/2026/ultimate --run-mode interactive
+hpc-sbatch /shared/shen/2026/ultimate/jobs/demo_all_001/config/run_ultimate.sbatch
 ```
+
+`hpc-sbatch` should submit a ready sbatch script. Do not rely on passing extra
+config arguments through the wrapper. For real orders, use `ultimate
+prepare-job` first; it creates `jobs/<job_id>/config/run_ultimate.sbatch`,
+`production_approval.json`, logs, deliverables, and the fixed output directory
+under `/shared/shen/2026/ultimate/jobs/<job_id>/`. Production runs require
+`production_approval.json` with `approved=true` before submission.
 
 Small smoke checks, audits, and environment repairs can run directly on the
 login node when they are short. Large raw-data analyses, fragments-level

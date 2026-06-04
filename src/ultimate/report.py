@@ -24,6 +24,8 @@ def build_report(run_dir: Path) -> dict[str, Any]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "modules": manifest.get("modules", []),
         "preflight": manifest.get("preflight", {}),
+        "delivery_gate": manifest.get("delivery_gate", {}),
+        "module_qc_manifests": _load_module_qc_manifests(manifest),
     }
     html = _render("report.html.j2", context)
     methods = _render("methods.md.j2", context)
@@ -37,6 +39,7 @@ def build_report(run_dir: Path) -> dict[str, Any]:
         "html_report": str(html_path),
         "methods_md": str(methods_path),
         "source_manifest": str(manifest_path),
+        "delivery_gate": manifest.get("delivery_gate", {}),
     }
     report_manifest_path.write_text(json.dumps(report_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     report_manifest["manifest_path"] = str(report_manifest_path)
@@ -51,3 +54,21 @@ def _render(template_name: str, context: dict[str, Any]) -> str:
         lstrip_blocks=True,
     )
     return environment.get_template(template_name).render(**context)
+
+
+def _load_module_qc_manifests(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    loaded: dict[str, dict[str, Any]] = {}
+    for module in manifest.get("modules", []):
+        if not isinstance(module, dict):
+            continue
+        path_value = ((module.get("artifacts") or {}).get("tables") or {}).get("module_qc_manifest")
+        if not path_value:
+            continue
+        path = Path(str(path_value))
+        if not path.exists():
+            continue
+        try:
+            loaded[str(path)] = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            loaded[str(path)] = {"status": "invalid_json"}
+    return loaded
