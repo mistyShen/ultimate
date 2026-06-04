@@ -233,6 +233,11 @@ ultimate validation-index --root /shared/shen/2026/ultimate \
   --output-dir /shared/shen/2026/ultimate/reports/validation_index
 ultimate audit-modules \
   --output-dir /shared/shen/2026/ultimate/audits/module_standardization_latest
+ROOT=/shared/shen/2026/ultimate
+$ROOT/.conda/envs/ultimate-core/bin/python $ROOT/01_tools/check_validation_manifests.py \
+  --root $ROOT \
+  --validations-dir $ROOT/validations \
+  --output-tsv $ROOT/audits/validation_guard_latest/validation_guard_check.tsv
 ```
 
 Interpretation policy:
@@ -242,6 +247,10 @@ Interpretation policy:
   (`contract/preflight/demo/validate/run/report/handoff/limitations/tests`),
   demo manifest guard fields, handoff template, limitations, and required
   output roots. This is a code/readiness audit only, not a scientific result.
+- `validation_guard_check.tsv`: checks validation `run_manifest.json` files for
+  explicit `analysis_level`, demo/stub flags, delivery permission, evidence
+  permission, non-delivery reason, and Slurm metadata. Use `--normalize` only
+  after choosing a backup directory.
 - `partial:licensed_optional_missing`: open pipeline is usable; upstream vendor
   tools such as Cell Ranger, Cell Ranger ATAC/ARC, or Space Ranger require a
   user-provided licensed path.

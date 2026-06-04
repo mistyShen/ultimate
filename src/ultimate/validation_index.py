@@ -10,6 +10,14 @@ from typing import Any
 INDEX_FIELDS = (
     "run_name",
     "status",
+    "guard_status",
+    "analysis_level",
+    "is_demo",
+    "is_stub",
+    "delivery_allowed",
+    "validation_evidence_allowed",
+    "non_delivery_reason",
+    "slurm_job_id",
     "input",
     "dataset",
     "n_cells",
@@ -25,7 +33,20 @@ INDEX_FIELDS = (
     "manifest_path",
     "report_html",
     "skip_reason",
+    "guard_missing_fields",
+    "guard_invalid_fields",
 )
+
+REQUIRED_GUARD_FIELDS = (
+    "analysis_level",
+    "is_demo",
+    "is_stub",
+    "delivery_allowed",
+    "validation_evidence_allowed",
+    "non_delivery_reason",
+)
+
+VALID_ANALYSIS_LEVELS = {"demo_result", "smoke_backend", "validated_backend", "production_backend"}
 
 
 def build_validation_index(root: Path, output_dir: Path | None = None, validations_dir: Path | None = None) -> dict[str, Any]:
@@ -79,6 +100,14 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
     row = {
         "run_name": run_dir.name,
         "status": str(manifest.get("status", "")),
+        "guard_status": _guard_status(manifest)[0],
+        "analysis_level": str(manifest.get("analysis_level", "")),
+        "is_demo": _stringify_bool(manifest.get("is_demo", "")),
+        "is_stub": _stringify_bool(manifest.get("is_stub", "")),
+        "delivery_allowed": _stringify_bool(manifest.get("delivery_allowed", "")),
+        "validation_evidence_allowed": _stringify_bool(manifest.get("validation_evidence_allowed", "")),
+        "non_delivery_reason": str(manifest.get("non_delivery_reason", "")),
+        "slurm_job_id": str(manifest.get("slurm_job_id") or ((manifest.get("slurm") or {}).get("job_id") or "")),
         "input": str(input_value),
         "dataset": str(manifest.get("dataset", manifest.get("dataset_label", ""))),
         "n_cells": _stringify(manifest.get("n_cells")),
@@ -94,12 +123,49 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
         "manifest_path": str(path),
         "report_html": str(reports) if reports.exists() else "",
         "skip_reason": str(manifest.get("skip_reason", "")),
+        "guard_missing_fields": ",".join(_guard_status(manifest)[1]),
+        "guard_invalid_fields": ",".join(_guard_status(manifest)[2]),
     }
     return row
 
 
 def _stringify(value: Any) -> str:
     return "" if value is None else str(value)
+
+
+def _stringify_bool(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return "" if value is None else str(value)
+
+
+def _guard_status(manifest: dict[str, Any]) -> tuple[str, list[str], list[str]]:
+    missing = [field for field in REQUIRED_GUARD_FIELDS if field not in manifest]
+    invalid = _invalid_guard_fields(manifest)
+    if missing:
+        return "missing_guard_fields", missing, invalid
+    if invalid:
+        return "invalid_guard_fields", missing, invalid
+    return "ready", missing, invalid
+
+
+def _invalid_guard_fields(manifest: dict[str, Any]) -> list[str]:
+    invalid: list[str] = []
+    if manifest.get("analysis_level") not in VALID_ANALYSIS_LEVELS:
+        invalid.append("analysis_level")
+    for field in ("is_demo", "is_stub", "delivery_allowed", "validation_evidence_allowed"):
+        if not isinstance(manifest.get(field), bool):
+            invalid.append(field)
+    if manifest.get("delivery_allowed") is True and manifest.get("analysis_level") != "production_backend":
+        invalid.append("delivery_allowed_requires_production_backend")
+    if manifest.get("validation_evidence_allowed") is True and manifest.get("analysis_level") not in {
+        "validated_backend",
+        "production_backend",
+    }:
+        invalid.append("validation_evidence_requires_validated_or_production")
+    if manifest.get("delivery_allowed") is False and not manifest.get("non_delivery_reason"):
+        invalid.append("non_delivery_reason")
+    return invalid
 
 
 def _summary(rows: list[dict[str, str]]) -> dict[str, int]:
@@ -144,12 +210,13 @@ def _write_reports(md_path: Path, html_path: Path, rows: list[dict[str, str]], m
             if row[key]
         )
         lines.append(
-            f"| {row['run_name']} | `{row['status']}` | {row['n_figures']} | {row['n_tables']} | {row['object_keys'] or '-'} | {scale or '-'} |"
+            f"| {row['run_name']} | `{row['status']}` / `{row['guard_status']}` | {row['n_figures']} | {row['n_tables']} | {row['object_keys'] or '-'} | {scale or '-'} |"
         )
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     html_rows = "\n".join(
         "<tr>"
-        f"<td>{row['run_name']}</td><td><code>{row['status']}</code></td>"
+        f"<td>{row['run_name']}</td><td><code>{row['status']}</code></td><td><code>{row['guard_status']}</code></td>"
+        f"<td>{row['analysis_level'] or '-'}</td><td>{row['delivery_allowed'] or '-'}</td>"
         f"<td>{row['n_figures']}</td><td>{row['n_tables']}</td><td>{row['object_keys'] or '-'}</td>"
         f"<td>{row['run_dir']}</td>"
         "</tr>"
@@ -161,7 +228,7 @@ def _write_reports(md_path: Path, html_path: Path, rows: list[dict[str, str]], m
 <style>body{{font-family:sans-serif;margin:32px}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ddd;padding:6px}}th{{background:#f6f8fa}}</style>
 </head><body><h1>Ultimate 验证结果总索引</h1><p>生成时间：{manifest['generated_at']}</p>
 <p>验证目录：<code>{manifest['validations_dir']}</code></p>
-<table><thead><tr><th>Run</th><th>状态</th><th>图</th><th>表</th><th>对象</th><th>目录</th></tr></thead>
+<table><thead><tr><th>Run</th><th>状态</th><th>Guard</th><th>analysis_level</th><th>delivery_allowed</th><th>图</th><th>表</th><th>对象</th><th>目录</th></tr></thead>
 <tbody>{html_rows}</tbody></table></body></html>""",
         encoding="utf-8",
     )

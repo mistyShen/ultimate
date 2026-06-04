@@ -81,3 +81,4 @@ def test_production_audit_rejects_demo_scrna_mvp_as_real_evidence(tmp_path: Path
     evidence = Path(manifest["validation_evidence_matrix"]).read_text(encoding="utf-8")
     assert "scrna_mvp_10x_mtx" in evidence
     assert "analysis_level=demo_result" in evidence
+    assert "guard_status=missing_guard_fields" in evidence

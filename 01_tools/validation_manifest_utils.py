@@ -47,6 +47,13 @@ def add_validation_guard_fields(
         validation_evidence_allowed = False
         non_delivery_reason = "backend_smoke_check_not_customer_delivery"
 
+    slurm = manifest.get("slurm") if isinstance(manifest.get("slurm"), dict) else {}
+    slurm_job_id = str(manifest.get("slurm_job_id") or slurm.get("job_id") or os.environ.get("SLURM_JOB_ID", ""))
+    slurm_job_name = str(manifest.get("slurm_job_name") or slurm.get("job_name") or os.environ.get("SLURM_JOB_NAME", ""))
+    slurm_submit_dir = str(
+        manifest.get("slurm_submit_dir") or slurm.get("submit_dir") or os.environ.get("SLURM_SUBMIT_DIR", "")
+    )
+
     manifest.update(
         {
             "analysis_level": analysis_level,
@@ -59,15 +66,15 @@ def add_validation_guard_fields(
                 "standalone validation run; may support validated_backend evidence "
                 "only when non-demo inputs and ready status are recorded; never customer delivery"
             ),
-            "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
-            "slurm_job_name": os.environ.get("SLURM_JOB_NAME", ""),
-            "slurm_submit_dir": os.environ.get("SLURM_SUBMIT_DIR", ""),
+            "slurm_job_id": slurm_job_id,
+            "slurm_job_name": slurm_job_name,
+            "slurm_submit_dir": slurm_submit_dir,
             "slurm": {
-                "job_id": os.environ.get("SLURM_JOB_ID", ""),
-                "job_name": os.environ.get("SLURM_JOB_NAME", ""),
-                "submit_dir": os.environ.get("SLURM_SUBMIT_DIR", ""),
-                "cpus_per_task": os.environ.get("SLURM_CPUS_PER_TASK", ""),
-                "job_nodelist": os.environ.get("SLURM_JOB_NODELIST", ""),
+                "job_id": slurm_job_id,
+                "job_name": slurm_job_name,
+                "submit_dir": slurm_submit_dir,
+                "cpus_per_task": str(slurm.get("cpus_per_task") or os.environ.get("SLURM_CPUS_PER_TASK", "")),
+                "job_nodelist": str(slurm.get("job_nodelist") or os.environ.get("SLURM_JOB_NODELIST", "")),
             },
         }
     )

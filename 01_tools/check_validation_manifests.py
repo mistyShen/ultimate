@@ -4,8 +4,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import shutil
 from pathlib import Path
 from typing import Any
+
+from validation_manifest_utils import add_validation_guard_fields
 
 
 REQUIRED_GUARD_FIELDS = (
@@ -22,20 +25,51 @@ VALID_ANALYSIS_LEVELS = {"demo_result", "smoke_backend", "validated_backend", "p
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Check Ultimate validation run manifests for guard fields.")
+    parser.add_argument("--root", type=Path, default=Path("/shared/shen/2026/ultimate"))
     parser.add_argument("--validations-dir", type=Path, default=Path("/shared/shen/2026/ultimate/validations"))
     parser.add_argument("--output-tsv", type=Path, required=True)
+    parser.add_argument("--normalize", action="store_true", help="Back up and add missing guard fields to validation manifests.")
+    parser.add_argument(
+        "--backup-dir",
+        type=Path,
+        default=None,
+        help="Backup directory for old manifests. Defaults to <root>/audits/validation_guard_latest/backups.",
+    )
     args = parser.parse_args()
-    rows = check_validation_manifests(args.validations_dir)
+    if args.normalize:
+        rows = normalize_validation_manifests(
+            root=args.root,
+            validations_dir=args.validations_dir,
+            backup_dir=args.backup_dir or args.root / "audits" / "validation_guard_latest" / "backups",
+        )
+    else:
+        rows = check_validation_manifests(args.validations_dir, root=args.root)
     write_tsv(args.output_tsv, rows)
     summary = summarize_rows(rows)
     print(json.dumps({"summary": summary, "output_tsv": str(args.output_tsv)}, indent=2, ensure_ascii=False))
 
 
-def check_validation_manifests(validations_dir: Path) -> list[dict[str, Any]]:
+def check_validation_manifests(validations_dir: Path, *, root: Path | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for manifest_path in sorted(validations_dir.glob("*/run_manifest.json")):
+    for manifest_path in iter_validation_manifests(validations_dir=validations_dir, root=root):
         rows.append(_check_manifest(manifest_path))
     return rows
+
+
+def normalize_validation_manifests(*, root: Path, validations_dir: Path, backup_dir: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for manifest_path in iter_validation_manifests(validations_dir=validations_dir, root=root):
+        rows.append(_normalize_manifest(manifest_path, root=root, backup_dir=backup_dir))
+    return rows
+
+
+def iter_validation_manifests(*, validations_dir: Path, root: Path | None = None) -> list[Path]:
+    root = root.resolve() if root else None
+    paths = set(validations_dir.resolve().glob("*/run_manifest.json"))
+    if root:
+        paths.update((root / "validation_runs").glob("*/*/run_manifest.json"))
+        paths.update((root / "validations" / "bulk_demo_python" / "project" / "runs").glob("*/run_manifest.json"))
+    return sorted(path for path in paths if path.exists())
 
 
 def summarize_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -66,6 +100,8 @@ def write_tsv(path: Path, rows: list[dict[str, Any]]) -> None:
         "n_tables",
         "n_objects",
         "report_html_exists",
+        "normalization_action",
+        "backup_path",
     )
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, delimiter="\t", fieldnames=fields)
@@ -93,6 +129,8 @@ def _check_manifest(path: Path) -> dict[str, Any]:
         "n_tables": 0,
         "n_objects": 0,
         "report_html_exists": False,
+        "normalization_action": "",
+        "backup_path": "",
     }
     if not path.exists():
         row["missing_fields"] = ",".join(REQUIRED_GUARD_FIELDS)
@@ -128,6 +166,50 @@ def _check_manifest(path: Path) -> dict[str, Any]:
     else:
         row["guard_status"] = "ready"
     return row
+
+
+def _normalize_manifest(path: Path, *, root: Path, backup_dir: Path) -> dict[str, Any]:
+    before = _check_manifest(path)
+    if before["guard_status"] == "ready":
+        before["normalization_action"] = "unchanged"
+        return before
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        before["normalization_action"] = "skipped:manifest_unreadable"
+        return before
+
+    validation_kind, validation_scope = _classify_validation_run(path, manifest)
+    relative = _safe_relative_manifest_path(path, root)
+    backup_path = backup_dir / relative
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(path, backup_path)
+
+    add_validation_guard_fields(manifest, validation_kind=validation_kind, validation_scope=validation_scope)
+    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    after = _check_manifest(path)
+    after["normalization_action"] = "normalized"
+    after["backup_path"] = str(backup_path)
+    return after
+
+
+def _classify_validation_run(path: Path, manifest: dict[str, Any]) -> tuple[str, str]:
+    text = f"{path} {manifest.get('dataset', '')} {manifest.get('dataset_label', '')}".lower()
+    name = path.parent.name.lower()
+    if "demo" in text or name in {"slurm_perturb_seq_demo", "slurm_hto_demux_demo", "slurm_genotype_demux_demo"}:
+        return "synthetic", f"{path.parent.name} demo/synthetic validation"
+    if any(token in text for token in ("nsclc", "0518", "method_tools")):
+        return "internal", f"{path.parent.name} internal validation"
+    if any(token in text for token in ("10x", "pbmc", "visium", "squidpy", "public", "geo")):
+        return "public", f"{path.parent.name} public validation"
+    return "smoke", f"{path.parent.name} validation smoke"
+
+
+def _safe_relative_manifest_path(path: Path, root: Path) -> Path:
+    try:
+        return path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return Path(path.parent.name) / path.name
 
 
 def _invalid_fields(manifest: dict[str, Any]) -> list[str]:

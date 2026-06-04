@@ -9,7 +9,7 @@ if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
 from validation_manifest_utils import add_validation_guard_fields
-from check_validation_manifests import check_validation_manifests, summarize_rows, write_tsv
+from check_validation_manifests import check_validation_manifests, normalize_validation_manifests, summarize_rows, write_tsv
 
 
 VALIDATION_SCRIPTS = (
@@ -43,6 +43,17 @@ def test_public_validation_manifest_is_evidence_not_delivery(monkeypatch) -> Non
     assert manifest["non_delivery_reason"] == "validation_evidence_only_not_customer_delivery"
     assert manifest["slurm_job_id"] == "12345"
     assert manifest["slurm"]["job_name"] == "ult_validate"
+
+
+def test_guard_fields_preserve_existing_slurm_metadata() -> None:
+    manifest = add_validation_guard_fields(
+        {"status": "ready", "slurm_job_id": "777", "slurm": {"job_name": "old_job"}},
+        validation_kind="internal",
+    )
+
+    assert manifest["slurm_job_id"] == "777"
+    assert manifest["slurm"]["job_id"] == "777"
+    assert manifest["slurm"]["job_name"] == "old_job"
 
 
 def test_synthetic_validation_manifest_is_demo_only() -> None:
@@ -104,3 +115,24 @@ def test_check_validation_manifests_reports_guard_gaps(tmp_path: Path) -> None:
     write_tsv(output_tsv, rows)
     assert output_tsv.exists()
     assert "missing_guard_fields" in output_tsv.read_text(encoding="utf-8")
+
+
+def test_normalize_validation_manifests_backs_up_and_adds_guards(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    old_run = root / "validations" / "slurm_scrna_nsclc_lambrechts"
+    old_run.mkdir(parents=True)
+    manifest_path = old_run / "run_manifest.json"
+    manifest_path.write_text('{"status": "ready", "dataset": "NSCLC"}', encoding="utf-8")
+
+    rows = normalize_validation_manifests(
+        root=root,
+        validations_dir=root / "validations",
+        backup_dir=root / "audits" / "validation_guard_latest" / "backups",
+    )
+
+    assert rows[0]["guard_status"] == "ready"
+    assert rows[0]["normalization_action"] == "normalized"
+    assert Path(rows[0]["backup_path"]).exists()
+    text = manifest_path.read_text(encoding="utf-8")
+    assert '"analysis_level": "validated_backend"' in text
+    assert '"delivery_allowed": false' in text

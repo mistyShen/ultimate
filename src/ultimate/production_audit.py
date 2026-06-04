@@ -89,6 +89,17 @@ OPTIONAL_LICENSED = {
     "CIBERSORT": "授权免疫浸润脚本；平台默认提供开源 signature/ssGSEA 替代。",
 }
 
+REQUIRED_GUARD_FIELDS = (
+    "analysis_level",
+    "is_demo",
+    "is_stub",
+    "delivery_allowed",
+    "validation_evidence_allowed",
+    "non_delivery_reason",
+)
+
+VALID_ANALYSIS_LEVELS = {"demo_result", "smoke_backend", "validated_backend", "production_backend"}
+
 VALIDATION_RUN_REQUIREMENTS = {
     "scrna_mvp_h5ad": {
         "label_cn": "scRNA MVP h5ad 真实公开数据验证",
@@ -526,6 +537,9 @@ def _validation_evidence_row(root: Path, key: str, requirement: dict[str, Any]) 
         missing.append(f"modules<{requirement.get('min_modules')}")
     if raw_qc_count < int(requirement.get("min_raw_qc_manifests", 0)):
         missing.append(f"raw_qc_manifests<{requirement.get('min_raw_qc_manifests')}")
+    guard_status, guard_missing, guard_invalid = _manifest_guard_status(manifest or {})
+    if guard_status != "ready":
+        missing.append(f"guard_status={guard_status}")
     real_evidence_note = ""
     if requirement.get("require_real_evidence"):
         real_ready, real_evidence_note = require_real_evidence(manifest or {})
@@ -548,9 +562,42 @@ def _validation_evidence_row(root: Path, key: str, requirement: dict[str, Any]) 
         "ready_module_count": ready_module_count,
         "analysis_level": str((manifest or {}).get("analysis_level", "")),
         "delivery_allowed": str((manifest or {}).get("delivery_allowed", "")),
+        "validation_evidence_allowed": str((manifest or {}).get("validation_evidence_allowed", "")),
+        "guard_status": guard_status,
+        "guard_missing_fields": ",".join(guard_missing),
+        "guard_invalid_fields": ",".join(guard_invalid),
         "real_evidence_note": real_evidence_note,
         "missing_or_gap": ";".join(missing),
     }
+
+
+def _manifest_guard_status(manifest: dict[str, Any]) -> tuple[str, list[str], list[str]]:
+    missing = [field for field in REQUIRED_GUARD_FIELDS if field not in manifest]
+    invalid = _invalid_guard_fields(manifest)
+    if missing:
+        return "missing_guard_fields", missing, invalid
+    if invalid:
+        return "invalid_guard_fields", missing, invalid
+    return "ready", missing, invalid
+
+
+def _invalid_guard_fields(manifest: dict[str, Any]) -> list[str]:
+    invalid: list[str] = []
+    if manifest.get("analysis_level") not in VALID_ANALYSIS_LEVELS:
+        invalid.append("analysis_level")
+    for field in ("is_demo", "is_stub", "delivery_allowed", "validation_evidence_allowed"):
+        if not isinstance(manifest.get(field), bool):
+            invalid.append(field)
+    if manifest.get("delivery_allowed") is True and manifest.get("analysis_level") != "production_backend":
+        invalid.append("delivery_allowed_requires_production_backend")
+    if manifest.get("validation_evidence_allowed") is True and manifest.get("analysis_level") not in {
+        "validated_backend",
+        "production_backend",
+    }:
+        invalid.append("validation_evidence_requires_validated_or_production")
+    if manifest.get("delivery_allowed") is False and not manifest.get("non_delivery_reason"):
+        invalid.append("non_delivery_reason")
+    return invalid
 
 
 def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], validation_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -624,6 +671,12 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
             "bulk/表格类模块有 Slurm demo 验证",
             validation_status.get("bulk_all_demo") == "ready",
             f"bulk_all_demo={validation_status.get('bulk_all_demo', 'missing')}",
+        ),
+        _requirement_row(
+            "validation_manifest_guard_fields_ready",
+            "所有验证 run_manifest 显式记录 analysis_level 和交付边界",
+            all(str(row.get("guard_status")) == "ready" for row in validation_rows),
+            ",".join(f"{row['validation_key']}={row.get('guard_status', 'missing')}" for row in validation_rows),
         ),
         _requirement_row(
             "raw_qc_contracts_all_modules",

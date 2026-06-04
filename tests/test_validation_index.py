@@ -16,6 +16,13 @@ def test_build_validation_index_reads_run_manifests(tmp_path: Path) -> None:
     (run / "reports" / "report.html").write_text("<html></html>", encoding="utf-8")
     manifest = {
         "status": "ready",
+        "analysis_level": "validated_backend",
+        "is_demo": False,
+        "is_stub": False,
+        "delivery_allowed": False,
+        "validation_evidence_allowed": True,
+        "non_delivery_reason": "validation_evidence_only_not_customer_delivery",
+        "slurm_job_id": "123",
         "input_h5": "/data/input.h5",
         "n_cells": 12,
         "figures": ["a.png", "b.png"],
@@ -30,6 +37,10 @@ def test_build_validation_index_reads_run_manifests(tmp_path: Path) -> None:
     assert Path(result["validation_index_tsv"]).exists()
     assert Path(result["validation_index_json"]).exists()
     assert Path(result["report_html"]).exists()
+    text = Path(result["validation_index_tsv"]).read_text(encoding="utf-8")
+    assert "guard_status" in text
+    assert "validated_backend" in text
+    assert "123" in text
 
 
 def test_cli_validation_index(tmp_path: Path) -> None:
@@ -42,3 +53,5 @@ def test_cli_validation_index(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "validation_index_tsv" in result.output
+    text = (tmp_path / "index" / "validation_index.tsv").read_text(encoding="utf-8")
+    assert "missing_guard_fields" in text
