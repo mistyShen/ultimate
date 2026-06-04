@@ -42,6 +42,8 @@ def normalize_config(config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
         raise ValueError(f"Unsupported organism {organism!r}; expected one of {sorted(SUPPORTED_ORGANISMS)}")
     project["organism"] = organism
     project["output_dir"] = str(resolve_path(base_dir, project["output_dir"]))
+    if project.get("production_approval"):
+        project["production_approval"] = str(resolve_path(base_dir, project["production_approval"]))
 
     normalized.setdefault("design", {})
     normalized.setdefault("resources", {})

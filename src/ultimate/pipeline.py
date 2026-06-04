@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ultimate.approval_gate import load_production_approval
 from ultimate.config import dump_yaml, enabled_modules, load_analysis_request, load_config, load_samples, output_dir
 from ultimate.modules import run_module
 from ultimate.plot_style import generate_style_review, set_active_style_from_config
@@ -17,14 +18,15 @@ from ultimate.report import build_report
 from ultimate.reproducibility import export_reproducible_package
 
 
-def run_pipeline_from_config(config_path: Path) -> dict[str, Any]:
+def run_pipeline_from_config(config_path: Path, *, production_approval_path: Path | None = None) -> dict[str, Any]:
     loaded = load_config(config_path)
     loaded.raw["_config_path"] = str(loaded.path)
-    return run_pipeline(loaded.raw)
+    return run_pipeline(loaded.raw, config_path=loaded.path, production_approval_path=production_approval_path)
 
 
-def run_pipeline(config: dict[str, Any]) -> dict[str, Any]:
+def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, production_approval_path: Path | None = None) -> dict[str, Any]:
     out_dir = output_dir(config)
+    production_approval = _load_pipeline_approval(config, config_path=config_path, output_dir=out_dir, approval_path=production_approval_path)
     for directory in ("results/figures", "results/tables", "objects", "reports", "logs", "raw_qc"):
         (out_dir / directory).mkdir(parents=True, exist_ok=True)
     active_style = set_active_style_from_config(config)
@@ -71,6 +73,7 @@ def run_pipeline(config: dict[str, Any]) -> dict[str, Any]:
         "preflight": preflight,
         "figure_style": active_style,
         "style_review": style_review,
+        "production_approval": _approval_summary(production_approval),
         "modules": module_manifests,
         "module_status": run_summary["module_status"],
         "summary": run_summary,
@@ -96,6 +99,54 @@ def run_pipeline(config: dict[str, Any]) -> dict[str, Any]:
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     export_reproducible_package(out_dir)
     return manifest
+
+
+def _load_pipeline_approval(
+    config: dict[str, Any],
+    *,
+    config_path: Path | None,
+    output_dir: Path,
+    approval_path: Path | None,
+) -> dict[str, Any] | None:
+    if not _production_requested(config):
+        return None
+    configured = (config.get("project") or {}).get("production_approval")
+    selected = approval_path or (Path(str(configured)) if configured else None)
+    approval_input = config_path or Path(str(config.get("_config_path") or "config.yaml"))
+    try:
+        return load_production_approval(
+            selected,
+            analysis_level="production_backend",
+            input_path=approval_input,
+            output_dir=output_dir,
+        )
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
+def _production_requested(config: dict[str, Any]) -> bool:
+    project = config.get("project") or {}
+    if str(project.get("analysis_level", "")).lower() == "production_backend":
+        return True
+    if str(project.get("run_mode", "")).lower() == "production":
+        return True
+    for module_cfg in (config.get("modules") or {}).values():
+        if isinstance(module_cfg, dict) and str(module_cfg.get("analysis_level", "")).lower() == "production_backend":
+            return True
+    return False
+
+
+def _approval_summary(approval: dict[str, Any] | None) -> dict[str, Any]:
+    if not approval:
+        return {}
+    return {
+        "approved": bool(approval.get("approved")),
+        "approved_by": str(approval.get("approved_by", "")),
+        "approved_at": str(approval.get("approved_at", "")),
+        "project_id": str(approval.get("project_id", "")),
+        "reason": str(approval.get("reason", "")),
+        "approval_path": str(approval.get("_approval_path", "")),
+    }
 
 
 def _slurm_context() -> dict[str, str]:

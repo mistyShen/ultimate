@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -96,3 +97,44 @@ def test_production_capability_requires_guarded_validation_evidence(tmp_path: Pa
     matrix = Path(manifest["capability_matrix"]).read_text(encoding="utf-8")
     tumor_row = next(line for line in matrix.splitlines() if line.startswith("tumor_sc\t"))
     assert "partial:validation_manifest_not_ready" in tumor_row
+
+
+def test_production_audit_accepts_perturb_public_validation_path(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run_dir = root / "validations" / "slurm_perturb_seq_adamson_public"
+    (run_dir / "results" / "tables").mkdir(parents=True)
+    (run_dir / "results" / "figures").mkdir(parents=True)
+    (run_dir / "objects").mkdir(parents=True)
+    (run_dir / "reports").mkdir(parents=True)
+    (run_dir / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "analysis_level": "validated_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": False,
+                "validation_evidence_allowed": True,
+                "non_delivery_reason": "validation_evidence_only_not_customer_delivery",
+            }
+        ),
+        encoding="utf-8",
+    )
+    for idx in range(6):
+        (run_dir / "results" / "tables" / f"table_{idx}.tsv").write_text("a\n1\n", encoding="utf-8")
+    for idx in range(3):
+        (run_dir / "results" / "figures" / f"fig_{idx}.png").write_text("png", encoding="utf-8")
+    (run_dir / "objects" / "perturb_seq_public_fixture_object.json").write_text("{}", encoding="utf-8")
+    (run_dir / "reports" / "report.md").write_text("report", encoding="utf-8")
+    (run_dir / "reports" / "report.html").write_text("report", encoding="utf-8")
+
+    manifest = run_production_audit(root=root, output_dir=tmp_path / "audit")
+
+    evidence = Path(manifest["validation_evidence_matrix"]).read_text(encoding="utf-8")
+    assert "slurm_perturb_seq_adamson_public" in evidence
+    perturb_evidence_row = next(line for line in evidence.splitlines() if line.startswith("slurm_perturb_seq\t"))
+    assert "\tready\t" in perturb_evidence_row
+    matrix = Path(manifest["capability_matrix"]).read_text(encoding="utf-8")
+    perturb_row = next(line for line in matrix.splitlines() if line.startswith("perturb_seq\t"))
+    assert "ready:public_or_existing_data_validation" in perturb_row
+    assert "ready_basic" in perturb_row

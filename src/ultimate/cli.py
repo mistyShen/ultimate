@@ -58,8 +58,12 @@ def preflight_command(config_path: Path) -> None:
     type=click.Path(path_type=Path, exists=True, dir_okay=False),
     required=True,
 )
-def run_command(config_path: Path) -> None:
-    manifest = run_pipeline_from_config(config_path)
+@click.option("--production-approval", type=click.Path(path_type=Path, exists=True, dir_okay=False), default=None, help="Approved JSON gate file required when the unified run requests production_backend.")
+def run_command(config_path: Path, production_approval: Path | None) -> None:
+    try:
+        manifest = run_pipeline_from_config(config_path, production_approval_path=production_approval)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 

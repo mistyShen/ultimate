@@ -22,7 +22,7 @@ def run_preflight(config: dict[str, Any], *, write: bool = True) -> dict[str, An
     samples = load_samples(config)
     strict = _strict_mode(config)
     output_check = _output_safety_check(config, out_dir)
-    job_layout = _job_layout_check(config, out_dir)
+    job_layout = _job_layout_check(config, out_dir, strict=strict)
     analysis_request = load_analysis_request(config)
     module_reports = []
     for module_name in enabled_modules(config):
@@ -197,13 +197,18 @@ def _output_safety_check(config: dict[str, Any], out_dir: Path) -> dict[str, Any
     }
 
 
-def _job_layout_check(config: dict[str, Any], out_dir: Path) -> dict[str, Any]:
+def _job_layout_check(config: dict[str, Any], out_dir: Path, *, strict: bool = False) -> dict[str, Any]:
     project = config.get("project") or {}
     server_root = Path(str(project.get("server_root", "/shared/shen/2026/ultimate"))).resolve()
     job_id = str(project.get("job_id", "") or "")
     expected_job_dir = (server_root / "jobs" / job_id).resolve() if job_id else None
     if not job_id:
-        return {"job_id": "", "expected_job_dir": "", "status": "not_required"}
+        return {
+            "job_id": "",
+            "expected_job_dir": "",
+            "output_dir": str(out_dir),
+            "status": "blocked:missing_job_id" if strict else "not_required",
+        }
     try:
         inside = expected_job_dir in [out_dir.resolve(), *out_dir.resolve().parents]
     except OSError:
