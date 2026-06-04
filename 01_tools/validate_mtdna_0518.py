@@ -7,6 +7,8 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
+from validation_manifest_utils import add_validation_guard_fields
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -70,6 +72,11 @@ def run_validation(source_root: Path, output_dir: Path) -> dict:
         "tables": [str(path) for path in sorted(tables.glob("*"))],
         "objects": {"json": str(object_path)},
     }
+    add_validation_guard_fields(
+        manifest,
+        validation_kind="internal",
+        validation_scope="0518 mtDNA internal validation",
+    )
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     _write_report(manifest, reports / "report.md", reports / "report.html")
     return manifest

@@ -6,6 +6,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from validation_manifest_utils import add_validation_guard_fields
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -102,6 +104,11 @@ def run_validation(input_h5: Path, output_dir: Path, max_cells_object: int) -> d
         "tables": [str(path) for path in sorted(tables.glob("*.tsv"))],
         "objects": {"h5ad": str(object_path)},
     }
+    add_validation_guard_fields(
+        manifest,
+        validation_kind="public",
+        validation_scope="CITE-seq public 10x feature-barcode matrix validation",
+    )
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     _write_report(manifest, reports / "report.md", reports / "report.html")
     return manifest

@@ -6,6 +6,7 @@ from pathlib import Path
 from ultimate.constants import MODULE_ORDER
 from ultimate.manifest_schema import REQUIRED_MODULE_MANIFEST_FIELDS, validate_module_manifest_fields
 from ultimate.module_maturity import MATURITY_COLUMNS, build_module_maturity_rows
+from ultimate.module_standardization import STANDARDIZATION_COLUMNS, build_module_standardization_rows
 from ultimate.modules.common import (
     demo_manifest,
     handoff_plan,
@@ -86,3 +87,12 @@ def test_module_maturity_table_has_required_columns(tmp_path: Path) -> None:
     assert set(rows[0]) == set(MATURITY_COLUMNS)
     assert all(row["delivery_allowed"] == "false" for row in rows)
     assert all(row["analysis_level"] != "validated_backend" for row in rows)
+
+
+def test_module_standardization_matrix_is_ready() -> None:
+    rows = build_module_standardization_rows()
+    assert len(rows) == len(MODULE_ORDER)
+    assert set(rows[0]) == set(STANDARDIZATION_COLUMNS)
+    assert all(row["overall_status"] == "ready" for row in rows)
+    assert all(row["demo_manifest_status"] == "ready" for row in rows)
+    assert all(row["handoff_status"] == "ready" for row in rows)

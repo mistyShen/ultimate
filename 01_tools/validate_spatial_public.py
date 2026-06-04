@@ -7,6 +7,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from validation_manifest_utils import add_validation_guard_fields
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -104,6 +106,11 @@ def run_validation(output_dir: Path, public_data_dir: Path, max_spots_object: in
         "tables": [str(path) for path in sorted(tables.glob("*.tsv"))],
         "objects": {"h5ad": str(object_path)},
     }
+    add_validation_guard_fields(
+        manifest,
+        validation_kind="public",
+        validation_scope="Spatial transcriptomics public Visium/Squidpy validation",
+    )
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     _write_report(manifest, reports / "report.md", reports / "report.html")
     _mark_public_data_ready(public_data_dir, manifest)

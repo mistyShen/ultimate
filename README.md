@@ -86,6 +86,7 @@ ultimate run --config example_projects/demo_all/config/project.yaml
 ultimate report --run-dir example_projects/demo_all/runs/demo_all
 ultimate styles --style soft_color --output-dir example_projects/style_review
 ultimate audit-production --root /shared/shen/2026/ultimate
+ultimate audit-modules --output-dir /shared/shen/2026/ultimate/audits/module_standardization_latest
 ultimate prepare-intake --root /shared/shen/2026/ultimate --output-dir /shared/shen/2026/ultimate/intake_packages/latest --refresh-audit
 ultimate audit-tools --root /shared/shen/2026/ultimate
 ultimate trial-tools --root /shared/shen/2026/ultimate --batch scrna_core --no-install
@@ -230,11 +231,17 @@ ultimate audit-singlecell --root /shared/shen/2026/ultimate \
   --output-dir /shared/shen/2026/ultimate/audits/singlecell_latest
 ultimate validation-index --root /shared/shen/2026/ultimate \
   --output-dir /shared/shen/2026/ultimate/reports/validation_index
+ultimate audit-modules \
+  --output-dir /shared/shen/2026/ultimate/audits/module_standardization_latest
 ```
 
 Interpretation policy:
 
 - `ready`: current environment, data contract, and smoke validation are usable.
+- `module_standardization_matrix.tsv`: checks every module's shared shell
+  (`contract/preflight/demo/validate/run/report/handoff/limitations/tests`),
+  demo manifest guard fields, handoff template, limitations, and required
+  output roots. This is a code/readiness audit only, not a scientific result.
 - `partial:licensed_optional_missing`: open pipeline is usable; upstream vendor
   tools such as Cell Ranger, Cell Ranger ATAC/ARC, or Space Ranger require a
   user-provided licensed path.

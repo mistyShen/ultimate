@@ -12,6 +12,7 @@ from ultimate.analysis_levels import require_real_evidence
 from ultimate.bulk import BULK_MODULES
 from ultimate.constants import MODULE_ORDER, MODULE_SPECS, SUPPORTED_ORGANISMS
 from ultimate.module_maturity import build_module_maturity_rows
+from ultimate.module_standardization import build_module_standardization_rows
 from ultimate.modules.common import tool_coverage_rows
 from ultimate.plot_style import available_styles
 from ultimate.raw_qc import RAW_CONTRACTS
@@ -245,6 +246,10 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
     maturity_path = output_dir / "module_maturity_table.tsv"
     pd.DataFrame(maturity_rows).to_csv(maturity_path, sep="\t", index=False)
 
+    standardization_rows = build_module_standardization_rows()
+    standardization_path = output_dir / "module_standardization_matrix.tsv"
+    pd.DataFrame(standardization_rows).to_csv(standardization_path, sep="\t", index=False)
+
     coverage_rows = [row for module in MODULE_ORDER for row in tool_coverage_rows(module)]
     coverage_path = output_dir / "tool_coverage_by_module.tsv"
     pd.DataFrame(coverage_rows).to_csv(coverage_path, sep="\t", index=False)
@@ -269,8 +274,10 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
         "validation_evidence_matrix": str(validation_path),
         "final_acceptance_checklist": str(final_path),
         "module_maturity_table": str(maturity_path),
+        "module_standardization_matrix": str(standardization_path),
         "tool_coverage_by_module": str(coverage_path),
         "final_acceptance_summary": _final_summary(final_rows),
+        "module_standardization_summary": _standardization_summary(standardization_rows),
         "next_steps": str(next_steps_path),
         "licensed_optional": OPTIONAL_LICENSED,
     }
@@ -307,6 +314,14 @@ def _capability_row(root: Path, module: str) -> dict[str, Any]:
         "production_status": status,
         "next_action": _next_action(module, status, validation_status),
     }
+
+
+def _standardization_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
+    summary = {"ready": 0, "partial": 0}
+    for row in rows:
+        status = str(row.get("overall_status") or "partial")
+        summary[status if status in summary else "partial"] += 1
+    return summary
 
 
 def _validation_evidence(root: Path, module: str) -> dict[str, str]:

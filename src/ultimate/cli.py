@@ -147,6 +147,41 @@ def audit_production_command(root: Path, output_dir: Path | None) -> None:
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 
+@main.command("audit-modules")
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Where module standardization artifacts should be written.",
+)
+def audit_modules_command(output_dir: Path) -> None:
+    from datetime import datetime, timezone
+
+    import pandas as pd
+
+    from ultimate.module_standardization import build_module_standardization_rows
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rows = build_module_standardization_rows()
+    matrix_path = output_dir / "module_standardization_matrix.tsv"
+    pd.DataFrame(rows).to_csv(matrix_path, sep="\t", index=False)
+    summary = {
+        "ready": sum(1 for row in rows if row["overall_status"] == "ready"),
+        "partial": sum(1 for row in rows if row["overall_status"] != "ready"),
+    }
+    manifest = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "output_dir": str(output_dir.resolve()),
+        "module_count": len(rows),
+        "summary": summary,
+        "module_standardization_matrix": str(matrix_path.resolve()),
+    }
+    manifest_path = output_dir / "run_manifest.json"
+    manifest["manifest_path"] = str(manifest_path.resolve())
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
 @main.command("audit-tools")
 @click.option(
     "--root",

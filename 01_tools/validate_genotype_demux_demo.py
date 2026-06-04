@@ -6,6 +6,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from validation_manifest_utils import add_validation_guard_fields
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -89,6 +91,11 @@ def run_validation(output_dir: Path, *, n_cells: int, n_snps: int, seed: int) ->
         "tables": [str(path) for path in sorted(tables.glob("*.tsv"))],
         "objects": {"json": str(object_path)},
     }
+    add_validation_guard_fields(
+        manifest,
+        validation_kind="synthetic",
+        validation_scope="Synthetic genotype demultiplex demo validation",
+    )
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     _write_report(manifest, reports / "report.md", reports / "report.html")
     return manifest
