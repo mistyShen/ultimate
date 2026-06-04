@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ultimate.demo import init_project
 from ultimate.config import dump_yaml, load_config
+from ultimate.job import prepare_job
 from ultimate.pipeline import run_pipeline_from_config
 from ultimate.preflight import run_preflight
 
@@ -202,3 +203,32 @@ def test_unified_run_accepts_valid_production_approval(tmp_path: Path) -> None:
     rnaseq = run_manifest["modules"][0]
     assert rnaseq["analysis_level"] == "production_backend"
     assert rnaseq["delivery_allowed"] is True
+
+
+def test_prepared_job_run_mirrors_latest_deliverables_to_job_root(tmp_path: Path) -> None:
+    source = init_project("rnaseq", tmp_path / "job_delivery_source", demo_data=True)
+    root = tmp_path / "shared" / "shen" / "2026" / "ultimate"
+    job_manifest = prepare_job(config_path=Path(source["config_path"]), job_id="DELIVERY001", root=root, run_mode="interactive")
+    job_dir = Path(job_manifest["job_dir"])
+
+    run_manifest = run_pipeline_from_config(job_dir / "config" / "project.yaml")
+
+    assert Path(run_manifest["output_dir"]) == job_dir / "runs" / "DELIVERY001"
+    assert (job_dir / "deliverables" / "latest_report.html").exists()
+    assert (job_dir / "deliverables" / "latest_methods.md").exists()
+    assert (job_dir / "deliverables" / "latest_delivery_index.tsv").exists()
+    assert (job_dir / "deliverables" / "latest_run_pointer.json").exists()
+    assert (job_dir / "reproducible_code" / "rerun.sh").exists()
+    assert (job_dir / "reproducible_code" / "software_versions.tsv").exists()
+    assert (job_dir / "reproducible_code" / "latest_repro_manifest.json").exists()
+    pointer = json.loads((job_dir / "deliverables" / "latest_run_pointer.json").read_text(encoding="utf-8"))
+    mirrored_run_manifest = json.loads((job_dir / "deliverables" / "latest_run_manifest.json").read_text(encoding="utf-8"))
+    final_run_manifest = json.loads((job_dir / "runs" / "DELIVERY001" / "run_manifest.json").read_text(encoding="utf-8"))
+    mirrored_repro = json.loads((job_dir / "reproducible_code" / "latest_repro_manifest.json").read_text(encoding="utf-8"))
+    run_repro = json.loads((job_dir / "runs" / "DELIVERY001" / "reproducible_code" / "repro_manifest.json").read_text(encoding="utf-8"))
+    assert pointer["latest_run_dir"] == str(job_dir / "runs" / "DELIVERY001")
+    assert pointer["policy"].startswith("job-level files are small")
+    assert Path(pointer["copied_artifacts"]["delivery_index"]).exists()
+    assert mirrored_run_manifest == final_run_manifest
+    assert mirrored_repro == run_repro
+    assert "job_level_delivery" in run_repro

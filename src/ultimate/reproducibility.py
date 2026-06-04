@@ -84,6 +84,11 @@ def export_reproducible_package(run_dir: Path, *, checksum_max_bytes: int = DEFA
     repro_manifest_path = package_dir / "repro_manifest.json"
     repro_manifest["manifest_path"] = str(repro_manifest_path)
     repro_manifest_path.write_text(json.dumps(repro_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    job_level_delivery = _write_job_level_delivery(run_dir=run_dir, repro_manifest=repro_manifest, repro_manifest_path=repro_manifest_path)
+    if job_level_delivery:
+        repro_manifest["job_level_delivery"] = job_level_delivery
+        repro_manifest_path.write_text(json.dumps(repro_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+        _copy_if_exists(repro_manifest_path, Path(job_level_delivery["reproducible_code_dir"]) / "latest_repro_manifest.json")
     return repro_manifest
 
 
@@ -328,6 +333,76 @@ def _copy_report_deliverables(run_dir: Path, deliverables_dir: Path) -> None:
         _copy_if_exists(run_dir / "reports" / name, deliverables_dir / name)
     _copy_if_exists(run_dir / "run_manifest.json", deliverables_dir / "run_manifest.json")
     _copy_if_exists(run_dir / "delivery_index.tsv", deliverables_dir / "delivery_index.tsv")
+
+
+def _write_job_level_delivery(run_dir: Path, repro_manifest: dict[str, Any], repro_manifest_path: Path) -> dict[str, Any]:
+    job_dir = _prepared_job_dir(run_dir)
+    if job_dir is None:
+        return {}
+    deliverables_dir = job_dir / "deliverables"
+    package_dir = job_dir / "reproducible_code"
+    deliverables_dir.mkdir(parents=True, exist_ok=True)
+    package_dir.mkdir(parents=True, exist_ok=True)
+
+    copied = {
+        "run_manifest": _copy_if_exists(run_dir / "run_manifest.json", deliverables_dir / "latest_run_manifest.json"),
+        "report_html": _copy_if_exists(run_dir / "reports" / "report.html", deliverables_dir / "latest_report.html"),
+        "methods_md": _copy_if_exists(run_dir / "reports" / "methods.md", deliverables_dir / "latest_methods.md"),
+        "report_manifest": _copy_if_exists(run_dir / "reports" / "report_manifest.json", deliverables_dir / "latest_report_manifest.json"),
+        "delivery_index": _copy_if_exists(run_dir / "delivery_index.tsv", deliverables_dir / "latest_delivery_index.tsv"),
+        "rerun_script": _copy_if_exists(run_dir / "reproducible_code" / "rerun.sh", package_dir / "rerun.sh"),
+        "repro_readme": _copy_if_exists(run_dir / "reproducible_code" / "README.md", package_dir / "README.md"),
+        "config_snapshot": _copy_if_exists(run_dir / "reproducible_code" / "config_snapshot.yaml", package_dir / "config_snapshot.yaml"),
+        "software_versions": _copy_if_exists(run_dir / "reproducible_code" / "software_versions.tsv", package_dir / "software_versions.tsv"),
+        "input_checksums": _copy_if_exists(run_dir / "reproducible_code" / "input_checksums.tsv", package_dir / "input_checksums.tsv"),
+        "repro_manifest": _copy_if_exists(repro_manifest_path, package_dir / "latest_repro_manifest.json"),
+    }
+    pointer = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "job_dir": str(job_dir),
+        "latest_run_dir": str(run_dir),
+        "run_manifest": str(run_dir / "run_manifest.json"),
+        "run_reproducible_package": repro_manifest,
+        "copied_artifacts": {key: str(value) for key, value in copied.items() if value},
+        "policy": "job-level files are small latest-run mirrors; large result objects remain referenced from the run directory",
+    }
+    pointer_path = deliverables_dir / "latest_run_pointer.json"
+    pointer["manifest_path"] = str(pointer_path)
+    pointer_path.write_text(json.dumps(pointer, indent=2, ensure_ascii=False), encoding="utf-8")
+    readme_path = deliverables_dir / "README.md"
+    readme_path.write_text(
+        "\n".join(
+            [
+                "# Ultimate job deliverables",
+                "",
+                f"- Latest run: `{run_dir}`",
+                f"- Report: `{deliverables_dir / 'latest_report.html'}`",
+                f"- Methods: `{deliverables_dir / 'latest_methods.md'}`",
+                f"- Delivery index: `{deliverables_dir / 'latest_delivery_index.tsv'}`",
+                f"- Reproducible code: `{package_dir}`",
+                "",
+                "Large tables, figures, and objects stay in the run directory and are indexed by `latest_delivery_index.tsv`.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "job_dir": str(job_dir),
+        "deliverables_dir": str(deliverables_dir),
+        "reproducible_code_dir": str(package_dir),
+        "latest_run_pointer": str(pointer_path),
+        "readme": str(readme_path),
+    }
+
+
+def _prepared_job_dir(run_dir: Path) -> Path | None:
+    if run_dir.parent.name != "runs":
+        return None
+    job_dir = run_dir.parent.parent
+    if not (job_dir / "job_manifest.json").exists():
+        return None
+    return job_dir
 
 
 def _write_tsv(path: Path, rows: list[dict[str, Any]], fieldnames: tuple[str, ...]) -> None:

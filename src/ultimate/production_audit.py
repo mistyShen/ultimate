@@ -622,6 +622,7 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
     validation_status = {str(row["validation_key"]): str(row["status"]) for row in validation_rows}
     ready_capabilities = [row for row in capability_rows if str(row["production_status"]) == "ready_basic"]
     partial_capabilities = [row for row in capability_rows if str(row["production_status"]) != "ready_basic"]
+    prepared_delivery_ready, prepared_delivery_note = _prepared_job_delivery_status(root)
 
     rows = [
         _requirement_row(
@@ -724,6 +725,12 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
             _slurm_adapter_files_present(root),
             "required=singlecell_validation_suite,scrna_mvp_validation,bulk_validation_suite,ultimate_run,tool_trial_batch",
         ),
+        _requirement_row(
+            "prepared_job_delivery_mirror_ready",
+            "prepared job 根目录有最新交付物和复现代码镜像",
+            prepared_delivery_ready,
+            prepared_delivery_note,
+        ),
     ]
     return rows
 
@@ -801,6 +808,139 @@ def _slurm_adapter_files_present(root: Path) -> bool:
         root / "slurm" / "gapfill_specialty_validation.sbatch",
     )
     return all(path.exists() and path.stat().st_size > 0 for path in required)
+
+
+def _prepared_job_delivery_status(root: Path) -> tuple[bool, str]:
+    job_dirs = _prepared_job_dirs(root)
+    if not job_dirs:
+        return False, "checked_jobs=0 ready_jobs=0 missing=jobs/*/runs/*/run_manifest.json"
+    ready_count = 0
+    gaps: list[str] = []
+    for job_dir in job_dirs:
+        missing = _prepared_job_delivery_gaps(job_dir)
+        if missing:
+            gaps.append(f"{job_dir.name}:{','.join(missing)}")
+        else:
+            ready_count += 1
+    note = f"checked_jobs={len(job_dirs)} ready_jobs={ready_count}"
+    if gaps:
+        note += f" missing={';'.join(gaps[:5])}"
+        if len(gaps) > 5:
+            note += f";additional_missing_jobs={len(gaps) - 5}"
+    return ready_count > 0 and ready_count == len(job_dirs), note
+
+
+def _prepared_job_dirs(root: Path) -> list[Path]:
+    jobs_root = root / "jobs"
+    if not jobs_root.exists():
+        return []
+    return sorted(
+        path.parent
+        for path in jobs_root.glob("*/job_manifest.json")
+        if path.is_file() and path.stat().st_size > 0 and any((path.parent / "runs").glob("*/run_manifest.json"))
+    )
+
+
+def _prepared_job_delivery_gaps(job_dir: Path) -> list[str]:
+    required = {
+        "latest_run_pointer": job_dir / "deliverables" / "latest_run_pointer.json",
+        "latest_run_manifest": job_dir / "deliverables" / "latest_run_manifest.json",
+        "latest_report": job_dir / "deliverables" / "latest_report.html",
+        "latest_methods": job_dir / "deliverables" / "latest_methods.md",
+        "latest_delivery_index": job_dir / "deliverables" / "latest_delivery_index.tsv",
+        "rerun_script": job_dir / "reproducible_code" / "rerun.sh",
+        "software_versions": job_dir / "reproducible_code" / "software_versions.tsv",
+        "latest_repro_manifest": job_dir / "reproducible_code" / "latest_repro_manifest.json",
+    }
+    missing = [name for name, path in required.items() if not _nonempty(path)]
+    pointer = _read_json(required["latest_run_pointer"])
+    latest_run_dir = Path(str(pointer.get("latest_run_dir") or ""))
+    run_manifest = Path(str(pointer.get("run_manifest") or ""))
+    mirrored_run_manifest = required["latest_run_manifest"]
+    run_manifest_data = _read_json(run_manifest)
+    mirrored_run_manifest_data = _read_json(mirrored_run_manifest)
+    copied = pointer.get("copied_artifacts") if isinstance(pointer.get("copied_artifacts"), dict) else {}
+    for copied_key in ("run_manifest", "report_html", "methods_md", "delivery_index"):
+        if not _nonempty(Path(str(copied.get(copied_key) or ""))):
+            missing.append(f"copied_artifacts.{copied_key}")
+    if not _is_relative_to(latest_run_dir, job_dir / "runs") or not latest_run_dir.exists():
+        missing.append("latest_run_dir")
+    if not _nonempty(run_manifest):
+        missing.append("run_manifest")
+    elif run_manifest_data != mirrored_run_manifest_data:
+        missing.append("latest_run_manifest_stale")
+    latest_ready_run = _latest_ready_run_dir(job_dir)
+    if latest_ready_run and latest_run_dir.resolve() != latest_ready_run.resolve():
+        missing.append("latest_run_dir_not_latest_ready")
+    module_guard_status, module_guard_note = _pipeline_module_guard_status(run_manifest_data)
+    if module_guard_status != "ready":
+        missing.append(f"module_guard:{module_guard_note}")
+    run_repro_manifest = latest_run_dir / "reproducible_code" / "repro_manifest.json"
+    if not _same_json_file(run_repro_manifest, required["latest_repro_manifest"]):
+        missing.append("latest_repro_manifest_stale")
+    if "large result objects remain referenced from the run directory" not in str(pointer.get("policy") or ""):
+        missing.append("policy")
+    return missing
+
+
+def _nonempty(path: Path) -> bool:
+    try:
+        return path.exists() and path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    if not str(path):
+        return False
+    try:
+        path.resolve().relative_to(parent.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _latest_ready_run_dir(job_dir: Path) -> Path | None:
+    manifests = []
+    for manifest_path in (job_dir / "runs").glob("*/run_manifest.json"):
+        manifest = _read_json(manifest_path)
+        if str(manifest.get("status", "")).lower() == "ready":
+            manifests.append(manifest_path)
+    if not manifests:
+        return None
+    return max(manifests, key=lambda path: path.stat().st_mtime).parent
+
+
+def _pipeline_module_guard_status(manifest: dict[str, Any]) -> tuple[str, str]:
+    if str(manifest.get("status", "")).lower() != "ready":
+        return "manifest_not_ready", f"status={manifest.get('status', '')}"
+    modules = manifest.get("modules")
+    if not isinstance(modules, list) or not modules:
+        return "missing_modules", "modules=0"
+    missing_or_invalid = []
+    production_requested = False
+    for module in modules:
+        if not isinstance(module, dict):
+            missing_or_invalid.append("module:not_object")
+            continue
+        module_name = str(module.get("module") or "unknown")
+        guard_status, missing, invalid = _manifest_guard_status(module)
+        if guard_status != "ready":
+            missing_or_invalid.append(f"{module_name}:{guard_status}:{','.join(missing + invalid)}")
+        if module.get("analysis_level") == "production_backend" or module.get("delivery_allowed") is True:
+            production_requested = True
+    if missing_or_invalid:
+        return "module_guard_not_ready", ";".join(missing_or_invalid[:5])
+    approval = manifest.get("production_approval") if isinstance(manifest.get("production_approval"), dict) else {}
+    if production_requested and approval.get("approved") is not True:
+        return "production_approval_missing", "production modules require approved production_approval"
+    return "ready", f"modules={len(modules)}"
+
+
+def _same_json_file(left: Path, right: Path) -> bool:
+    if not _nonempty(left) or not _nonempty(right):
+        return False
+    return _read_json(left) == _read_json(right)
 
 
 def _final_summary(rows: list[dict[str, Any]]) -> dict[str, int]:

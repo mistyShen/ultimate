@@ -9,6 +9,7 @@ from ultimate.approval_gate import load_production_approval
 from ultimate.config import load_config
 from ultimate.constants import PROJECT_TYPES
 from ultimate.demo import init_project
+from ultimate.job import prepare_job
 from ultimate.pipeline import run_pipeline_from_config
 from ultimate.plot_style import available_styles, generate_style_review, set_active_style
 from ultimate.preflight import run_preflight
@@ -35,6 +36,35 @@ def main() -> None:
 @click.option("--demo-data/--no-demo-data", default=False, show_default=True)
 def init_project_command(project_type: str, output_dir: Path, demo_data: bool) -> None:
     manifest = init_project(project_type, output_dir, demo_data=demo_data)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("prepare-job")
+@click.option("--config", "config_path", type=click.Path(path_type=Path, exists=True, dir_okay=False), required=True)
+@click.option("--job-id", required=True, help="Stable job id under <root>/jobs/<job_id>.")
+@click.option("--root", type=click.Path(path_type=Path), default=Path("/shared/shen/2026/ultimate"), show_default=True)
+@click.option("--samplesheet", type=click.Path(path_type=Path, exists=True, dir_okay=False), default=None)
+@click.option("--analysis-request", type=click.Path(path_type=Path, exists=True, dir_okay=False), default=None)
+@click.option("--run-mode", type=click.Choice(["production", "interactive"]), default="production", show_default=True)
+def prepare_job_command(
+    config_path: Path,
+    job_id: str,
+    root: Path,
+    samplesheet: Path | None,
+    analysis_request: Path | None,
+    run_mode: str,
+) -> None:
+    try:
+        manifest = prepare_job(
+            config_path=config_path,
+            job_id=job_id,
+            root=root,
+            samplesheet=samplesheet,
+            analysis_request=analysis_request,
+            run_mode=run_mode,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 

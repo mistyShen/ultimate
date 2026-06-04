@@ -138,3 +138,83 @@ def test_production_audit_accepts_perturb_public_validation_path(tmp_path: Path)
     perturb_row = next(line for line in matrix.splitlines() if line.startswith("perturb_seq\t"))
     assert "ready:public_or_existing_data_validation" in perturb_row
     assert "ready_basic" in perturb_row
+
+
+def test_production_audit_final_acceptance_requires_prepared_job_delivery_mirror(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    job_dir = root / "jobs" / "JOB001"
+    run_dir = job_dir / "runs" / "JOB001"
+    run_dir.mkdir(parents=True)
+    (job_dir / "job_manifest.json").write_text('{"job_id": "JOB001"}', encoding="utf-8")
+    (run_dir / "run_manifest.json").write_text('{"status": "ready"}', encoding="utf-8")
+
+    manifest = run_production_audit(root=root, output_dir=tmp_path / "audit")
+
+    final = Path(manifest["final_acceptance_checklist"]).read_text(encoding="utf-8")
+    row = next(line for line in final.splitlines() if line.startswith("prepared_job_delivery_mirror_ready\t"))
+    assert "\tpartial\t" in row
+    assert "checked_jobs=1" in row
+    assert "latest_run_pointer" in row
+
+
+def test_production_audit_final_acceptance_accepts_prepared_job_delivery_mirror(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    job_dir = root / "jobs" / "JOB001"
+    run_dir = job_dir / "runs" / "JOB001"
+    (job_dir / "deliverables").mkdir(parents=True)
+    (job_dir / "reproducible_code").mkdir(parents=True)
+    run_dir.mkdir(parents=True)
+    (job_dir / "job_manifest.json").write_text('{"job_id": "JOB001"}', encoding="utf-8")
+    run_manifest = {
+        "status": "ready",
+        "modules": [
+            {
+                "module": "rnaseq",
+                "status": "complete_python_bulk_backend",
+                "analysis_level": "demo_result",
+                "is_demo": True,
+                "is_stub": False,
+                "delivery_allowed": False,
+                "validation_evidence_allowed": False,
+                "non_delivery_reason": "demo_result_not_customer_delivery",
+            }
+        ],
+        "production_approval": {},
+    }
+    (run_dir / "run_manifest.json").write_text(json.dumps(run_manifest), encoding="utf-8")
+    required = {
+        job_dir / "deliverables" / "latest_run_manifest.json": json.dumps(run_manifest),
+        job_dir / "deliverables" / "latest_report.html": "<html>report</html>",
+        job_dir / "deliverables" / "latest_methods.md": "methods",
+        job_dir / "deliverables" / "latest_delivery_index.tsv": "path\tkind\nx\ttable\n",
+        job_dir / "reproducible_code" / "rerun.sh": "#!/usr/bin/env bash\n",
+        job_dir / "reproducible_code" / "software_versions.tsv": "name\tversion\nultimate\ttest\n",
+        job_dir / "reproducible_code" / "latest_repro_manifest.json": '{"run_dir": "test"}',
+        run_dir / "reproducible_code" / "repro_manifest.json": '{"run_dir": "test"}',
+    }
+    for path, text in required.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    (job_dir / "deliverables" / "latest_run_pointer.json").write_text(
+        json.dumps(
+            {
+                "latest_run_dir": str(run_dir),
+                "run_manifest": str(run_dir / "run_manifest.json"),
+                "copied_artifacts": {
+                    "run_manifest": str(job_dir / "deliverables" / "latest_run_manifest.json"),
+                    "report_html": str(job_dir / "deliverables" / "latest_report.html"),
+                    "methods_md": str(job_dir / "deliverables" / "latest_methods.md"),
+                    "delivery_index": str(job_dir / "deliverables" / "latest_delivery_index.tsv"),
+                },
+                "policy": "job-level files are small latest-run mirrors; large result objects remain referenced from the run directory",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = run_production_audit(root=root, output_dir=tmp_path / "audit")
+
+    final = Path(manifest["final_acceptance_checklist"]).read_text(encoding="utf-8")
+    row = next(line for line in final.splitlines() if line.startswith("prepared_job_delivery_mirror_ready\t"))
+    assert "\tpass\t" in row
+    assert "checked_jobs=1 ready_jobs=1" in row
