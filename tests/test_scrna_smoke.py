@@ -135,6 +135,25 @@ def test_scrna_mvp_slurm_uses_explicit_celltypist_reference_cache() -> None:
     assert "export CELLTYPIST_FOLDER" in script
 
 
+def test_scrna_backend_rows_record_slurm_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _require_scrna_runtime()
+    monkeypatch.setenv("SLURM_JOB_ID", "pytest-123")
+    monkeypatch.setenv("SLURM_JOB_NAME", "pytest_scrna")
+    demo = create_demo_inputs(tmp_path / "demo_slurm_context", n_cells=32, n_genes=50, seed=15)
+
+    manifest = run_scrna_validation(
+        input_path=Path(demo["h5ad"]),
+        input_type="h5ad",
+        output_dir=tmp_path / "run_slurm_context",
+        samplesheet=Path(demo["samplesheet"]),
+        max_cells=32,
+    )
+
+    for row in manifest["backend_status"]:
+        assert row["backend_slurm_job_id"] == "pytest-123"
+        assert row["backend_slurm_job_name"] == "pytest_scrna"
+
+
 def _require_scrna_runtime() -> None:
     pytest.importorskip("scanpy")
     pytest.importorskip("anndata")
@@ -154,7 +173,13 @@ def _assert_mvp_outputs(manifest: dict) -> None:
     assert "backend_execution_status" in manifest
     assert Path(manifest["backend_execution_manifest"]).exists()
     backend_ids = {row["backend_id"] for row in manifest["backend_status"]}
-    assert {"scrna.qc.scrublet", "scrna.annotation.celltypist", "scrna.pseudobulk.deseq2_edger"}.issubset(backend_ids)
+    assert {
+        "scrna.qc.scrublet",
+        "scrna.annotation.celltypist",
+        "scrna.functional.decoupler_gseapy",
+        "scrna.communication.liana",
+        "scrna.pseudobulk.deseq2_edger",
+    }.issubset(backend_ids)
     assert Path(manifest["raw_qc_manifest"]).exists()
     for relative in [
         "results/tables/qc_metrics.tsv",
@@ -173,12 +198,20 @@ def _assert_mvp_outputs(manifest: dict) -> None:
         "results/tables/celltypist_annotation.tsv",
         "results/tables/annotation_confidence.tsv",
         "results/tables/annotation_warning.tsv",
+        "results/tables/signature_scores.tsv",
+        "results/tables/pathway_activity.tsv",
+        "results/tables/tf_activity.tsv",
+        "results/tables/functional_backend_status.tsv",
+        "results/tables/liana_interactions.tsv",
+        "results/tables/communication_network.tsv",
+        "results/tables/communication_backend_status.tsv",
         "results/tables/pseudobulk_de_backend_status.tsv",
         "results/tables/pseudobulk_de_results.tsv",
         "results/tables/pseudobulk_deseq2_edgeR_handoff.R",
         "results/figures/qc_violin.png",
         "results/figures/pca_condition.png",
         "results/figures/umap_cluster_condition.png",
+        "results/figures/communication_dotplot.png",
         "reports/report.md",
         "reports/report.html",
         "run_manifest.json",
@@ -191,6 +224,7 @@ def _assert_mvp_outputs(manifest: dict) -> None:
     assert "delivery_allowed" in report
     assert "backend 执行摘要" in report
     assert "cluster placeholder" in report
+    assert "LIANA" in report
     manifest_from_disk = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
     assert manifest_from_disk["analysis_level"] == manifest["analysis_level"]
     annotation = Path(run_dir / "results/tables/cell_type_annotation_placeholder.tsv").read_text(encoding="utf-8")

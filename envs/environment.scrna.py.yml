@@ -22,9 +22,11 @@ dependencies:
   - scrublet
   - celltypist
   - cellxgene-census
-  - decoupler
+  - decoupler>=2.1.6
   - gseapy
   - harmonypy
   - bbknn
   - scanorama
   - muon
+  - pip:
+      - liana>=1.7.3

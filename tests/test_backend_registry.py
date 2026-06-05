@@ -48,7 +48,8 @@ def test_backend_plan_records_requested_and_skipped_backends() -> None:
     assert "scrna.annotation.celltypist" in active_ids
     assert "scrna.communication.liana" in active_ids
     assert plan["unknown_requested_backends"] == {"unknown": "not_a_backend"}
-    assert any("backend_not_fully_automatic:scrna.communication.liana" in warning for warning in plan["interpretation_warnings"])
+    assert not any("backend_not_fully_automatic:scrna.communication.liana" in warning for warning in plan["interpretation_warnings"])
+    assert any("候选互作" in warning for warning in plan["interpretation_warnings"])
 
 
 def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
@@ -63,6 +64,8 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "proteomics.default.abundance_python_mvp": "slurm/proteomics_backend_validation.sbatch",
         "scrna.qc.scrublet": "slurm/scrna_mvp_validation.sbatch",
         "scrna.annotation.celltypist": "slurm/scrna_mvp_validation.sbatch",
+        "scrna.functional.decoupler_gseapy": "slurm/scrna_mvp_validation.sbatch",
+        "scrna.communication.liana": "slurm/scrna_mvp_validation.sbatch",
         "functional_state.default.signature_scoring": "slurm/bulk_validation_suite.sbatch",
     }
 
