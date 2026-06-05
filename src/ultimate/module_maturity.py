@@ -9,6 +9,7 @@ from ultimate.raw_qc import RAW_CONTRACTS
 
 MATURITY_COLUMNS = (
     "module_name",
+    "maturity_level",
     "input_contract_status",
     "preflight_status",
     "demo_smoke_status",
@@ -32,6 +33,7 @@ def build_module_maturity_rows(root: Path, capability_rows: list[dict[str, Any]]
         rows.append(
             {
                 "module_name": module_name,
+                "maturity_level": _maturity_level(module_name, validation, production_status, capability),
                 "input_contract_status": "ready" if module_name in RAW_CONTRACTS else "missing",
                 "preflight_status": "ready",
                 "demo_smoke_status": "ready" if production_status.startswith("ready") else "partial",
@@ -51,6 +53,25 @@ def _analysis_level_for_validation(validation: str, production_status: str) -> s
     if validation == "available":
         return "validated_backend"
     return "smoke_backend"
+
+
+def _maturity_level(module_name: str, validation: str, production_status: str, capability: dict[str, Any]) -> str:
+    evidence_manifest = str(capability.get("evidence_manifest") or "")
+    validation_label = str(capability.get("validation_label") or "").lower()
+    backend = str(capability.get("basic_backend") or "")
+    if str(capability.get("delivery_allowed") or "").lower() == "true":
+        return "6_customer_delivery_ready"
+    if str(capability.get("production_rehearsed") or "").lower() == "true":
+        return "5_production_rehearsed"
+    if validation == "available":
+        if "internal" in validation_label or "/0518" in evidence_manifest or "nsclc" in validation_label:
+            return "4_internal_validated"
+        return "3_public_validated"
+    if production_status.startswith("ready") or "backend" in backend:
+        return "2_demo_smoke_passed"
+    if production_status.startswith("partial") or validation.startswith("partial"):
+        return "1_smoke_skeleton"
+    return "0_contract_only"
 
 
 def _known_limitations(module_name: str, validation: str) -> str:

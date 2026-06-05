@@ -64,12 +64,15 @@ def test_every_module_contract_and_guard_fields_are_exposed() -> None:
         assert manifest["delivery_allowed"] is False
         assert manifest["validation_evidence_allowed"] is False
         assert manifest["limitations"]
-        assert manifest["handoff"]["handoff_status"] == "template_ready"
+        assert "template_only" in manifest["handoff"]["handoff_statuses"]
+        assert manifest["handoff"]["legacy_handoff_status"] == "template_ready"
 
         report = report_contract(module_name)
         assert report["status"] == "ready"
         handoff = handoff_plan(module_name)
-        assert handoff["handoff_status"] == "template_ready"
+        assert "template_only" in handoff["handoff_statuses"]
+        assert handoff["legacy_handoff_status"] == "template_ready"
+        assert "default_backend" in handoff["v2_disposition_summary"]
 
 
 def test_module_entrypoint_files_import() -> None:

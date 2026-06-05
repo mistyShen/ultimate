@@ -120,7 +120,8 @@ def test_all_modules_emit_declared_mvp_artifacts(tmp_path: Path) -> None:
         assert (run_dir / "objects" / module_name).is_dir(), module_name
         assert (run_dir / "logs" / f"{module_name}.log").exists(), module_name
         assert module["limitations"], module_name
-        assert module["handoff"]["handoff_status"] == "template_ready", module_name
+        assert "template_only" in module["handoff"]["handoff_statuses"], module_name
+        assert module["handoff"]["legacy_handoff_status"] == "template_ready", module_name
         assert module["delivery_allowed"] is False, module_name
         assert module["validation_evidence_allowed"] is False, module_name
         for filename in MODULE_MVP_TABLES[module_name]:
@@ -419,6 +420,7 @@ def test_unified_run_rejects_demo_data_even_with_production_approval(tmp_path: P
                 "project_id": "approved_demo_order",
                 "input_path": str(config_path.resolve()),
                 "output_dir": str(output_dir.resolve()),
+                "delivery_scope": "internal_rehearsal",
                 "reason": "pytest unified run production gate",
             }
         ),
@@ -454,6 +456,7 @@ def test_unified_run_accepts_valid_production_approval_for_real_input(tmp_path: 
                 "project_id": "approved_order",
                 "input_path": str(config_path.resolve()),
                 "output_dir": str(output_dir.resolve()),
+                "delivery_scope": "internal_rehearsal",
                 "reason": "pytest unified run production gate",
             }
         ),

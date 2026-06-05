@@ -21,6 +21,24 @@ from ultimate.raw_qc import RAW_CONTRACTS
 from ultimate.report_contract import report_contract_status
 from ultimate.tool_registry import TOOL_REGISTRY
 
+HANDOFF_STATUSES: tuple[str, ...] = (
+    "template_only",
+    "path_detection",
+    "import_validated_output",
+    "command_plan_generated",
+    "slurm_adapter_ready",
+    "fully_executable_backend",
+)
+
+TOOL_DECISION_TO_V2_DISPOSITION: dict[str, str] = {
+    "keep_default": "default_backend",
+    "keep_optional": "optional_backend",
+    "adapter_only": "handoff_adapter",
+    "licensed_path_only": "licensed_path_detection",
+    "reference_only": "reference_only",
+    "rejected_cleaned": "rejected_cleaned",
+}
+
 
 @dataclass(frozen=True)
 class ModuleContract:
@@ -309,12 +327,25 @@ def validation_plan(module_name: str) -> dict[str, Any]:
 
 def handoff_plan(module_name: str) -> dict[str, Any]:
     contract = module_contract(module_name)
+    capabilities = _handoff_capabilities(module_name)
+    status = _primary_handoff_status(capabilities)
     return {
         "module": module_name,
-        "handoff_status": "template_ready",
+        "handoff_status": status,
+        "handoff_statuses": capabilities,
+        "legacy_handoff_status": "template_ready",
         "handoff_tools": list(contract.handoff_tools),
         "optional_backends": list(contract.primary_tools),
         "tool_decision_summary": tool_decision_summary(module_name),
+        "v2_disposition_summary": v2_disposition_summary(module_name),
+        "status_definitions": {
+            "template_only": "仅有输入输出契约和模板文档。",
+            "path_detection": "可检测用户提供的授权工具或外部二进制路径。",
+            "import_validated_output": "可引用已验证 run 或成熟上游输出，不重复拷贝大对象。",
+            "command_plan_generated": "已生成可人工复查的命令计划或 Slurm/Nextflow handoff 模板。",
+            "slurm_adapter_ready": "已有 Slurm wrapper 或 sbatch 模板，可用于正式验证/演练。",
+            "fully_executable_backend": "已接入并验证为平台内可执行 backend。",
+        },
         "note": "未正式接入的高级工具只作为 handoff/optional backend，不写成 fully automatic。",
     }
 
@@ -328,6 +359,7 @@ def tool_coverage_rows(module_name: str) -> list[dict[str, str]]:
                 "module": module_name,
                 "tool_name": tool["name"],
                 "decision": tool["decision"],
+                "v2_disposition": TOOL_DECISION_TO_V2_DISPOSITION.get(tool["decision"], tool["decision"]),
                 "environment": tool["env"],
                 "install_method": tool["install_method"],
                 "module_aliases": aliases,
@@ -339,6 +371,7 @@ def tool_coverage_rows(module_name: str) -> list[dict[str, str]]:
                 "module": module_name,
                 "tool_name": "none_registered",
                 "decision": "missing",
+                "v2_disposition": "missing",
                 "environment": "",
                 "install_method": "",
                 "module_aliases": aliases,
@@ -363,10 +396,72 @@ def tool_decision_summary(module_name: str) -> dict[str, list[str]]:
     return summary
 
 
+def v2_disposition_summary(module_name: str) -> dict[str, list[str]]:
+    summary: dict[str, list[str]] = {
+        "default_backend": [],
+        "optional_backend": [],
+        "handoff_adapter": [],
+        "licensed_path_detection": [],
+        "reference_only": [],
+        "rejected_cleaned": [],
+    }
+    for row in tool_coverage_rows(module_name):
+        disposition = row.get("v2_disposition", "")
+        if disposition in summary:
+            summary[disposition].append(row["tool_name"])
+    return summary
+
+
 def write_tool_coverage_table(module_name: str, tables_dir: Path) -> str:
     path = tables_dir / "tool_coverage.tsv"
     pd.DataFrame(tool_coverage_rows(module_name)).to_csv(path, sep="\t", index=False)
     return str(path)
+
+
+def _handoff_capabilities(module_name: str) -> list[str]:
+    statuses = {"template_only"}
+    decisions = {row["decision"] for row in tool_coverage_rows(module_name)}
+    if "licensed_path_only" in decisions:
+        statuses.add("path_detection")
+    if "adapter_only" in decisions:
+        statuses.add("command_plan_generated")
+    if _module_has_slurm_adapter(module_name):
+        statuses.add("slurm_adapter_ready")
+    return [status for status in HANDOFF_STATUSES if status in statuses]
+
+
+def _primary_handoff_status(statuses: list[str]) -> str:
+    priority = {
+        "fully_executable_backend": 6,
+        "slurm_adapter_ready": 5,
+        "command_plan_generated": 4,
+        "import_validated_output": 3,
+        "path_detection": 2,
+        "template_only": 1,
+    }
+    return max(statuses or ["template_only"], key=lambda status: priority.get(status, 0))
+
+
+def _module_has_slurm_adapter(module_name: str) -> bool:
+    slurm_dir = Path(__file__).resolve().parents[3] / "slurm"
+    if not slurm_dir.exists():
+        return False
+    aliases = _module_aliases(module_name)
+    for script in slurm_dir.glob("*.sbatch"):
+        name = script.name.lower()
+        if module_name in name:
+            return True
+        if module_name == "rnaseq" and "bulk" in name:
+            return True
+        if module_name == "scrna" and ("scrna" in name or "singlecell" in name):
+            return True
+        if module_name == "functional_state" and "singlecell" in name:
+            return True
+        if module_name == "spatial" and "singlecell" in name:
+            return True
+        if aliases.intersection({"scdna", "mtdna"}) and ("scdna" in name or "mtdna" in name or "genome_mtdna" in name):
+            return True
+    return False
 
 
 def write_module_qc_manifest(

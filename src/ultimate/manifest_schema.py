@@ -100,6 +100,7 @@ def build_delivery_gate(
     ]
     non_delivery_reasons = sorted({str(item["non_delivery_reason"]) for item in blocked_modules if item["non_delivery_reason"]})
     approval_required = bool(production_modules)
+    delivery_scope = str(approval.get("delivery_scope") or "not_applicable")
     approval_status = "not_required"
     if approval_required:
         approval_status = "approved" if approval.get("approved") is True else "missing_or_invalid"
@@ -128,6 +129,7 @@ def build_delivery_gate(
         "validation_evidence_allowed": validation_evidence_allowed,
         "approval_required": approval_required,
         "approval_status": approval_status,
+        "delivery_scope": delivery_scope,
         "production_modules": production_modules,
         "deliverable_modules": deliverable_modules,
         "validation_evidence_modules": evidence_modules,

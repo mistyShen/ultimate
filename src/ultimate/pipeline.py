@@ -219,6 +219,7 @@ def _approval_summary(approval: dict[str, Any] | None) -> dict[str, Any]:
         "project_id": str(approval.get("project_id", "")),
         "input_path": str(approval.get("input_path", "")),
         "output_dir": str(approval.get("output_dir", "")),
+        "delivery_scope": str(approval.get("delivery_scope", "")),
         "reason": str(approval.get("reason", "")),
         "approval_path": str(approval.get("_approval_path", "")),
     }

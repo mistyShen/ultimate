@@ -10,6 +10,7 @@ from ultimate.manifest_schema import (
     STANDARD_ARTIFACT_ROOTS,
     validate_module_manifest_fields,
 )
+from ultimate.modules.common import HANDOFF_STATUSES
 
 
 REQUIRED_MODULE_FILES = (
@@ -203,8 +204,13 @@ def _handoff_status(package: Any | None, gaps: list[str], module_name: str) -> s
     if payload.get("module") != module_name:
         gaps.append("handoff_module_name_mismatch")
         return "error"
-    if payload.get("handoff_status") != "template_ready":
+    status = str(payload.get("handoff_status") or "")
+    statuses = payload.get("handoff_statuses") or []
+    if status not in HANDOFF_STATUSES:
         gaps.append(f"handoff_status={payload.get('handoff_status')}")
+        return "partial"
+    if not isinstance(statuses, list) or "template_only" not in statuses:
+        gaps.append("handoff_statuses_missing_template_only")
         return "partial"
     return "ready"
 

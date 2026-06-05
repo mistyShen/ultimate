@@ -1358,6 +1358,7 @@ def _validation_index_status(root: Path) -> tuple[bool, str]:
         "production_approval_status",
         "delivery_gate_status",
         "delivery_gate_allowed",
+        "delivery_scope",
         "artifact_status",
         "missing_or_gap",
         "next_action",
@@ -1678,6 +1679,8 @@ def _pipeline_module_guard_status(manifest: dict[str, Any]) -> tuple[str, str]:
     approval = manifest.get("production_approval") if isinstance(manifest.get("production_approval"), dict) else {}
     if production_requested and approval.get("approved") is not True:
         return "production_approval_missing", "production modules require approved production_approval"
+    if production_requested and approval.get("delivery_scope") not in {"internal_rehearsal", "customer_delivery"}:
+        return "production_approval_scope_missing", "production modules require delivery_scope=internal_rehearsal or customer_delivery"
     return "ready", f"modules={len(modules)}"
 
 

@@ -34,5 +34,5 @@ def test_module_entrypoints_expose_required_contracts() -> None:
     assert manifest["validation_evidence_allowed"] is False
 
     assert package.report()["status"] == "ready"
-    assert package.handoff()["handoff_status"] == "template_ready"
+    assert "template_only" in package.handoff()["handoff_statuses"]
     assert package.limitations()

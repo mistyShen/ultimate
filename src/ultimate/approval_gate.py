@@ -12,8 +12,11 @@ PRODUCTION_APPROVAL_FIELDS = (
     "project_id",
     "input_path",
     "output_dir",
+    "delivery_scope",
     "reason",
 )
+
+DELIVERY_SCOPES = ("internal_rehearsal", "customer_delivery")
 
 
 def load_production_approval(
@@ -42,6 +45,8 @@ def validate_production_approval(approval: dict[str, Any], *, input_path: Path, 
         raise ValueError(f"production approval JSON missing required fields: {','.join(missing)}")
     if approval.get("approved") is not True:
         raise ValueError("production approval JSON must contain approved=true")
+    if approval.get("delivery_scope") not in DELIVERY_SCOPES:
+        raise ValueError(f"production approval delivery_scope must be one of: {','.join(DELIVERY_SCOPES)}")
     expected_input = input_path.expanduser().resolve()
     expected_output = output_dir.expanduser().resolve()
     approved_input = Path(str(approval["input_path"])).expanduser().resolve()

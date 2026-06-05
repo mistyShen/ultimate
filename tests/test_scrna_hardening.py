@@ -206,6 +206,7 @@ def _write_approval(path: Path, *, input_path: Path, output_dir: Path, approved:
                 "project_id": "test_project",
                 "input_path": str(input_path.resolve()),
                 "output_dir": str(output_dir.resolve()),
+                "delivery_scope": "internal_rehearsal",
                 "reason": "pytest production approval gate",
             }
         ),

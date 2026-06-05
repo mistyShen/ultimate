@@ -106,6 +106,7 @@ def test_cli_run_accepts_production_approval(tmp_path: Path) -> None:
                 "project_id": "cli_approved_order",
                 "input_path": str(config_path.resolve()),
                 "output_dir": str(output_dir.resolve()),
+                "delivery_scope": "internal_rehearsal",
                 "reason": "pytest CLI unified run production gate",
             }
         ),

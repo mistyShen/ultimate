@@ -287,7 +287,8 @@ def test_validation_index_rejects_delivery_without_declared_artifacts(tmp_path: 
                     "project_id": "no_artifacts",
                     "input_path": str(run / "config" / "project.yaml"),
                     "output_dir": str(run),
-                    "reason": "pytest approval",
+                    "delivery_scope": "internal_rehearsal",
+                "reason": "pytest approval",
                 },
             }
         ),

@@ -160,6 +160,7 @@ def _write_approval_template(path: Path, *, config_path: Path, output_dir: Path)
         "project_id": config_path.parents[1].name,
         "input_path": str(config_path.resolve()),
         "output_dir": str(output_dir.resolve()),
+        "delivery_scope": "internal_rehearsal",
         "reason": "Set approved=true only after user has confirmed this is a production delivery run.",
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -232,9 +233,11 @@ output_dir = Path(sys.argv[3]).expanduser().resolve()
 payload = json.loads(path.read_text(encoding="utf-8"))
 if payload.get("approved") is not True:
     raise SystemExit(f"production approval JSON is not approved=true: {{path}}")
-for field in ("approved_by", "approved_at", "project_id", "input_path", "output_dir", "reason"):
+for field in ("approved_by", "approved_at", "project_id", "input_path", "output_dir", "delivery_scope", "reason"):
     if payload.get(field) in (None, ""):
         raise SystemExit(f"production approval JSON missing required field {{field}}: {{path}}")
+if payload.get("delivery_scope") not in ("internal_rehearsal", "customer_delivery"):
+    raise SystemExit(f"production approval delivery_scope must be internal_rehearsal or customer_delivery: {{path}}")
 approved_input = Path(str(payload["input_path"])).expanduser().resolve()
 approved_output = Path(str(payload["output_dir"])).expanduser().resolve()
 if approved_input != config_path:

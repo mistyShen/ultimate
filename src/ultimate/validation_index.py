@@ -47,6 +47,7 @@ INDEX_FIELDS = (
     "delivery_gate_allowed",
     "delivery_gate_validation_evidence_allowed",
     "delivery_gate_approval_status",
+    "delivery_scope",
     "delivery_gate_blockers",
     "artifact_status",
     "raw_qc_manifest",
@@ -195,6 +196,7 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
         "has_methods_md": _stringify_bool(methods.exists() and methods.stat().st_size > 0),
         "has_slurm_evidence": _stringify_bool(bool(slurm_job_id)),
         "production_approval_status": approval_status,
+        "delivery_scope": _delivery_scope(manifest),
         **delivery_gate,
         "artifact_status": artifact_status,
         "raw_qc_manifest": str(raw_qc_manifest) if raw_qc_manifest else "",
@@ -372,8 +374,10 @@ def _production_approval_status(manifest: dict[str, Any]) -> str:
     if manifest.get("analysis_level") == "production_backend" or manifest.get("delivery_allowed") is True:
         if not isinstance(approval, dict) or not approval:
             return "missing"
-        required = ("approved_by", "approved_at", "project_id", "input_path", "output_dir", "reason")
+        required = ("approved_by", "approved_at", "project_id", "input_path", "output_dir", "delivery_scope", "reason")
         missing = [field for field in required if approval.get(field) in (None, "")]
+        if approval.get("delivery_scope") not in {None, "", "internal_rehearsal", "customer_delivery"}:
+            return "invalid_delivery_scope"
         if approval.get("approved") is True and not missing:
             return "approved"
         if approval.get("approved") is True and missing:
@@ -384,6 +388,16 @@ def _production_approval_status(manifest: dict[str, Any]) -> str:
     if approval.get("approved") is True:
         return "approved"
     return "present_not_approved"
+
+
+def _delivery_scope(manifest: dict[str, Any]) -> str:
+    approval = manifest.get("production_approval")
+    if isinstance(approval, dict) and approval.get("delivery_scope"):
+        return str(approval["delivery_scope"])
+    gate = manifest.get("delivery_gate")
+    if isinstance(gate, dict) and gate.get("delivery_scope"):
+        return str(gate["delivery_scope"])
+    return "not_applicable"
 
 
 def _delivery_gate_fields(manifest: dict[str, Any]) -> dict[str, str]:
