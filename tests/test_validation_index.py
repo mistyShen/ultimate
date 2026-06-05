@@ -408,6 +408,7 @@ def test_validation_index_adds_functional_state_derived_row_from_scrna_signature
     assert derived["validation_evidence_allowed"] == "true"
     assert derived["artifact_status"] == "ready"
     assert "derived_from_scrna_signature_validation" in derived["missing_or_gap"]
+    assert "blocked_reason=source_slurm_job_id_not_recorded" in derived["missing_or_gap"]
 
 
 def test_validation_index_flags_delivery_without_approval(tmp_path: Path) -> None:

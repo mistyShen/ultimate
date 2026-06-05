@@ -255,7 +255,7 @@ def _derived_rows_from_manifest(*, row: dict[str, str], path: Path) -> list[dict
     derived["artifact_status"] = "ready"
     base_gaps = [item for item in str(row.get("missing_or_gap", "")).split(";") if item and item != "ready"]
     if not row.get("slurm_job_id"):
-        base_gaps.append("source_slurm_job_id_not_recorded")
+        base_gaps.append("blocked_reason=source_slurm_job_id_not_recorded")
     derived["missing_or_gap"] = ";".join(["derived_from_scrna_signature_validation", *base_gaps])
     derived["next_action"] = "retain_source_validation_or_rerun_source_with_slurm_job_id_if_required"
     return [derived]
