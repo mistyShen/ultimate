@@ -1,15 +1,23 @@
 # Ultimate Bioinfo Workbench
 
-`ultimate` is a CLI-first, HPC-ready scaffold for reproducible human/mouse
-multi-omics analysis delivery under:
+`ultimate` is a Codex-facing, CLI-first, HPC-ready workbench for reproducible
+human/mouse multi-omics analysis delivery under:
 
 ```text
 /shared/shen/2026/ultimate
 ```
 
-It supports customer intake packages, project templates, input validation,
+The user provides raw data paths and an analysis request; the user does not need
+to pre-select every tool or pipeline. Codex uses Ultimate's module library, tool
+registry, project templates, Slurm wrappers, reporting contract, and manifest
+guards to choose an appropriate workflow, run it transparently, and package a
+reproducible delivery. Ultimate does not quote projects automatically, does not
+replace human interpretation, and does not turn demo/stub/placeholder outputs
+into formal results.
+
+It supports request/intake packages, project templates, input validation,
 raw-QC handoff, validated-run handoff, selectable figure styles, Chinese
-reports, and explicit manifests for the current human/mouse order-ready module set:
+reports, and explicit manifests for the current human/mouse workbench module set:
 
 - bulk RNA-seq
 - single-cell RNA-seq
@@ -34,10 +42,10 @@ reports, and explicit manifests for the current human/mouse order-ready module s
 - single-gene analysis
 
 The production audit reports module-level `ready_basic` or explicit partial
-status per modality. This is a
-basic order-ready guarantee: raw or semi-raw contracts, preflight checks, QC
-handoff, standard matrix/object handoff, figures, tables, Chinese reports, and
-manifests are available for human and mouse. Advanced algorithms such as
+status per modality. This is a workbench-readiness guarantee: raw or semi-raw
+contracts, preflight checks, QC handoff, standard matrix/object handoff,
+figures, tables, Chinese reports, and manifests are available for human and
+mouse when Codex is given data and a concrete request. Advanced algorithms such as
 SCENIC, CellChat/NicheNet, inferCNV/CopyKAT, chromVAR, RNA velocity, Cell
 Ranger, Space Ranger, and CIBERSORT are exposed as optional presets, adapters,
 or user-provided licensed paths instead of being promised as fully automatic
@@ -95,9 +103,12 @@ pytest -q
 
 ## Technical Triage
 
-`ultimate triage` only checks whether a request is technically ready to run. It
-does not start analysis, does not quote, does not call the production pipeline,
-and does not create `run_manifest.json` or `production_approval.json`.
+`ultimate triage` helps Codex turn a raw-data request into a concrete technical
+run plan. It checks whether the request is technically ready, recommends modules
+or presets, lists missing metadata/dependencies/licenses, and drafts runnable
+configuration artifacts. It does not start analysis, does not quote, does not
+call the production pipeline, and does not create `run_manifest.json` or
+`production_approval.json`.
 
 ```bash
 ultimate triage \
@@ -146,7 +157,8 @@ hpc-sbatch /shared/shen/2026/ultimate/slurm/scrna_mvp_validation.sbatch
 
 ## Production Readiness And Intake
 
-For a new customer order, start with an intake package:
+For a new analysis request, start with an intake package when the raw data and
+requirements need to be organized before running:
 
 ```bash
 ultimate prepare-intake \
@@ -157,9 +169,9 @@ ultimate prepare-intake \
 
 The package contains:
 
-- `templates/customer_project_intake.tsv`: customer project fields, organism,
-  module, input type, group design, optional clinical table, licensed tool
-  paths, delivery format, and style choice.
+- `templates/customer_project_intake.tsv`: raw data location, requested
+  analysis, organism, grouping/design hints, optional clinical table, licensed
+  tool paths if known, delivery format, and style choice.
 - `module_input_catalog.tsv`: accepted human/mouse raw inputs and required
   sample-sheet columns for every module.
 - `figure_style_catalog.tsv`: style keys, colors, and recommended use cases.
@@ -167,12 +179,12 @@ The package contains:
 - `audit_snapshot/`: production audit, dependency report, order readiness
   checklist, organism support, and next-step notes.
 
-The standard order flow is:
+The standard workbench flow is:
 
-1. Fill the intake template and create a module-specific project with
-   `ultimate init-project`.
+1. Provide raw data paths and an analysis request; Codex uses triage/intake
+   outputs to choose the relevant Ultimate modules and draft `project.yaml`.
 2. Run `ultimate preflight --config config/project.yaml` and resolve missing
-   sample columns, paths, references, or licensed tools.
+   sample columns, paths, references, or licensed tools before execution.
 3. Render a style review with `ultimate styles --style <style_key> --output-dir
    <project>/style_review`.
 4. Submit raw or large analyses through Slurm, then rebuild reports with
@@ -214,7 +226,7 @@ hpc-sbatch /shared/shen/2026/ultimate/jobs/demo_all_001/config/run_ultimate.sbat
 ```
 
 `hpc-sbatch` should submit a ready sbatch script. Do not rely on passing extra
-config arguments through the wrapper. For real orders, use `ultimate
+config arguments through the wrapper. For real projects, use `ultimate
 prepare-job` first; it creates `jobs/<job_id>/config/run_ultimate.sbatch`,
 `production_approval.json`, logs, deliverables, and the fixed output directory
 under `/shared/shen/2026/ultimate/jobs/<job_id>/`. Production runs require
@@ -323,8 +335,8 @@ Interpretation policy:
 - `partial:licensed_optional_missing`: open pipeline is usable; upstream vendor
   tools such as Cell Ranger, Cell Ranger ATAC/ARC, or Space Ranger require a
   user-provided licensed path.
-- `partial:data_required` or `partial:dependency_required`: quote and run only
-  after the listed data or dependency gap is resolved.
+- `partial:data_required` or `partial:dependency_required`: run only after the
+  listed data or dependency gap is resolved.
 
 Matrix-level smoke validations are not a promise of best parameters for every
 large project. Fragments-level scATAC, full raw FASTQ, and complete Visium

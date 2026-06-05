@@ -16,6 +16,10 @@ AUDIT_FIELDS = (
     "bytes",
     "size_gb",
     "resource_class",
+    "reusable",
+    "temporary",
+    "duplicate",
+    "do_not_delete",
     "cleanup_action",
     "reason",
 )
@@ -117,6 +121,21 @@ RESOURCE_POLICY: dict[str, tuple[str, str, str]] = {
 
 
 PROTECTED_ACTIONS = {"retain_reuse_do_not_delete", "retain_or_archive_delivery_reports"}
+REQUIRED_CATEGORIES = (
+    "environments",
+    "public_data",
+    "validation_runs",
+    "jobs",
+    "containers/cache",
+    "references",
+    "logs",
+    "reports",
+    "objects",
+    "raw_links",
+)
+REUSABLE_CATEGORIES = {"environments", "public_data", "containers/cache", "references", "raw_links"}
+TEMPORARY_CATEGORIES = {"validation_runs", "jobs", "logs", "objects"}
+DO_NOT_DELETE_CATEGORIES = {"public_data", "references", "raw_links"}
 
 
 def main() -> None:
@@ -177,6 +196,10 @@ def audit_storage(*, root: Path, output_dir: Path | None = None) -> list[dict[st
                 "bytes": bytes_used,
                 "size_gb": bytes_to_gb(bytes_used),
                 "resource_class": resource_class,
+                "reusable": str(category in REUSABLE_CATEGORIES).lower(),
+                "temporary": str(category in TEMPORARY_CATEGORIES).lower(),
+                "duplicate": "false",
+                "do_not_delete": str(category in DO_NOT_DELETE_CATEGORIES).lower(),
                 "cleanup_action": cleanup_action,
                 "reason": reason,
             }
@@ -242,6 +265,8 @@ def summarize(*, root: Path, budget_gb: float, rows: list[dict[str, Any]], clean
         entry = category_totals.setdefault(category, {"bytes": 0, "size_gb": 0.0, "paths": 0})
         entry["bytes"] += int(row["bytes"])
         entry["paths"] += 1
+    for category in REQUIRED_CATEGORIES:
+        category_totals.setdefault(category, {"bytes": 0, "size_gb": 0.0, "paths": 0})
     for entry in category_totals.values():
         entry["size_gb"] = bytes_to_gb(int(entry["bytes"]))
 

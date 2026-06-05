@@ -327,6 +327,7 @@ def _aggregate_run_level_fields(module_manifests: list[dict[str, Any]], delivery
     ]
     gate_reason = str(delivery_gate.get("non_delivery_reason") or "")
     non_delivery_reason = "" if delivery_allowed else (gate_reason or ";".join(sorted(set(reasons))) or "not_marked_for_delivery")
+    delivery_scope = str(delivery_gate.get("delivery_scope") or "not_applicable")
     return {
         "analysis_level": analysis_level,
         "is_demo": is_demo,
@@ -334,4 +335,5 @@ def _aggregate_run_level_fields(module_manifests: list[dict[str, Any]], delivery
         "delivery_allowed": delivery_allowed,
         "validation_evidence_allowed": validation_evidence_allowed,
         "non_delivery_reason": non_delivery_reason,
+        "delivery_scope": delivery_scope,
     }

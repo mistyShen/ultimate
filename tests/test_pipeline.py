@@ -346,6 +346,7 @@ def test_validated_run_source_can_be_production_rehearsal_with_current_approval(
 
     assert run_manifest["delivery_gate"]["status"] == "ready"
     assert run_manifest["delivery_gate"]["delivery_scope"] == "internal_rehearsal"
+    assert run_manifest["delivery_scope"] == "internal_rehearsal"
     assert module["analysis_level"] == "production_backend"
     assert module["delivery_allowed"] is True
     assert module["validation_evidence_allowed"] is True
@@ -553,6 +554,7 @@ def test_unified_run_accepts_valid_production_approval_for_real_input(tmp_path: 
     assert run_manifest["production_approval"]["input_path"] == str(config_path.resolve())
     assert run_manifest["production_approval"]["output_dir"] == str(output_dir.resolve())
     assert run_manifest["delivery_gate"]["status"] == "ready"
+    assert run_manifest["delivery_scope"] == "internal_rehearsal"
     assert run_manifest["delivery_gate"]["delivery_allowed"] is True
     assert run_manifest["delivery_gate"]["approval_status"] == "approved"
     assert run_manifest["delivery_gate"]["production_modules"] == ["rnaseq"]

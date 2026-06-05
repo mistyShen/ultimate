@@ -34,12 +34,19 @@ def test_storage_audit_writes_outputs_and_categories(tmp_path: Path) -> None:
     categories = {row["category"] for row in rows}
     assert {"environments", "public_data", "validation_runs", "references", "raw_links"} <= categories
     assert all("cleanup_action" in row for row in rows)
+    assert all({"reusable", "temporary", "duplicate", "do_not_delete"} <= set(row) for row in rows)
+    raw_link = next(row for row in rows if row["category"] == "raw_links")
+    assert raw_link["reusable"] == "true"
+    assert raw_link["do_not_delete"] == "true"
+    assert raw_link["duplicate"] == "false"
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["root"] == str(root.resolve())
     assert summary["budget_gb"] == 1
     assert summary["under_budget"] is True
     assert summary["category_totals"]["environments"]["bytes"] > 0
+    assert "containers/cache" in summary["category_totals"]
+    assert "objects" in summary["category_totals"]
     assert summary["cleanup_candidate_total_bytes"] == 0
     assert _read_tsv(cleanup_path) == []
 

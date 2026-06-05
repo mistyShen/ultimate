@@ -2,9 +2,11 @@
 
 ## 1. 目标定位
 
-Ultimate 的目标是构建一个生产级个人多组学生信分析接单平台，而不是单一 scRNA pipeline，也不是高度自动化的 agent 决策系统。
+Ultimate 的目标是构建一个给 Codex 使用的生产级个人多组学生信分析 workbench，而不是单一 scRNA pipeline，也不是高度自动化的自动报价/自动结论系统。
 
-平台要覆盖从原始数据或标准矩阵输入，到 QC、标准对象/矩阵、分析、统一风格出图、中文报告、manifest、可复现代码包的完整交付链路。
+用户提供原始数据路径和分析需求，不需要预先指定每个工具或 pipeline。Codex 基于 Ultimate 的模块库、工具注册表、配置模板、Slurm wrapper、报告规范和 manifest guard，负责把需求转成可审计的技术路线，并覆盖从原始数据或标准矩阵输入，到 QC、标准对象/矩阵、分析、统一风格出图、中文报告、manifest、可复现代码包的完整交付链路。
+
+Ultimate 不替代人工报价和生物学解释，也不自动承诺机制结论。它给 Codex 提供可复用工具、标准输入契约、可执行模板、审计记录和交付规范；所有工具/模块选择都必须能在 manifest 或报告中被人工复查。
 
 所有模块必须共享统一外壳，但每个模块保留自己的生物学逻辑。scRNA 的成熟路径只能作为工程参考，不能强行套用到 scATAC、VDJ、scDNA、mtDNA、methylation、spatial 等模块。
 
@@ -308,7 +310,7 @@ next_required_backend
 - 小批量安装和 import 测试。
 - 每批结束记录空间变化。
 - 通过 smoke 后保留。
-- 不符合接单需求、维护弱、环境污染大或重复度高的工具要清理。
+- 不符合工作台需求、维护弱、环境污染大或重复度高的工具要清理。
 - 尽量复用环境，不为每个工具单独开环境。
 
 ## 6. Execution Waves
@@ -382,7 +384,7 @@ next_required_backend
 - 成功验证的模块生成完整 manifest、QC manifest、report、methods、tables、figures、objects。
 - 验证失败或缺数据必须写明原因，不能创建假 evidence。
 
-### Wave 5：正式接单闭环
+### Wave 5：正式交付闭环
 
 目标：
 
@@ -475,7 +477,7 @@ Slurm 验证：
 现实估计：
 
 - 1-2 天：统一外壳、全模块骨架、pytest、maturity audit 初版。
-- 3-5 天：常用接单模块进入可用 MVP，包括 bulk RNA、scRNA、VDJ、scATAC、Multiome、Spatial、CITE-seq、mtDNA。
+- 3-5 天：常用分析模块进入可用 MVP，包括 bulk RNA、scRNA、VDJ、scATAC、Multiome、Spatial、CITE-seq、mtDNA。
 - 7-14 天：工具审计、环境瘦身、公开/内部 validated_backend、Slurm smoke、交付闭环。
 
 时间最大不确定性来自：
