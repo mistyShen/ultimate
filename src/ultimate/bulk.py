@@ -479,15 +479,66 @@ def _methylation_tables(matrix: pd.DataFrame, stats: pd.DataFrame, tables_dir: P
 def _proteomics_tables(matrix: pd.DataFrame, stats: pd.DataFrame, tables_dir: Path) -> dict[str, str]:
     abundance = tables_dir / "normalized_abundance.tsv"
     qc = tables_dir / "abundance_qc.tsv"
+    missingness = tables_dir / "missingness_summary.tsv"
+    differential = tables_dir / "differential_proteins.tsv"
+    enrichment = tables_dir / "enrichment_handoff.tsv"
+    ppi = tables_dir / "ppi_export.tsv"
     matrix.to_csv(abundance, sep="\t")
     pd.DataFrame(
         {
             "sample_id": matrix.columns.astype(str),
             "median_abundance": matrix.median(axis=0).to_numpy(),
             "missing_fraction": matrix.isna().mean(axis=0).to_numpy(),
+            "detected_proteins": matrix.notna().sum(axis=0).to_numpy(),
         }
     ).to_csv(qc, sep="\t", index=False)
-    return {"normalized_abundance": str(abundance), "abundance_qc": str(qc)}
+    pd.DataFrame(
+        {
+            "feature_id": matrix.index.astype(str),
+            "missing_fraction": matrix.isna().mean(axis=1).to_numpy(),
+            "detected_samples": matrix.notna().sum(axis=1).to_numpy(),
+            "mean_abundance": matrix.mean(axis=1).to_numpy(),
+        }
+    ).to_csv(missingness, sep="\t", index=False)
+    stats.assign(
+        backend_note="Python MVP differential abundance proxy; use limma backend for publication-grade proteomics DE."
+    ).to_csv(differential, sep="\t", index=False)
+    stats.loc[:, ["feature_id", "log2FC", "padj"]].assign(
+        handoff_type="GO/KEGG/PPI enrichment input",
+        protein_identifier_scope="feature_id_or_gene_symbol_from_input",
+    ).to_csv(enrichment, sep="\t", index=False)
+    top = stats.head(40)["feature_id"].astype(str).tolist()
+    ppi_rows = []
+    for left, right in zip(top[0::2], top[1::2]):
+        ppi_rows.append(
+            {
+                "protein_a": left,
+                "protein_b": right,
+                "edge_type": "correlation_network_handoff",
+                "score": "",
+                "warning": "PPI export is an input table for STRING/Cytoscape, not inferred physical interaction evidence.",
+            }
+        )
+    pd.DataFrame(
+        ppi_rows
+        or [
+            {
+                "protein_a": str(matrix.index[0]) if len(matrix.index) else "",
+                "protein_b": "",
+                "edge_type": "correlation_network_handoff",
+                "score": "",
+                "warning": "PPI export requires at least two proteins.",
+            }
+        ]
+    ).to_csv(ppi, sep="\t", index=False)
+    return {
+        "normalized_abundance": str(abundance),
+        "abundance_qc": str(qc),
+        "missingness_summary": str(missingness),
+        "differential_proteins": str(differential),
+        "enrichment_handoff": str(enrichment),
+        "ppi_export": str(ppi),
+    }
 
 
 def _publicdb_tables(matrix: pd.DataFrame, stats: pd.DataFrame, clinical: pd.DataFrame, tables_dir: Path) -> dict[str, str]:

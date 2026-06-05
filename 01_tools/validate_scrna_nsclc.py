@@ -113,6 +113,7 @@ def run_validation(input_h5ad: Path, output_dir: Path, max_cells: int, random_se
     adata.write_h5ad(final_h5ad)
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "module": "scrna",
         "input_h5ad": str(input_h5ad),
         "output_dir": str(output_dir),
         "n_cells": int(adata.n_obs),
@@ -123,14 +124,32 @@ def run_validation(input_h5ad: Path, output_dir: Path, max_cells: int, random_se
         "tables": [str(path) for path in sorted(tables.glob("*.tsv"))],
         "objects": {"h5ad": str(final_h5ad)},
         "status": "ready",
+        "backend_status": [
+            {
+                "backend_id": "scrna.mvp.validate_scrna",
+                "backend_status": "fully_automatic_validated_entrypoint",
+                "status": "ready",
+                "backend_slurm_job_id": "",
+                "evidence_scope": "NSCLC scRNA internal h5ad validation",
+            },
+            {
+                "backend_id": "functional_state.default.signature_scoring",
+                "backend_status": "fully_automatic_validated_entrypoint",
+                "status": "ready",
+                "backend_slurm_job_id": "",
+                "evidence_scope": "NSCLC h5ad derived signature/function-state validation",
+            },
+        ],
     }
     add_validation_guard_fields(
         manifest,
         validation_kind="internal",
         validation_scope="NSCLC scRNA internal h5ad validation",
     )
+    for row in manifest["backend_status"]:
+        row["backend_slurm_job_id"] = manifest["slurm_job_id"]
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    _write_report(manifest, reports / "report.md", reports / "report.html")
+    _write_report(manifest, reports / "report.md", reports / "report.html", reports / "methods.md")
     return manifest
 
 
@@ -260,11 +279,14 @@ def _write_cnv_proxy(adata, tables: Path, figures: Path) -> None:
         plt.close()
 
 
-def _write_report(manifest: dict, md_path: Path, html_path: Path) -> None:
+def _write_report(manifest: dict, md_path: Path, html_path: Path, methods_path: Path) -> None:
     md = [
         "# NSCLC scRNA 生产验证报告",
         "",
         f"输入：`{manifest['input_h5ad']}`",
+        f"analysis_level：`{manifest.get('analysis_level', '')}`",
+        f"validation_evidence_allowed：`{str(manifest.get('validation_evidence_allowed')).lower()}`",
+        f"Slurm job id：`{manifest.get('slurm_job_id') or 'not_recorded'}`",
         f"细胞数：{manifest['n_cells']}；基因数：{manifest['n_genes']}",
         f"细胞类型字段：`{manifest['cell_type_key']}`；样本字段：`{manifest['sample_key']}`",
         "",
@@ -274,6 +296,30 @@ def _write_report(manifest: dict, md_path: Path, html_path: Path) -> None:
     ]
     md_path.write_text("\n".join(md) + "\n", encoding="utf-8")
     html_path.write_text("<html><body>" + "".join(f"<p>{line}</p>" for line in md) + "</body></html>", encoding="utf-8")
+    methods = [
+        "# Methods",
+        "",
+        "## Scope",
+        "NSCLC scRNA internal validation run. This output is validation evidence only and is not customer delivery.",
+        "",
+        "## Input And Runtime",
+        f"- Input h5ad: `{manifest['input_h5ad']}`",
+        f"- analysis_level: `{manifest.get('analysis_level', '')}`",
+        f"- validation_evidence_allowed: `{str(manifest.get('validation_evidence_allowed')).lower()}`",
+        f"- Slurm job id: `{manifest.get('slurm_job_id') or 'not_recorded'}`",
+        "",
+        "## Processing",
+        "Cells and genes were filtered, counts were normalized/log-transformed when count scale was detected, highly variable genes were selected, PCA/neighborhood graph/UMAP were computed, and clusters were assigned with Leiden/Louvain or a KMeans fallback.",
+        "",
+        "## Functional State Scoring",
+        "Signature scores were calculated with `scanpy.tl.score_genes` using curated MVP gene sets for stemness, proliferation, inflammation, hypoxia, EMT, glycolysis, oxidative phosphorylation, and immune escape.",
+        "The resulting scores are expression signature summaries; they are not direct measurements of metabolism, protein activity, cell fate, or clinical mechanism.",
+        "",
+        "## Backend Evidence",
+        "- `scrna.mvp.validate_scrna`: validated internal scRNA h5ad backend evidence.",
+        "- `functional_state.default.signature_scoring`: derived signature/function-state scoring backend evidence.",
+    ]
+    methods_path.write_text("\n".join(methods) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

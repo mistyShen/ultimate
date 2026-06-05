@@ -449,6 +449,15 @@ def test_validation_index_adds_functional_state_derived_row_from_scrna_signature
                 "delivery_allowed": False,
                 "validation_evidence_allowed": True,
                 "non_delivery_reason": "validation_evidence_only_not_customer_delivery",
+                "slurm_job_id": "12345",
+                "backend_status": [
+                    {
+                        "backend_id": "functional_state.default.signature_scoring",
+                        "backend_status": "fully_automatic_validated_entrypoint",
+                        "status": "ready",
+                        "backend_slurm_job_id": "12345",
+                    }
+                ],
                 "figures": ["results/figures/signature_score_heatmap.png"],
                 "tables": ["results/tables/signature_scores_by_cell_type.tsv"],
                 "objects": {"h5ad": "objects/scrna_mvp.h5ad"},
@@ -468,7 +477,11 @@ def test_validation_index_adds_functional_state_derived_row_from_scrna_signature
     assert derived["validation_evidence_allowed"] == "true"
     assert derived["artifact_status"] == "ready"
     assert "derived_from_scrna_signature_validation" in derived["missing_or_gap"]
-    assert "blocked_reason=source_slurm_job_id_not_recorded" in derived["missing_or_gap"]
+    assert "blocked_reason=source_slurm_job_id_not_recorded" not in derived["missing_or_gap"]
+    assert derived["slurm_job_id"] == "12345"
+    assert derived["backend_ids"] == "functional_state.default.signature_scoring"
+    assert derived["backend_statuses"] == "fully_automatic_validated_entrypoint"
+    assert derived["backend_slurm_job_ids"] == "12345"
 
 
 def test_validation_index_flags_delivery_without_approval(tmp_path: Path) -> None:

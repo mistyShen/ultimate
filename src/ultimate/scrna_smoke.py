@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import asdict, dataclass
@@ -226,6 +227,13 @@ def run_scrna_validation(
         "n_cells": int(adata.n_obs),
         "n_genes": int(adata.n_vars),
         "validation_scope": "scRNA MVP: input ingest, QC, filtering, normalization, HVG, PCA, UMAP, clustering, marker, condition DE, composition, signature enrichment, pseudobulk design-ready matrix, h5ad/report/manifest.",
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
+        "slurm_job_name": os.environ.get("SLURM_JOB_NAME", ""),
+        "slurm": {
+            "job_id": os.environ.get("SLURM_JOB_ID", ""),
+            "job_name": os.environ.get("SLURM_JOB_NAME", ""),
+            "submit_dir": os.environ.get("SLURM_SUBMIT_DIR", ""),
+        },
         "pseudobulk_de_status": "design_ready_matrix_only",
         "backend_execution_status": _backend_execution_summary(backend_rows),
         "pseudobulk_matrix_source": pseudobulk_matrix_source,

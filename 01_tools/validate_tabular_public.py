@@ -24,7 +24,7 @@ from ultimate.pipeline import finalize_run_outputs, run_pipeline_from_config
 
 DEFAULT_MATRIX_URL = "https://raw.githubusercontent.com/bioconnector/workshops/master/data/airway_rawcounts.csv"
 DEFAULT_METADATA_URL = "https://raw.githubusercontent.com/bioconnector/workshops/master/data/airway_metadata.csv"
-DEFAULT_MODULES = ("clinical_assoc", "publicdb", "wgcna", "single_gene")
+DEFAULT_MODULES = ("clinical_assoc", "publicdb", "wgcna", "single_gene", "functional_state")
 
 
 def main() -> None:
@@ -128,7 +128,8 @@ def run_validation(
     manifest["slurm_job_id"] = manifest.get("slurm_job_id") or os.environ.get("SLURM_JOB_ID", "")
     manifest["slurm_job_name"] = manifest.get("slurm_job_name") or os.environ.get("SLURM_JOB_NAME", "")
     manifest["validation_note"] = (
-        "Public airway matrix validation for clinical_assoc, publicdb, wgcna, and single_gene MVP modules. "
+        "Public airway matrix validation for clinical_assoc, publicdb, wgcna, single_gene, and functional_state "
+        "MVP modules. "
         "This is validation evidence only and is not customer delivery. WGCNA outputs are readiness/QC and handoff "
         "evidence, not a complete production network model."
     )

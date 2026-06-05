@@ -231,8 +231,13 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
 def _backend_values(manifest: dict[str, Any], modules: list[dict[str, Any]], key: str) -> list[str]:
     values: list[str] = []
     direct = manifest.get(key)
-    if direct:
+    if isinstance(direct, list):
+        values.extend(_backend_values_from_execution_rows(direct, key))
+    elif direct:
         values.append(str(direct))
+    execution_rows = manifest.get("backend_status")
+    if isinstance(execution_rows, list) and execution_rows is not direct:
+        values.extend(_backend_values_from_execution_rows(execution_rows, key))
     for module in modules:
         if not isinstance(module, dict):
             continue
@@ -252,6 +257,24 @@ def _backend_values(manifest: dict[str, Any], modules: list[dict[str, Any]], key
         if value:
             values.append(str(value))
     return sorted(dict.fromkeys(values))
+
+
+def _backend_values_from_execution_rows(rows: list[Any], key: str) -> list[str]:
+    values: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if key == "backend_id":
+            value = row.get("backend_id")
+        elif key == "backend_status":
+            value = row.get("backend_status") or row.get("status")
+        elif key == "backend_slurm_job_id":
+            value = row.get("backend_slurm_job_id") or row.get("slurm_job_id")
+        else:
+            value = None
+        if value:
+            values.append(str(value))
+    return values
 
 
 def _derived_rows_from_manifest(*, row: dict[str, str], path: Path) -> list[dict[str, str]]:
@@ -284,6 +307,9 @@ def _derived_rows_from_manifest(*, row: dict[str, str], path: Path) -> list[dict
     derived["module_names"] = ""
     derived["module_count"] = "1"
     derived["ready_module_count"] = "1"
+    derived["backend_ids"] = "functional_state.default.signature_scoring"
+    derived["backend_statuses"] = "fully_automatic_validated_entrypoint"
+    derived["backend_slurm_job_ids"] = row.get("slurm_job_id", "")
     derived["artifact_status"] = "ready"
     base_gaps = [item for item in str(row.get("missing_or_gap", "")).split(";") if item and item != "ready"]
     if not row.get("slurm_job_id"):

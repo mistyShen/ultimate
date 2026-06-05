@@ -714,7 +714,7 @@ def test_production_audit_accepts_airway_tabular_public_validation_for_bulk_modu
             {
                 "status": "ready",
                 "module": "tabular_public",
-                "modules_validated": ["clinical_assoc", "publicdb", "wgcna", "single_gene"],
+                "modules_validated": ["clinical_assoc", "publicdb", "wgcna", "single_gene", "functional_state"],
                 "analysis_level": "validated_backend",
                 "is_demo": False,
                 "is_stub": False,
@@ -733,7 +733,7 @@ def test_production_audit_accepts_airway_tabular_public_validation_for_bulk_modu
     row = next(line for line in evidence.splitlines() if line.startswith("slurm_tabular_public\t"))
     assert "\tready\t" in row
     maturity = Path(manifest["module_maturity_table"]).read_text(encoding="utf-8")
-    for module in ("clinical_assoc", "publicdb", "wgcna", "single_gene"):
+    for module in ("clinical_assoc", "publicdb", "wgcna", "single_gene", "functional_state"):
         module_row = next(line for line in maturity.splitlines() if line.startswith(f"{module}\t"))
         assert "\t3_public_validated\t" in module_row
         assert "\tvalidated_backend\t" in module_row

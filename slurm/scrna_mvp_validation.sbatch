@@ -15,8 +15,11 @@ SCRNA_FALLBACK_ENV="${ULTIMATE_SCRNA_FALLBACK_ENV:-/shared/shen/2026/singlecell_
 CONDA_SH="${CONDA_SH:-/share/home/nshen/miniconda3/etc/profile.d/conda.sh}"
 OUT_ROOT="${ULTIMATE_SCRNA_MVP_OUT:-$PROJECT_ROOT/validation_runs/scrna_mvp_validation}"
 PUBLIC_ROOT="${ULTIMATE_SCRNA_MVP_PUBLIC_ROOT:-$PROJECT_ROOT/public_data/scrna_pbmc3k}"
+CELLTYPIST_FOLDER="${ULTIMATE_CELLTYPIST_FOLDER:-$PROJECT_ROOT/references/celltypist}"
+CELLTYPIST_MODEL="${ULTIMATE_CELLTYPIST_MODEL:-$CELLTYPIST_FOLDER/data/models/Immune_All_Low.pkl}"
 
-mkdir -p "$PROJECT_ROOT/logs" "$PROJECT_ROOT/public_data" "$OUT_ROOT"
+mkdir -p "$PROJECT_ROOT/logs" "$PROJECT_ROOT/public_data" "$OUT_ROOT" "$CELLTYPIST_FOLDER"
+export CELLTYPIST_FOLDER
 source "$CONDA_SH"
 
 write_skip_manifest() {
@@ -100,6 +103,10 @@ if [[ -z "$MATRIX_DIR" ]]; then
 fi
 
 export PYTHONPATH="$PROJECT_ROOT/src:${PYTHONPATH:-}"
+CELLTYPIST_ARGS=()
+if [[ -s "$CELLTYPIST_MODEL" ]]; then
+  CELLTYPIST_ARGS=(--celltypist-model "$CELLTYPIST_MODEL")
+fi
 
 "$PYTHON_BIN" -m ultimate.cli validate-scrna \
   --input-path "$MATRIX_DIR" \
@@ -108,7 +115,8 @@ export PYTHONPATH="$PROJECT_ROOT/src:${PYTHONPATH:-}"
   --max-cells "${ULTIMATE_SCRNA_MVP_MAX_CELLS:-1200}" \
   --analysis-level validated_backend \
   --public-dataset \
-  --dataset-label "10x_pbmc3k_public_matrix"
+  --dataset-label "10x_pbmc3k_public_matrix" \
+  "${CELLTYPIST_ARGS[@]}"
 
 H5AD_INPUT="$OUT_ROOT/10x_mtx/objects/scrna_mvp.h5ad"
 if [[ ! -s "$H5AD_INPUT" ]]; then
@@ -123,7 +131,8 @@ fi
   --max-cells "${ULTIMATE_SCRNA_MVP_MAX_CELLS:-1200}" \
   --analysis-level validated_backend \
   --public-dataset \
-  --dataset-label "10x_pbmc3k_public_h5ad_from_matrix"
+  --dataset-label "10x_pbmc3k_public_h5ad_from_matrix" \
+  "${CELLTYPIST_ARGS[@]}"
 
 conda activate "$CORE_ENV"
 ultimate audit-production \
