@@ -18,6 +18,9 @@ OUT_DIR="${ULTIMATE_TUMOR_SC_OUT:-$PROJECT_ROOT/validations/slurm_tumor_sc_nsclc
 RSCRIPT="${ULTIMATE_TUMOR_SC_RSCRIPT:-$PROJECT_ROOT/.conda/envs/ultimate-scrna-r/bin/Rscript}"
 RUN_COPYKAT="${ULTIMATE_TUMOR_SC_RUN_COPYKAT:-1}"
 RUN_INFERCNV="${ULTIMATE_TUMOR_SC_RUN_INFERCNV:-1}"
+APPROVE_FULL_CNV="${ULTIMATE_TUMOR_SC_APPROVE_FULL_CNV:-0}"
+COPYKAT_MAX_CELLS="${ULTIMATE_TUMOR_SC_COPYKAT_MAX_CELLS:-500}"
+COPYKAT_MAX_GENES="${ULTIMATE_TUMOR_SC_COPYKAT_MAX_GENES:-6000}"
 GENE_ORDER_REF="${ULTIMATE_TUMOR_SC_GENE_ORDER_REF:-/shared/shen/2026/nsclc_virtual_sc/02_processed_scRNA/Lambrechts_all_harmonized.h5ad}"
 
 mkdir -p "$PROJECT_ROOT/logs" "$PROJECT_ROOT/validations" "$PROJECT_ROOT/audits" "$PROJECT_ROOT/reports/validation_index"
@@ -63,12 +66,16 @@ fi
 
 COPYKAT_ARG=()
 INFERCNV_ARG=()
+APPROVAL_ARG=()
 GENE_ORDER_ARG=()
 if [[ "$RUN_COPYKAT" == "1" || "$RUN_COPYKAT" == "true" ]]; then
   COPYKAT_ARG=(--run-copykat)
 fi
 if [[ "$RUN_INFERCNV" == "1" || "$RUN_INFERCNV" == "true" ]]; then
   INFERCNV_ARG=(--run-infercnv)
+fi
+if [[ "$APPROVE_FULL_CNV" == "1" || "$APPROVE_FULL_CNV" == "true" ]]; then
+  APPROVAL_ARG=(--approve-full-cnv-backend)
 fi
 if [[ -s "$GENE_ORDER_REF" ]]; then
   GENE_ORDER_ARG=(--gene-order-reference-h5ad "$GENE_ORDER_REF")
@@ -79,8 +86,11 @@ fi
   --output-dir "$OUT_DIR" \
   --max-cells "${ULTIMATE_TUMOR_SC_MAX_CELLS:-6000}" \
   --rscript "$RSCRIPT" \
+  --copykat-max-cells "$COPYKAT_MAX_CELLS" \
+  --copykat-max-genes "$COPYKAT_MAX_GENES" \
   "${COPYKAT_ARG[@]}" \
   "${INFERCNV_ARG[@]}" \
+  "${APPROVAL_ARG[@]}" \
   "${GENE_ORDER_ARG[@]}"
 
 PYTHONPATH="$PROJECT_ROOT/src" "$CORE_ENV/bin/python" -m ultimate.cli validation-index \

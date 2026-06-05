@@ -66,6 +66,7 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "scrna.annotation.celltypist": "slurm/scrna_mvp_validation.sbatch",
         "scrna.functional.decoupler_gseapy": "slurm/scrna_mvp_validation.sbatch",
         "scrna.communication.liana": "slurm/scrna_mvp_validation.sbatch",
+        "scrna.tumor.copykat": "slurm/tumor_sc_copykat_small_validation.sbatch",
         "functional_state.default.signature_scoring": "slurm/bulk_validation_suite.sbatch",
     }
 

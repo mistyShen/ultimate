@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import subprocess
 from datetime import datetime, timezone
@@ -42,6 +43,9 @@ def main() -> None:
     parser.add_argument("--rscript", type=Path, default=Path("/shared/shen/2026/ultimate/.conda/envs/ultimate-scrna-r/bin/Rscript"))
     parser.add_argument("--run-copykat", action="store_true", help="Attempt CopyKAT only when raw integer counts are available.")
     parser.add_argument("--run-infercnv", action="store_true", help="Attempt inferCNV only when raw integer counts are available.")
+    parser.add_argument("--approve-full-cnv-backend", action="store_true", help="Allow guarded CopyKAT/inferCNV backend execution after raw-count gates pass.")
+    parser.add_argument("--copykat-max-cells", type=int, default=500, help="Maximum cells exported to guarded CopyKAT validation backend.")
+    parser.add_argument("--copykat-max-genes", type=int, default=6000, help="Maximum genes exported to guarded CopyKAT validation backend.")
     parser.add_argument(
         "--gene-order-reference-h5ad",
         type=Path,
@@ -57,6 +61,9 @@ def main() -> None:
         rscript=args.rscript,
         run_copykat=args.run_copykat,
         run_infercnv=args.run_infercnv,
+        approve_full_cnv_backend=args.approve_full_cnv_backend,
+        copykat_max_cells=args.copykat_max_cells,
+        copykat_max_genes=args.copykat_max_genes,
         gene_order_reference_h5ad=args.gene_order_reference_h5ad,
     )
     print(json.dumps(manifest, indent=2, ensure_ascii=False))
@@ -70,6 +77,9 @@ def run_validation(
     rscript: Path,
     run_copykat: bool = False,
     run_infercnv: bool = False,
+    approve_full_cnv_backend: bool = False,
+    copykat_max_cells: int = 500,
+    copykat_max_genes: int = 6000,
     gene_order_reference_h5ad: Path | None = None,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -123,8 +133,12 @@ def run_validation(
         logs=logs,
         tool_status=tool_status,
         matrix_qc=matrix_qc,
+        rscript=rscript,
         run_copykat=run_copykat,
         run_infercnv=run_infercnv,
+        approve_full_cnv_backend=approve_full_cnv_backend,
+        copykat_max_cells=copykat_max_cells,
+        copykat_max_genes=copykat_max_genes,
     )
     backend_attempts.to_csv(tables / "backend_attempts.tsv", sep="\t", index=False)
 
@@ -135,6 +149,8 @@ def run_validation(
 
     object_path = objects / "tumor_sc_nsclc_validated.h5ad"
     adata.write_h5ad(object_path)
+    run_status = _validation_status_from_backend_attempts(backend_attempts, approve_full_cnv_backend, run_copykat)
+    table_paths = sorted([*tables.rglob("*.tsv"), *tables.rglob("*.tsv.gz")])
     manifest: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "input_h5ad": str(input_h5ad),
@@ -146,7 +162,7 @@ def run_validation(
         "sample_key": sample_key,
         "n_malignant_candidates": int(adata.obs["malignant_candidate"].sum()),
         "figures": [str(path) for path in sorted(figures.glob("*.png"))],
-        "tables": [str(path) for path in sorted(tables.glob("*.tsv"))],
+        "tables": [str(path) for path in table_paths],
         "objects": {"h5ad": str(object_path)},
         "tool_status": str(tables / "tool_status.tsv"),
         "backend_attempts": str(tables / "backend_attempts.tsv"),
@@ -155,7 +171,10 @@ def run_validation(
         "gene_order_status": gene_order_status,
         "copykat_requested": run_copykat,
         "infercnv_requested": run_infercnv,
-        "status": "ready",
+        "approve_full_cnv_backend": approve_full_cnv_backend,
+        "copykat_max_cells": copykat_max_cells,
+        "copykat_max_genes": copykat_max_genes,
+        "status": run_status,
         "limitations": [
             "malignant_candidate 是候选评分，不是病理确诊。",
             "cnv_proxy_deviation 来自表达层染色体均值偏移，不等于 DNA CNV。",
@@ -169,6 +188,7 @@ def run_validation(
     )
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     _write_report(manifest, reports / "report.md", reports / "report.html")
+    _write_methods(manifest, reports / "methods.md")
     return manifest
 
 
@@ -237,20 +257,20 @@ def _to_dense_array(matrix, rows: int | None = None, cols: int | None = None) ->
     return np.asarray(view)
 
 
-def _candidate_count_matrices(adata) -> list[tuple[str, Any]]:
-    candidates: list[tuple[str, Any]] = []
+def _candidate_count_matrices(adata) -> list[tuple[str, Any, pd.Index]]:
+    candidates: list[tuple[str, Any, pd.Index]] = []
     for key in ("counts", "raw_counts", "umi", "UMI"):
         if key in adata.layers:
-            candidates.append((f"layer:{key}", adata.layers[key]))
+            candidates.append((f"layer:{key}", adata.layers[key], pd.Index(adata.var_names.astype(str))))
     if adata.raw is not None:
-        candidates.append(("raw.X", adata.raw.X))
-    candidates.append(("X", adata.X))
+        candidates.append(("raw.X", adata.raw.X, pd.Index(adata.raw.var_names.astype(str))))
+    candidates.append(("X", adata.X, pd.Index(adata.var_names.astype(str))))
     return candidates
 
 
 def _backend_matrix_qc(adata) -> pd.DataFrame:
     rows = []
-    for source, matrix in _candidate_count_matrices(adata):
+    for source, matrix, _var_names in _candidate_count_matrices(adata):
         arr = _to_dense_array(matrix, rows=min(300, matrix.shape[0]), cols=min(300, matrix.shape[1])).astype(float)
         finite = arr[np.isfinite(arr)]
         nonnegative = bool(finite.size and np.nanmin(finite) >= 0)
@@ -270,15 +290,15 @@ def _backend_matrix_qc(adata) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _best_count_matrix(adata, matrix_qc: pd.DataFrame) -> tuple[str | None, Any | None, str]:
+def _best_count_matrix(adata, matrix_qc: pd.DataFrame) -> tuple[str | None, Any | None, pd.Index | None, str]:
     compatible = matrix_qc[matrix_qc["raw_counts_compatible"].astype(bool)]
     if compatible.empty:
-        return None, None, "raw_integer_counts_not_available"
+        return None, None, None, "raw_integer_counts_not_available"
     source = str(compatible.iloc[0]["matrix_source"])
-    for candidate_source, matrix in _candidate_count_matrices(adata):
+    for candidate_source, matrix, var_names in _candidate_count_matrices(adata):
         if candidate_source == source:
-            return source, matrix, "ready"
-    return None, None, "raw_counts_source_not_found"
+            return source, matrix, var_names, "ready"
+    return None, None, None, "raw_counts_source_not_found"
 
 
 def _ensure_scores(adata) -> None:
@@ -300,7 +320,13 @@ def _ensure_scores(adata) -> None:
 
 def _tool_status(rscript: Path) -> pd.DataFrame:
     rows = []
-    for package, label in (("infercnv", "inferCNV"), ("copykat", "CopyKAT"), ("Seurat", "Seurat")):
+    for package, label in (
+        ("infercnv", "inferCNV"),
+        ("copykat", "CopyKAT"),
+        ("dlm", "CopyKAT_dependency:dlm"),
+        ("MCMCpack", "CopyKAT_dependency:MCMCpack"),
+        ("Seurat", "Seurat"),
+    ):
         available = False
         version = ""
         note = "Rscript_not_found"
@@ -322,10 +348,14 @@ def _backend_attempts(
     logs: Path,
     tool_status: pd.DataFrame,
     matrix_qc: pd.DataFrame,
+    rscript: Path,
     run_copykat: bool,
     run_infercnv: bool,
+    approve_full_cnv_backend: bool,
+    copykat_max_cells: int,
+    copykat_max_genes: int,
 ) -> pd.DataFrame:
-    source, matrix, count_status = _best_count_matrix(adata, matrix_qc)
+    source, matrix, var_names, count_status = _best_count_matrix(adata, matrix_qc)
     rows = []
     for tool, requested in (("CopyKAT", run_copykat), ("inferCNV", run_infercnv)):
         available = bool(tool_status.loc[tool_status["tool"] == tool, "available"].fillna(False).astype(bool).any())
@@ -347,13 +377,41 @@ def _backend_attempts(
         elif matrix is None:
             row["status"] = "blocked"
             row["reason"] = count_status
+        elif tool == "CopyKAT" and (missing_deps := _missing_copykat_runtime_dependencies(tool_status)):
+            row["status"] = "blocked"
+            row["reason"] = "missing_runtime_dependencies:" + ",".join(missing_deps)
+        elif not approve_full_cnv_backend:
+            row.update(_write_backend_preview(tool, matrix, tables, logs, source or "counts", "operator_approval_required_for_full_cnv_backend"))
+        elif tool == "CopyKAT":
+            row.update(
+                _execute_copykat_backend(
+                    matrix=matrix,
+                    adata=adata,
+                    var_names=var_names,
+                    tables=tables,
+                    logs=logs,
+                    rscript=rscript,
+                    source=source or "counts",
+                    max_cells=copykat_max_cells,
+                    max_genes=copykat_max_genes,
+                )
+            )
         else:
-            row.update(_execute_backend(tool, matrix, adata, tables, logs, source or "counts"))
+            row.update(_write_backend_preview(tool, matrix, tables, logs, source or "counts", "infercnv_full_backend_not_enabled_first_pass"))
         rows.append(row)
     return pd.DataFrame(rows)
 
 
-def _execute_backend(tool: str, matrix, adata, tables: Path, logs: Path, source: str) -> dict[str, str]:
+def _missing_copykat_runtime_dependencies(tool_status: pd.DataFrame) -> list[str]:
+    missing = []
+    for label in ("CopyKAT_dependency:dlm", "CopyKAT_dependency:MCMCpack"):
+        available = bool(tool_status.loc[tool_status["tool"] == label, "available"].fillna(False).astype(bool).any())
+        if not available:
+            missing.append(label.split(":", 1)[1])
+    return missing
+
+
+def _write_backend_preview(tool: str, matrix, tables: Path, logs: Path, source: str, reason: str) -> dict[str, str]:
     # The execution hook is intentionally conservative. Full inferCNV/CopyKAT
     # runs can be expensive and must only start from true raw count matrices.
     counts_path = tables / f"{tool.lower()}_raw_counts_preview.tsv"
@@ -370,8 +428,131 @@ def _execute_backend(tool: str, matrix, adata, tables: Path, logs: Path, source:
         "status": "blocked",
         "output": str(counts_path),
         "log": str(log_path),
-        "reason": "operator_approval_required_for_full_cnv_backend",
+        "reason": reason,
     }
+
+
+def _export_copykat_counts(matrix, adata, var_names: pd.Index, output_path: Path, *, max_cells: int, max_genes: int) -> tuple[int, int]:
+    from scipy import sparse
+
+    n_cells = min(max_cells, adata.n_obs)
+    cell_idx = np.arange(n_cells)
+    sub = matrix[cell_idx, :]
+    if sparse.issparse(sub):
+        gene_detected = np.asarray((sub > 0).sum(axis=0)).reshape(-1)
+        gene_total = np.asarray(sub.sum(axis=0)).reshape(-1)
+    else:
+        dense_sub = np.asarray(sub)
+        gene_detected = (dense_sub > 0).sum(axis=0)
+        gene_total = dense_sub.sum(axis=0)
+    order = np.lexsort((-gene_total, -gene_detected))
+    gene_idx = np.sort(order[: min(max_genes, len(order))])
+    selected = matrix[cell_idx, :][:, gene_idx] if sparse.issparse(matrix) else np.asarray(matrix)[np.ix_(cell_idx, gene_idx)]
+    dense = selected.toarray() if sparse.issparse(selected) else np.asarray(selected)
+    finite = dense[np.isfinite(dense)]
+    if not finite.size or np.nanmin(finite) < 0 or not np.allclose(finite, np.rint(finite)):
+        raise ValueError("selected_copykat_matrix_not_nonnegative_integer_counts")
+    dense = np.rint(np.clip(dense, 0, None)).astype(int)
+    genes = pd.Index(var_names.astype(str)[gene_idx]).map(_safe_gene_symbol)
+    cells = pd.Index(adata.obs_names.astype(str)[cell_idx]).map(_safe_cell_id)
+    frame = pd.DataFrame(dense.T, index=genes, columns=cells)
+    frame = frame.groupby(frame.index, sort=False).sum()
+    with gzip.open(output_path, "wt") as handle:
+        frame.to_csv(handle, sep="\t", index_label="gene")
+    return int(frame.shape[1]), int(frame.shape[0])
+
+
+def _safe_gene_symbol(value: str) -> str:
+    value = str(value).strip()
+    return value if value and value.lower() != "nan" else "unknown_gene"
+
+
+def _safe_cell_id(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in {"_", "-", "."} else "_" for ch in str(value))
+
+
+def _execute_copykat_backend(
+    *,
+    matrix,
+    adata,
+    var_names: pd.Index | None,
+    tables: Path,
+    logs: Path,
+    rscript: Path,
+    source: str,
+    max_cells: int,
+    max_genes: int,
+) -> dict[str, str]:
+    runner = Path(__file__).parents[1] / "scripts" / "R" / "tumor_cnv_copykat.R"
+    if not runner.exists():
+        return _write_backend_preview("copykat", matrix, tables, logs, source, "runner_missing:tumor_cnv_copykat.R")
+    count_path = tables / "copykat_counts_matrix.tsv.gz"
+    output_dir = tables / "copykat_backend"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs / "copykat_backend.log"
+    manifest_path = output_dir / "copykat_backend_manifest.json"
+    if var_names is None:
+        return _write_backend_preview("copykat", matrix, tables, logs, source, "copykat_var_names_unavailable")
+    try:
+        selected_cells, selected_genes = _export_copykat_counts(matrix, adata, var_names, count_path, max_cells=max_cells, max_genes=max_genes)
+    except Exception as exc:
+        log_path.write_text(f"copykat input export failed: {exc}\n", encoding="utf-8")
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "tool": "CopyKAT",
+                    "error": str(exc),
+                    "interpretation_warning": "transcriptome_inferred_CNV_not_DNA_level_CNV",
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "status": "failed",
+            "output": str(manifest_path),
+            "log": str(log_path),
+            "reason": f"copykat_input_export_failed:{exc}",
+        }
+    cmd = [
+        str(rscript),
+        str(runner),
+        "--counts",
+        str(count_path),
+        "--output-dir",
+        str(output_dir),
+        "--sample-name",
+        "ultimate_copykat",
+        "--ncores",
+        "1",
+    ]
+    with log_path.open("w", encoding="utf-8") as log_handle:
+        log_handle.write(f"command={' '.join(cmd)}\n")
+        log_handle.write(f"matrix_source={source}\nselected_cells={selected_cells}\nselected_genes={selected_genes}\n")
+        proc = subprocess.run(cmd, text=True, stdout=log_handle, stderr=subprocess.STDOUT, check=False)
+    status = "ready" if proc.returncode == 0 and (output_dir / "copykat_predictions.tsv").exists() else "failed"
+    reason = "" if status == "ready" else f"copykat_returncode:{proc.returncode}"
+    return {
+        "status": status,
+        "output": str(output_dir / "copykat_predictions.tsv" if status == "ready" else manifest_path),
+        "log": str(log_path),
+        "reason": reason,
+    }
+
+
+def _validation_status_from_backend_attempts(backend_attempts: pd.DataFrame, approve_full_cnv_backend: bool, run_copykat: bool) -> str:
+    if not approve_full_cnv_backend or not run_copykat:
+        return "ready"
+    copykat = backend_attempts[backend_attempts["tool"] == "CopyKAT"]
+    if copykat.empty:
+        return "partial:copykat_backend_missing"
+    status = str(copykat.iloc[0].get("status", ""))
+    if status != "ready":
+        reason = str(copykat.iloc[0].get("reason", "copykat_backend_failed")).replace(":", "_") or "copykat_backend_failed"
+        return f"partial:copykat_backend_not_ready:{reason}"
+    return "ready"
 
 
 def _cnv_proxy(adata) -> tuple[pd.DataFrame, np.ndarray]:
@@ -640,6 +821,28 @@ def _write_report(manifest: dict[str, Any], md: Path, html: Path) -> None:
         "</body></html>",
         encoding="utf-8",
     )
+
+
+def _write_methods(manifest: dict[str, Any], out: Path) -> None:
+    lines = [
+        "# Methods",
+        "",
+        "本次验证使用 NSCLC 单细胞 h5ad 输入，抽样后执行肿瘤单细胞专项 MVP：表达层 CNV proxy、恶性候选细胞评分、TME 组成、状态评分、inferCNV 输入准备和 CopyKAT guarded backend。",
+        "",
+        "## CopyKAT backend",
+        f"- requested：`{manifest.get('copykat_requested')}`",
+        f"- approved_full_cnv_backend：`{manifest.get('approve_full_cnv_backend')}`",
+        f"- max_cells：`{manifest.get('copykat_max_cells')}`",
+        f"- max_genes：`{manifest.get('copykat_max_genes')}`",
+        "- interpretation：CopyKAT 是 transcriptome-inferred CNV，不能等同于 DNA-level CNV 或病理诊断。",
+        "",
+        "## Reproducibility",
+        f"- input_h5ad：`{manifest.get('input_h5ad')}`",
+        f"- output_dir：`{manifest.get('output_dir')}`",
+        f"- slurm_job_id：`{manifest.get('slurm_job_id')}`",
+        f"- backend_attempts：`{manifest.get('backend_attempts')}`",
+    ]
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

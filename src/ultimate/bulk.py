@@ -31,6 +31,7 @@ from ultimate.modules.common import (
     write_tool_coverage_table,
 )
 from ultimate.plot_style import apply_clinical_journal_style, continuous_cmap, save_figure
+from ultimate.rnaseq_de_backend import run_rnaseq_de_backend, rnaseq_de_backend_requested
 
 
 BULK_MODULES = {
@@ -102,6 +103,37 @@ def run_bulk_module(
     artifacts["figures"].update(_write_common_figures(module_name, matrix, stats, samples, figures_dir, design))
     artifacts["figures"].update(_write_module_figures(module_name, matrix, stats, samples, inputs, figures_dir, module_cfg))
     artifacts["objects"].update(_write_bulk_objects(module_name, matrix, stats, inputs, objects_dir))
+    backend_execution: list[dict[str, Any]] = []
+    rnaseq_de_result: dict[str, Any] | None = None
+    if module_name == "rnaseq" and rnaseq_de_backend_requested(module_cfg):
+        backend_samplesheet = _write_backend_samplesheet(samples, tables_dir)
+        rnaseq_de_result = run_rnaseq_de_backend(
+            counts_path=_rnaseq_counts_path(module_cfg, inputs),
+            samplesheet_path=backend_samplesheet,
+            tables_dir=tables_dir,
+            figures_dir=figures_dir,
+            objects_dir=objects_dir,
+            design=design,
+            analysis_level=str(level_fields.get("analysis_level") or "smoke_backend"),
+            module_cfg=module_cfg,
+        )
+        backend_execution.append(
+            {
+                "backend_id": rnaseq_de_result["backend_id"],
+                "status": rnaseq_de_result["status"],
+                "analysis_level": rnaseq_de_result["analysis_level"],
+                "skip_reason": rnaseq_de_result["skip_reason"],
+            }
+        )
+        de_artifacts = rnaseq_de_result.get("artifacts") if isinstance(rnaseq_de_result.get("artifacts"), dict) else {}
+        for key in ("de_results", "deseq2_edgeR_de_results", "de_backend_status", "de_backend_versions", "manifest"):
+            if key in de_artifacts:
+                artifacts["tables"][key] = str(de_artifacts[key])
+        for key in ("volcano", "top_gene_heatmap"):
+            if key in de_artifacts:
+                artifacts["figures"][f"de_backend_{key}"] = str(de_artifacts[key])
+        if "rds" in de_artifacts:
+            artifacts["objects"]["rnaseq_de_backend_rds"] = str(de_artifacts["rds"])
     artifacts["tables"].update(
         write_mvp_tables(
             module_name=module_name,
@@ -127,20 +159,32 @@ def run_bulk_module(
         delivery_allowed=bool(level_fields.get("delivery_allowed") is True),
         validation_evidence_allowed=bool(level_fields.get("validation_evidence_allowed") is True),
     )
+    if backend_execution:
+        backend_execution_path = tables_dir / "backend_execution.tsv"
+        pd.DataFrame(backend_execution).to_csv(backend_execution_path, sep="\t", index=False)
+        artifacts["tables"]["backend_execution"] = str(backend_execution_path)
+
+    module_status = "complete_python_bulk_backend"
+    skip_reasons: list[str] = []
+    if rnaseq_de_result is not None and rnaseq_de_result.get("status") != "ready":
+        module_status = f"partial:rnaseq_de_backend_{rnaseq_de_result.get('status')}"
+        skip_reasons.append(str(rnaseq_de_result.get("skip_reason") or "rnaseq_de_backend_not_ready"))
+
     artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
         module_name=module_name,
         tables_dir=tables_dir,
-        status="complete_python_bulk_backend",
+        status=module_status,
         artifacts=artifacts,
         analysis_fields=level_fields,
         warnings=list(inputs.warnings),
+        skip_reasons=skip_reasons,
     )
 
     module_manifest = {
         "module": module_name,
         "title_cn": MODULE_SPECS[module_name].title_cn,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "status": "complete_python_bulk_backend",
+        "status": module_status,
         **level_fields,
         "backend": {
             "primary": "python",
@@ -152,6 +196,8 @@ def run_bulk_module(
             "python_requirements": list(BULK_PYTHON_REQUIREMENTS[module_name]),
         },
         "backend_plan": backend_plan,
+        "backend_execution": backend_execution,
+        "rnaseq_de_backend": rnaseq_de_result or {"backend_id": "rnaseq.de.deseq2_edger", "status": "not_requested"},
         "backend_id": backend_plan["selected_backend_id"],
         "backend_status": backend_plan["selected_backend_status"],
         "backend_analysis_level": backend_plan["backend_analysis_level"],
@@ -175,7 +221,7 @@ def run_bulk_module(
         "handoff": handoff_plan(module_name),
         "reproducible_command": f"ultimate run --config {config.get('_config_path', '<config.yaml>')}",
         "warnings": list(inputs.warnings),
-        "skip_reasons": [],
+        "skip_reasons": skip_reasons,
     }
     if module_name == "publicdb":
         module_manifest["restricted_resources"] = {
@@ -764,6 +810,30 @@ def _write_bulk_objects(module_name: str, matrix: pd.DataFrame, stats: pd.DataFr
     rds_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
     rdata_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
     return {"manifest": str(json_path), "rds": str(rds_path), "RData": str(rdata_path)}
+
+
+def _write_backend_samplesheet(samples: pd.DataFrame, tables_dir: Path) -> Path:
+    path = tables_dir / "rnaseq_de_backend_samplesheet.tsv"
+    samples.to_csv(path, sep="\t", index=False)
+    return path
+
+
+def _rnaseq_counts_path(module_cfg: dict[str, Any], inputs: BulkInputs) -> Path | None:
+    de_cfg = module_cfg.get("de_backend") if isinstance(module_cfg.get("de_backend"), dict) else {}
+    candidates = (
+        de_cfg.get("counts_path"),
+        module_cfg.get("input_matrix"),
+        module_cfg.get("matrix_path"),
+        (module_cfg.get("raw") or {}).get("matrix_path") if isinstance(module_cfg.get("raw"), dict) else None,
+        inputs.source if inputs.source != "demo_generated_matrix" else None,
+    )
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(str(candidate))
+        if path.exists():
+            return path
+    return None
 
 
 def _safe_corr(left: np.ndarray, right: np.ndarray) -> float:

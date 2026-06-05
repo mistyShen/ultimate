@@ -213,6 +213,12 @@ def _write_project_config(*, output_dir: Path, prepared: dict[str, Any]) -> Path
         "special_notes": "Public airway count matrix validation evidence; not customer delivery.",
     }
     dump_yaml(request, request_path)
+    rscript_path = Path(
+        os.environ.get(
+            "ULTIMATE_RNASEQ_RSCRIPT",
+            str(Path(__file__).resolve().parents[1] / ".conda" / "envs" / "ultimate-rnaseq" / "bin" / "Rscript"),
+        )
+    )
     config = {
         "project": {
             "name": "slurm_rnaseq_airway_public",
@@ -240,6 +246,13 @@ def _write_project_config(*, output_dir: Path, prepared: dict[str, Any]) -> Path
                 "is_demo": False,
                 "input_matrix": str(prepared["matrix_tsv"]),
                 "samplesheet": str(prepared["samplesheet"]),
+                "preset": "publication",
+                "backends": {"de": "deseq2_edger"},
+                "de_backend": {
+                    "enabled": True,
+                    "rscript": str(rscript_path),
+                    "script": str(Path(__file__).resolve().parents[1] / "scripts" / "R" / "rnaseq_de_backend.R"),
+                },
                 "raw": {
                     "enabled": True,
                     "input_type": "count_matrix",
