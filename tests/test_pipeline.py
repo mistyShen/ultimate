@@ -8,7 +8,7 @@ from ultimate.config import dump_yaml, load_config
 from ultimate.constants import MODULE_ORDER
 from ultimate.job import prepare_job
 from ultimate.modules.common import GLOBAL_MVP_TABLE_COLUMNS, MODULE_MVP_FIGURES, MODULE_MVP_OBJECTS, MODULE_MVP_TABLES
-from ultimate.pipeline import run_pipeline_from_config
+from ultimate.pipeline import _write_module_log, run_pipeline_from_config
 from ultimate.preflight import run_preflight
 
 
@@ -105,6 +105,22 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
     assert "MVP 表格" in methods_text
     assert "clonotype_summary.tsv" in methods_text
     assert "统计结果" not in methods_text
+
+
+def test_module_log_resets_stale_errors_on_new_run(tmp_path: Path) -> None:
+    _write_module_log(tmp_path, "method_tools", {"event": "module_started", "module": "method_tools"})
+    _write_module_log(
+        tmp_path,
+        "method_tools",
+        {"event": "module_completed", "module": "method_tools", "skip_reasons": ["input_read_failed:ValueError:old"]},
+    )
+    _write_module_log(tmp_path, "method_tools", {"event": "module_started", "module": "method_tools"})
+    _write_module_log(tmp_path, "method_tools", {"event": "module_completed", "module": "method_tools", "skip_reasons": []})
+
+    text = (tmp_path / "logs" / "method_tools.log").read_text(encoding="utf-8")
+    assert "module_started" in text
+    assert "module_completed" in text
+    assert "input_read_failed" not in text
 
 
 def test_all_modules_emit_declared_mvp_artifacts(tmp_path: Path) -> None:

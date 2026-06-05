@@ -180,7 +180,8 @@ def _mirror_final_run_manifest(out_dir: Path, manifest_path: Path) -> None:
 def _write_module_log(run_dir: Path, module_name: str, payload: dict[str, Any]) -> Path:
     path = run_dir / "logs" / f"{module_name}.log"
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
+    mode = "w" if payload.get("event") == "module_started" else "a"
+    with path.open(mode, encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
     return path
 

@@ -56,6 +56,7 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
     by_id = {backend.backend_id: backend for backend in BACKEND_REGISTRY}
     expected = {
         "rnaseq.matrix.python_mvp": "slurm/bulk_validation_suite.sbatch",
+        "rnaseq.de.deseq2_edger": "slurm/bulk_validation_suite.sbatch",
         "publicdb.cached_tables.python_mvp": "slurm/bulk_validation_suite.sbatch",
         "clinical_assoc.default.sample_level_stats": "slurm/bulk_validation_suite.sbatch",
         "wgcna.default.ready_matrix": "slurm/bulk_validation_suite.sbatch",
@@ -68,6 +69,8 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "scrna.communication.liana": "slurm/scrna_mvp_validation.sbatch",
         "scrna.tumor.copykat": "slurm/tumor_sc_copykat_small_validation.sbatch",
         "functional_state.default.signature_scoring": "slurm/bulk_validation_suite.sbatch",
+        "method_tools.default.delivery_manifest_mvp": "slurm/method_tools_validation.sbatch",
+        "hto_demux.default.matrix_assignment_mvp": "slurm/hto_demux_backend_validation.sbatch",
     }
 
     for backend_id, slurm_profile in expected.items():

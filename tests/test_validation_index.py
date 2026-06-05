@@ -279,6 +279,70 @@ def test_validation_index_checks_module_level_artifacts(tmp_path: Path) -> None:
     assert row["backend_statuses"] == "fully_automatic_validated_entrypoint"
 
 
+def test_validation_index_includes_module_backend_execution_rows(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run = root / "validations" / "slurm_rnaseq_airway_public"
+    (run / "results" / "tables" / "rnaseq").mkdir(parents=True)
+    (run / "results" / "figures" / "rnaseq").mkdir(parents=True)
+    (run / "objects" / "rnaseq").mkdir(parents=True)
+    (run / "reports").mkdir(parents=True)
+    (run / "logs").mkdir(parents=True)
+    table = run / "results" / "tables" / "rnaseq" / "de_results.tsv"
+    figure = run / "results" / "figures" / "rnaseq" / "deseq2_edgeR_volcano.png"
+    obj = run / "objects" / "rnaseq" / "rnaseq_de_backend.rds"
+    table.write_text("feature_id\tpadj\nGENE_A\t0.01\n", encoding="utf-8")
+    figure.write_text("png", encoding="utf-8")
+    obj.write_text("object", encoding="utf-8")
+    (run / "reports" / "report.html").write_text("<html></html>", encoding="utf-8")
+    (run / "reports" / "methods.md").write_text("methods", encoding="utf-8")
+    (run / "logs" / "run.log").write_text("ok", encoding="utf-8")
+    (run / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "analysis_level": "validated_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": False,
+                "validation_evidence_allowed": True,
+                "non_delivery_reason": "validation_evidence_only_not_customer_delivery",
+                "slurm_job_id": "9381178",
+                "modules": [
+                    {
+                        "module": "rnaseq",
+                        "status": "complete_python_bulk_backend",
+                        "backend_id": "rnaseq.matrix.python_mvp",
+                        "backend_status": "fully_automatic_validated_entrypoint",
+                        "backend_execution": [
+                            {
+                                "backend_id": "rnaseq.de.deseq2_edger",
+                                "status": "ready",
+                                "analysis_level": "validated_backend",
+                                "skip_reason": "",
+                            }
+                        ],
+                        "artifacts": {
+                            "tables": {"de_results": str(table)},
+                            "figures": {"de_backend_volcano": str(figure)},
+                            "objects": {"rnaseq_de_backend_rds": str(obj)},
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_validation_index(root=root, output_dir=tmp_path / "index")
+    rows = json.loads(Path(result["validation_index_json"]).read_text(encoding="utf-8"))
+    row = next(item for item in rows if item["run_name"] == "slurm_rnaseq_airway_public")
+
+    assert "rnaseq.matrix.python_mvp" in row["backend_ids"]
+    assert "rnaseq.de.deseq2_edger" in row["backend_ids"]
+    assert "fully_automatic_validated_entrypoint" in row["backend_statuses"]
+    assert "ready" in row["backend_statuses"]
+
+
 def test_validation_index_includes_prepared_jobs_and_delivery_scope_priority(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
     run = root / "jobs" / "JOB001" / "runs" / "RUN001"

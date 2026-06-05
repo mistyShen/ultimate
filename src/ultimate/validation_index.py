@@ -241,6 +241,9 @@ def _backend_values(manifest: dict[str, Any], modules: list[dict[str, Any]], key
     for module in modules:
         if not isinstance(module, dict):
             continue
+        module_execution_rows = module.get("backend_execution")
+        if isinstance(module_execution_rows, list):
+            values.extend(_backend_values_from_execution_rows(module_execution_rows, key))
         value = module.get(key)
         if value:
             values.append(str(value))
