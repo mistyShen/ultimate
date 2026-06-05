@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 
 from ultimate.analysis_levels import require_real_evidence
+from ultimate.backend_registry import backend_maturity_rows, backend_registry_rows, modules_without_backend
 from ultimate.bulk import BULK_MODULES
 from ultimate.constants import MODULE_ORDER, MODULE_SPECS, SUPPORTED_ORGANISMS
 from ultimate.module_maturity import build_module_maturity_rows
@@ -482,7 +483,17 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
     pd.DataFrame(validation_gap_rows).to_csv(validation_gap_path, sep="\t", index=False)
     validation_gap_json_path.write_text(json.dumps(validation_gap_rows, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    final_rows = _final_acceptance_rows(root, capability_rows, validation_rows)
+    backend_rows = backend_maturity_rows(root)
+    backend_maturity_path = output_dir / "backend_maturity_table.tsv"
+    pd.DataFrame(backend_rows).to_csv(backend_maturity_path, sep="\t", index=False)
+
+    backend_registry_snapshot_rows = backend_registry_rows()
+    backend_registry_path = output_dir / "backend_registry.tsv"
+    backend_registry_json_path = output_dir / "backend_registry.json"
+    pd.DataFrame(backend_registry_snapshot_rows).to_csv(backend_registry_path, sep="\t", index=False)
+    backend_registry_json_path.write_text(json.dumps(backend_registry_snapshot_rows, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    final_rows = _final_acceptance_rows(root, capability_rows, validation_rows, backend_rows)
     final_path = output_dir / "final_acceptance_checklist.tsv"
     pd.DataFrame(final_rows).to_csv(final_path, sep="\t", index=False)
     production_audit_tsv_path = output_dir / "production_audit.tsv"
@@ -529,6 +540,10 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
         "validation_gap_summary": _validation_gap_summary(validation_gap_rows),
         "production_audit_tsv": str(production_audit_tsv_path),
         "final_acceptance_checklist": str(final_path),
+        "backend_maturity_table": str(backend_maturity_path),
+        "backend_registry": str(backend_registry_path),
+        "backend_registry_json": str(backend_registry_json_path),
+        "backend_registry_summary": _backend_registry_summary(backend_rows),
         "module_maturity_table": str(maturity_path),
         "module_standardization_matrix": str(standardization_path),
         "tool_coverage_by_module": str(coverage_path),
@@ -1126,7 +1141,12 @@ def _invalid_guard_fields(manifest: dict[str, Any]) -> list[str]:
     return invalid
 
 
-def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], validation_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _final_acceptance_rows(
+    root: Path,
+    capability_rows: list[dict[str, Any]],
+    validation_rows: list[dict[str, Any]],
+    backend_rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     latest_tool_manifest = _latest_tool_manifest(root)
     tool_manifest = _read_json(latest_tool_manifest) if latest_tool_manifest else {}
     tool_matrix = _read_tool_matrix(tool_manifest)
@@ -1134,6 +1154,7 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
     registry_ready, registry_note = _tool_registry_triage_status(registry_rows)
     validation_status = {str(row["validation_key"]): str(row["status"]) for row in validation_rows}
     capability_by_module = {str(row.get("module")): row for row in capability_rows}
+    backend_rows = backend_rows if backend_rows is not None else backend_maturity_rows(root)
     ready_capabilities = [row for row in capability_rows if str(row["production_status"]) == "ready_basic"]
     partial_capabilities = [row for row in capability_rows if str(row["production_status"]) != "ready_basic"]
     prepared_delivery_ready, prepared_delivery_note = _prepared_job_delivery_status(root)
@@ -1248,6 +1269,18 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
             prepared_delivery_ready,
             prepared_delivery_note,
         ),
+        _requirement_row(
+            "v3_backend_registry_ready",
+            "V3 backend registry 覆盖全部模块并记录 backend 级成熟度",
+            not modules_without_backend() and bool(backend_rows),
+            _backend_registry_acceptance_evidence(backend_rows),
+        ),
+        _requirement_row(
+            "v3_fully_automatic_backends_gated",
+            "fully automatic backend 必须经过 evidence/approval gate，不把 planned/optional 写成正式后端",
+            _backend_gate_ready(backend_rows),
+            _backend_gate_evidence(backend_rows),
+        ),
     ]
     return rows
 
@@ -1273,6 +1306,47 @@ def _module_group_note(capability_by_module: dict[str, dict[str, Any]], modules:
         next_action = str(row.get("next_action") or "not_recorded")
         notes.append(f"{module}:validation={validation},production={production},blocked_reason={next_action}")
     return ";".join(notes)
+
+
+def _backend_registry_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    for row in rows:
+        status = str(row.get("backend_status") or "unknown")
+        summary[status] = summary.get(status, 0) + 1
+    return summary
+
+
+def _backend_registry_acceptance_evidence(rows: list[dict[str, Any]]) -> str:
+    missing = modules_without_backend()
+    summary = _backend_registry_summary(rows)
+    return f"backend_rows={len(rows)};missing_modules={','.join(missing) or 'none'};summary={json.dumps(summary, ensure_ascii=False, sort_keys=True)}"
+
+
+def _backend_gate_ready(rows: list[dict[str, Any]]) -> bool:
+    if not rows:
+        return False
+    for row in rows:
+        status = str(row.get("backend_status") or "")
+        production_allowed = str(row.get("production_allowed") or "").lower() == "true"
+        if status.startswith("planned") and production_allowed:
+            # Planned backends may allow production in the future, but their
+            # current skip reason must make the gate explicit.
+            if not str(row.get("skip_reason") or ""):
+                return False
+        if status in {"handoff_ready", "licensed_path_detection"} and production_allowed:
+            if not str(row.get("next_required_evidence") or ""):
+                return False
+    return True
+
+
+def _backend_gate_evidence(rows: list[dict[str, Any]]) -> str:
+    summary = _backend_registry_summary(rows)
+    planned_missing_skip = [
+        str(row.get("backend_id"))
+        for row in rows
+        if str(row.get("backend_status") or "").startswith("planned") and not str(row.get("skip_reason") or "")
+    ]
+    return f"summary={json.dumps(summary, ensure_ascii=False, sort_keys=True)};planned_missing_skip_reason={','.join(planned_missing_skip) or 'none'}"
 
 
 def _requirement_row(requirement: str, label_cn: str, passed: bool, evidence: str) -> dict[str, Any]:

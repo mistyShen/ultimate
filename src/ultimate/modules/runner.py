@@ -15,6 +15,7 @@ import pandas as pd
 import seaborn as sns
 
 from ultimate.analysis_levels import classify_analysis_level, require_real_evidence
+from ultimate.backend_registry import build_backend_plan, enrich_backend_plan_for_run, write_backend_plan_table
 from ultimate.constants import MODULE_SPECS
 from ultimate.bulk import is_bulk_module, run_bulk_module
 from ultimate.modules.common import (
@@ -103,7 +104,14 @@ def run_module(
     artifacts["objects"].update(write_mvp_object(module_name=module_name, objects_dir=objects_dir, matrix=matrix, stats=stats))
     artifacts.setdefault("reports", {})
     artifacts["tables"]["tool_coverage"] = write_tool_coverage_table(module_name, tables_dir)
+    artifacts["tables"]["backend_plan"] = str(write_backend_plan_table(module_name, config, tables_dir))
     artifacts["reports"]["methods_fragment"] = write_module_methods_fragment(module_name, reports_dir)
+    backend_plan = enrich_backend_plan_for_run(
+        build_backend_plan(module_name, config),
+        analysis_level=str(level_fields.get("analysis_level") or "smoke_backend"),
+        delivery_allowed=bool(level_fields.get("delivery_allowed") is True),
+        validation_evidence_allowed=bool(level_fields.get("validation_evidence_allowed") is True),
+    )
     artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
         module_name=module_name,
         tables_dir=tables_dir,
@@ -125,6 +133,22 @@ def run_module(
         "limitations": list(known_limitations(module_name)),
         "handoff": handoff_plan(module_name),
         "reproducible_command": f"ultimate run --config {config.get('_config_path', '<config.yaml>')}",
+        "backend": {
+            "primary": "python_smoke_mvp",
+            "selected_backend_id": backend_plan["selected_backend_id"],
+            "selected_backend_status": backend_plan["selected_backend_status"],
+            "backend_role": backend_plan["selected_backend_role"],
+            "resource_profile": backend_plan["backend_resource_profile"],
+        },
+        "backend_plan": backend_plan,
+        "backend_id": backend_plan["selected_backend_id"],
+        "backend_status": backend_plan["selected_backend_status"],
+        "backend_analysis_level": backend_plan["backend_analysis_level"],
+        "backend_delivery_allowed": backend_plan["backend_delivery_allowed"],
+        "backend_validation_evidence_allowed": backend_plan["backend_validation_evidence_allowed"],
+        "backend_skip_reason": backend_plan["backend_skip_reason"],
+        "backend_resource_profile": backend_plan["backend_resource_profile"],
+        "backend_slurm_job_id": backend_plan["backend_slurm_job_id"],
         "formal_backend": {
             "r_entrypoint": module_cfg.get("r_entrypoint", f"scripts/R/{module_name}.R"),
             "status": "interface_ready_optional_dependencies_recorded_by_preflight",
@@ -255,6 +279,13 @@ def _run_validated_run_backend(
         skip_reasons.append(f"analysis_level_invalid:{exc}")
         level_fields = classify_analysis_level(requested_level="smoke_backend", is_stub=True).to_manifest_fields()
     artifacts["tables"]["tool_coverage"] = write_tool_coverage_table(module_name, tables_dir)
+    artifacts["tables"]["backend_plan"] = str(write_backend_plan_table(module_name, config, tables_dir))
+    backend_plan = enrich_backend_plan_for_run(
+        build_backend_plan(module_name, config),
+        analysis_level=str(level_fields.get("analysis_level") or "smoke_backend"),
+        delivery_allowed=bool(level_fields.get("delivery_allowed") is True),
+        validation_evidence_allowed=bool(level_fields.get("validation_evidence_allowed") is True),
+    )
     artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
         module_name=module_name,
         tables_dir=tables_dir,
@@ -282,9 +313,22 @@ def _run_validated_run_backend(
         "reproducible_command": f"ultimate run --config {config.get('_config_path', '<config.yaml>')}",
         "backend": {
             "primary": "validated_run",
+            "selected_backend_id": backend_plan["selected_backend_id"],
+            "selected_backend_status": backend_plan["selected_backend_status"],
+            "backend_role": backend_plan["selected_backend_role"],
+            "resource_profile": backend_plan["backend_resource_profile"],
             "source_run_dir": str(run_dir),
             "storage_policy": "reference_existing_artifacts_without_copying_large_objects",
         },
+        "backend_plan": backend_plan,
+        "backend_id": backend_plan["selected_backend_id"],
+        "backend_status": backend_plan["selected_backend_status"],
+        "backend_analysis_level": backend_plan["backend_analysis_level"],
+        "backend_delivery_allowed": backend_plan["backend_delivery_allowed"],
+        "backend_validation_evidence_allowed": backend_plan["backend_validation_evidence_allowed"],
+        "backend_skip_reason": backend_plan["backend_skip_reason"],
+        "backend_resource_profile": backend_plan["backend_resource_profile"],
+        "backend_slurm_job_id": backend_plan["backend_slurm_job_id"],
         "formal_backend": {
             "r_entrypoint": "validated_run_manifest",
             "status": "validated_outputs_referenced_by_unified_run",

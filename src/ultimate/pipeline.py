@@ -41,6 +41,7 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
     samples = load_samples(config)
     analysis_request = load_analysis_request(config)
     style_review = generate_style_review(out_dir / "reports" / "style_review")
+    slurm_context = _slurm_context()
     module_manifests = []
     for module_name in enabled_modules(config):
         _write_module_log(
@@ -66,6 +67,7 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
             output_dir=out_dir,
             samples=samples,
         )
+        _attach_slurm_to_backend(module_manifest, slurm_context)
         module_manifest["raw_qc"] = raw_manifest
         module_manifests.append(module_manifest)
         _write_module_log(
@@ -91,7 +93,6 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
         run_status=run_summary["status"],
     )
     run_level_fields = _aggregate_run_level_fields(module_manifests, delivery_gate)
-    slurm_context = _slurm_context()
     manifest = {
         "run_id": run_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -207,6 +208,19 @@ def _write_run_context_log(run_dir: Path, manifest: dict[str, Any]) -> Path:
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+def _attach_slurm_to_backend(module_manifest: dict[str, Any], slurm_context: dict[str, str]) -> None:
+    job_id = str(slurm_context.get("slurm_job_id") or "")
+    if not job_id:
+        return
+    module_manifest["backend_slurm_job_id"] = job_id
+    backend = module_manifest.get("backend")
+    if isinstance(backend, dict):
+        backend["backend_slurm_job_id"] = job_id
+    plan = module_manifest.get("backend_plan")
+    if isinstance(plan, dict):
+        plan["backend_slurm_job_id"] = job_id
 
 
 def _load_pipeline_approval(

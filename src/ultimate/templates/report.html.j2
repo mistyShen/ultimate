@@ -44,13 +44,15 @@
 
   <h2>运行概览</h2>
   <table>
-    <thead><tr><th>模块</th><th>状态</th><th>analysis_level</th><th>交付许可</th><th>Raw QC</th><th>特征数</th><th>样本数</th><th>R后端</th></tr></thead>
+    <thead><tr><th>模块</th><th>状态</th><th>analysis_level</th><th>backend</th><th>backend_status</th><th>交付许可</th><th>Raw QC</th><th>特征数</th><th>样本数</th><th>R后端</th></tr></thead>
     <tbody>
     {% for module in modules %}
       <tr>
         <td>{{ module.title_cn }} ({{ module.module }})</td>
         <td>{{ module.status }}</td>
         <td>{{ module.get("analysis_level", "not_recorded") }}</td>
+        <td><code>{{ module.get("backend_id", (module.get("backend") or {}).get("selected_backend_id", "not_recorded")) }}</code></td>
+        <td><code>{{ module.get("backend_status", (module.get("backend") or {}).get("selected_backend_status", "not_recorded")) }}</code></td>
         <td>{{ module.get("delivery_allowed", false) }}</td>
         <td>{{ (module.get("raw_qc") or {}).get("status", "not_recorded") }}</td>
         <td>{{ module.get("n_features", "NA") }}</td>
@@ -91,6 +93,13 @@
       {% set artifacts = module.get("artifacts") or {"tables": {}, "figures": {}, "objects": {}} %}
       <li>analysis_level：<code>{{ module.get("analysis_level", "not_recorded") }}</code></li>
       <li>交付许可：<code>{{ module.get("delivery_allowed", false) }}</code>；验证证据许可：<code>{{ module.get("validation_evidence_allowed", false) }}</code>；原因：<code>{{ module.get("non_delivery_reason", "") or "none" }}</code></li>
+      {% set backend_plan = module.get("backend_plan") or {} %}
+      <li>selected_backend：<code>{{ module.get("backend_id", backend_plan.get("selected_backend_id", "not_recorded")) }}</code></li>
+      <li>backend_status：<code>{{ module.get("backend_status", backend_plan.get("selected_backend_status", "not_recorded")) }}</code>；backend_role：<code>{{ backend_plan.get("selected_backend_role", "not_recorded") }}</code>；resource_profile：<code>{{ module.get("backend_resource_profile", backend_plan.get("backend_resource_profile", "not_recorded")) }}</code></li>
+      <li>backend_skip_reason：<code>{{ module.get("backend_skip_reason", backend_plan.get("backend_skip_reason", "")) or "none" }}</code></li>
+      <li>skipped_optional_backends：<code>{{ (backend_plan.get("skipped_optional_backends") or []) | join(", ") or "none" }}</code></li>
+      <li>licensed_backend_status：<code>{% for item in backend_plan.get("licensed_backend_status") or [] %}{{ item.get("backend_id") }}={{ item.get("available") }}{% if not loop.last %}; {% endif %}{% endfor %}{{ "" if backend_plan.get("licensed_backend_status") else "none" }}</code></li>
+      <li>backend_interpretation_warnings：<code>{{ (backend_plan.get("interpretation_warnings") or []) | join("; ") or "none" }}</code></li>
       <li>已知限制：<code>{{ (module.get("limitations") or []) | join("; ") }}</code></li>
       <li>Handoff/可选后端：<code>{{ ((module.get("handoff") or {}).get("handoff_tools") or []) | join(", ") or "none" }}</code></li>
       <li>handoff_status：<code>{{ (module.get("handoff") or {}).get("handoff_status", "not_recorded") }}</code></li>

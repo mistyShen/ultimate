@@ -140,6 +140,11 @@ def _assert_mvp_outputs(manifest: dict) -> None:
     assert not (run_dir / "objects" / "scrna_smoke_validated.h5ad").exists()
     assert manifest["cell_type_annotation_status"] == "placeholder_not_cell_type"
     assert manifest["pseudobulk_de_status"] == "design_ready_matrix_only"
+    assert "backend_execution_manifest" in manifest
+    assert "backend_execution_status" in manifest
+    assert Path(manifest["backend_execution_manifest"]).exists()
+    backend_ids = {row["backend_id"] for row in manifest["backend_status"]}
+    assert {"scrna.qc.scrublet", "scrna.annotation.celltypist", "scrna.pseudobulk.deseq2_edger"}.issubset(backend_ids)
     assert Path(manifest["raw_qc_manifest"]).exists()
     for relative in [
         "results/tables/qc_metrics.tsv",
@@ -151,6 +156,16 @@ def _assert_mvp_outputs(manifest: dict) -> None:
         "results/tables/pseudobulk_counts.tsv",
         "results/tables/pseudobulk_design.tsv",
         "results/tables/pseudobulk_feature_metadata.tsv",
+        "results/tables/backend_execution.tsv",
+        "results/tables/backend_execution_manifest.json",
+        "results/tables/doublet_scores.tsv",
+        "results/tables/doublet_summary.tsv",
+        "results/tables/celltypist_annotation.tsv",
+        "results/tables/annotation_confidence.tsv",
+        "results/tables/annotation_warning.tsv",
+        "results/tables/pseudobulk_de_backend_status.tsv",
+        "results/tables/pseudobulk_de_results.tsv",
+        "results/tables/pseudobulk_deseq2_edgeR_handoff.R",
         "results/figures/qc_violin.png",
         "results/figures/pca_condition.png",
         "results/figures/umap_cluster_condition.png",
@@ -164,6 +179,7 @@ def _assert_mvp_outputs(manifest: dict) -> None:
     report = (run_dir / "reports" / "report.md").read_text(encoding="utf-8")
     assert "analysis_level" in report
     assert "delivery_allowed" in report
+    assert "backend 执行摘要" in report
     assert "cluster placeholder" in report
     manifest_from_disk = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
     assert manifest_from_disk["analysis_level"] == manifest["analysis_level"]

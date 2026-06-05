@@ -65,7 +65,7 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
     assert "交付门控" in html_report
     assert "analysis_level" in methods_report
     assert "analysis_level" in html_report
-    for token in ("delivery_scope", "handoff_statuses", "reference_only", "rejected_cleaned"):
+    for token in ("delivery_scope", "handoff_statuses", "reference_only", "rejected_cleaned", "selected_backend", "backend_status"):
         assert token in methods_report
         assert token in html_report
     assert len(run_manifest["modules"]) == len(MODULE_ORDER)
@@ -74,6 +74,10 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
         assert module["delivery_allowed"] is False
         assert Path(module["artifacts"]["tables"]["module_qc_manifest"]).exists()
         assert Path(module["artifacts"]["tables"]["tool_coverage"]).exists()
+        assert Path(module["artifacts"]["tables"]["backend_plan"]).exists()
+        assert module["backend_id"]
+        assert module["backend_status"]
+        assert "backend_plan" in module
         assert Path(module["artifacts"]["objects"]["mvp_object"]).exists()
         assert Path(module["artifacts"]["reports"]["methods_fragment"]).exists()
         assert Path(module["artifacts"]["reports"]["report_html"]).exists()

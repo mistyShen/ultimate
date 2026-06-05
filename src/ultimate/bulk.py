@@ -17,6 +17,7 @@ import pandas as pd
 import seaborn as sns
 
 from ultimate.analysis_levels import classify_analysis_level
+from ultimate.backend_registry import build_backend_plan, enrich_backend_plan_for_run, write_backend_plan_table
 from ultimate.constants import MODULE_SPECS
 from ultimate.modules.common import (
     handoff_plan,
@@ -119,6 +120,13 @@ def run_bulk_module(
     artifacts["objects"].update(write_mvp_object(module_name=module_name, objects_dir=objects_dir, matrix=matrix, stats=stats))
     artifacts["reports"] = {"methods_fragment": write_module_methods_fragment(module_name, reports_dir)}
     artifacts["tables"]["tool_coverage"] = write_tool_coverage_table(module_name, tables_dir)
+    artifacts["tables"]["backend_plan"] = str(write_backend_plan_table(module_name, config, tables_dir))
+    backend_plan = enrich_backend_plan_for_run(
+        build_backend_plan(module_name, config),
+        analysis_level=str(level_fields.get("analysis_level") or "smoke_backend"),
+        delivery_allowed=bool(level_fields.get("delivery_allowed") is True),
+        validation_evidence_allowed=bool(level_fields.get("validation_evidence_allowed") is True),
+    )
     artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
         module_name=module_name,
         tables_dir=tables_dir,
@@ -136,9 +144,22 @@ def run_bulk_module(
         **level_fields,
         "backend": {
             "primary": "python",
+            "selected_backend_id": backend_plan["selected_backend_id"],
+            "selected_backend_status": backend_plan["selected_backend_status"],
+            "backend_role": backend_plan["selected_backend_role"],
+            "resource_profile": backend_plan["backend_resource_profile"],
             "optional_r_entrypoint": module_cfg.get("r_entrypoint", f"scripts/R/{module_name}.R"),
             "python_requirements": list(BULK_PYTHON_REQUIREMENTS[module_name]),
         },
+        "backend_plan": backend_plan,
+        "backend_id": backend_plan["selected_backend_id"],
+        "backend_status": backend_plan["selected_backend_status"],
+        "backend_analysis_level": backend_plan["backend_analysis_level"],
+        "backend_delivery_allowed": backend_plan["backend_delivery_allowed"],
+        "backend_validation_evidence_allowed": backend_plan["backend_validation_evidence_allowed"],
+        "backend_skip_reason": backend_plan["backend_skip_reason"],
+        "backend_resource_profile": backend_plan["backend_resource_profile"],
+        "backend_slurm_job_id": backend_plan["backend_slurm_job_id"],
         "formal_backend": {
             "primary": "python",
             "r_entrypoint": module_cfg.get("r_entrypoint", f"scripts/R/{module_name}.R"),

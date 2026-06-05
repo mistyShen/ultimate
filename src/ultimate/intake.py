@@ -125,13 +125,13 @@ def _write_quickstart(output_dir: Path, root: Path, audit_manifest: dict[str, An
     path = output_dir / "README_intake_quickstart.md"
     text = "\n".join(
         [
-            "# Ultimate 需求整理包快速使用",
+            "# Ultimate 接单包快速使用",
             "",
             "## 适用范围",
             "",
             "- 物种：human, mouse",
             f"- 当前生产审计：`{audit_manifest.get('summary', {})}`",
-            "- 正式 raw 或大样本任务走 Slurm；运行前 preflight、风格预览、小矩阵 smoke 可直接 CLI。",
+            "- 正式 raw 或大样本任务走 Slurm；报价前 preflight、风格预览、小矩阵 smoke 可直接 CLI。",
             "",
             "## 标准流程",
             "",
@@ -142,9 +142,9 @@ def _write_quickstart(output_dir: Path, root: Path, audit_manifest: dict[str, An
             "hpc-sbatch /shared/shen/2026/ultimate/slurm/ultimate_run.sbatch <project_dir>/config/project.yaml",
             "```",
             "",
-            "## 运行前必收信息",
+            "## 接单前必收信息",
             "",
-            "- `templates/customer_project_intake.tsv`：原始数据路径、分析需求、分组/样本信息和交付要求。",
+            "- `templates/customer_project_intake.tsv`：客户项目信息和分析要求。",
             "- `module_input_catalog.tsv`：每个模块接受的输入类型和样本表字段。",
             "- `figure_style_catalog.tsv`：可选绘图风格和颜色。",
             "- `order_readiness_checklist.tsv`：每个模块的最低交付物和计算策略。",
@@ -160,7 +160,7 @@ def _write_quickstart(output_dir: Path, root: Path, audit_manifest: dict[str, An
 def _write_quote_checklist(output_dir: Path, audit_manifest: dict[str, Any]) -> Path:
     path = output_dir / "quote_preflight_checklist.md"
     lines = [
-        "# 运行前技术检查清单",
+        "# 报价前检查清单",
         "",
         "- [ ] 物种确认：human 或 mouse。",
         "- [ ] 数据类型和模块确认：见 `module_input_catalog.tsv`。",

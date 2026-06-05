@@ -1,23 +1,22 @@
 # Ultimate Bioinfo Workbench
 
-`ultimate` is a Codex-facing, CLI-first, HPC-ready workbench for reproducible
-human/mouse multi-omics analysis delivery under:
+`ultimate` is a CLI-first, HPC-ready workbench for Codex-assisted reproducible
+human/mouse multi-omics analysis delivery under the formal remote project root:
 
 ```text
 /shared/shen/2026/ultimate
 ```
 
-The user provides raw data paths and an analysis request; the user does not need
-to pre-select every tool or pipeline. Codex uses Ultimate's module library, tool
-registry, project templates, Slurm wrappers, reporting contract, and manifest
-guards to choose an appropriate workflow, run it transparently, and package a
-reproducible delivery. Ultimate does not quote projects automatically, does not
-replace human interpretation, and does not turn demo/stub/placeholder outputs
-into formal results.
+The user provides raw data paths, available sample information, organism/group
+context when known, and a plain-language analysis request. Codex then uses
+Ultimate to triage the request, choose suitable modules/tools/presets, run
+preflight checks, submit Slurm jobs when needed, and produce figures, reports,
+manifests, and reproducible-code packages. The platform is not an automatic
+quoting system and does not replace human biological interpretation.
 
-It supports request/intake packages, project templates, input validation,
-raw-QC handoff, validated-run handoff, selectable figure styles, Chinese
-reports, and explicit manifests for the current human/mouse workbench module set:
+It supports request triage, project templates, input validation, raw-QC
+handoff, validated-run handoff, selectable figure styles, Chinese reports, and
+explicit manifests for the current human/mouse order-ready module set:
 
 - bulk RNA-seq
 - single-cell RNA-seq
@@ -42,10 +41,10 @@ reports, and explicit manifests for the current human/mouse workbench module set
 - single-gene analysis
 
 The production audit reports module-level `ready_basic` or explicit partial
-status per modality. This is a workbench-readiness guarantee: raw or semi-raw
-contracts, preflight checks, QC handoff, standard matrix/object handoff,
-figures, tables, Chinese reports, and manifests are available for human and
-mouse when Codex is given data and a concrete request. Advanced algorithms such as
+status per modality. This is a
+basic order-ready guarantee: raw or semi-raw contracts, preflight checks, QC
+handoff, standard matrix/object handoff, figures, tables, Chinese reports, and
+manifests are available for human and mouse. Advanced algorithms such as
 SCENIC, CellChat/NicheNet, inferCNV/CopyKAT, chromVAR, RNA velocity, Cell
 Ranger, Space Ranger, and CIBERSORT are exposed as optional presets, adapters,
 or user-provided licensed paths instead of being promised as fully automatic
@@ -94,6 +93,7 @@ ultimate run --config example_projects/demo_all/config/project.yaml
 ultimate report --run-dir example_projects/demo_all/runs/demo_all
 ultimate styles --style soft_color --output-dir example_projects/style_review
 ultimate audit-production --root /shared/shen/2026/ultimate
+ultimate audit-backends --root /shared/shen/2026/ultimate
 ultimate audit-modules --output-dir /shared/shen/2026/ultimate/audits/module_standardization_latest
 ultimate prepare-intake --root /shared/shen/2026/ultimate --output-dir /shared/shen/2026/ultimate/intake_packages/latest --refresh-audit
 ultimate audit-tools --root /shared/shen/2026/ultimate
@@ -101,14 +101,50 @@ ultimate trial-tools --root /shared/shen/2026/ultimate --batch scrna_core --no-i
 pytest -q
 ```
 
+## V3 Backend Registry
+
+V3 adds backend-level tracking on top of the v2 module maturity table. A
+backend is only treated as fully automatic when it has a registered input
+contract, dependency environment, Slurm profile, output contract, validation
+dataset, limitations, manifest fields, and evidence/approval gate. Planned,
+optional, handoff, or licensed tools remain visible in reports but are not
+promoted to formal automatic results.
+
+```bash
+ultimate audit-backends \
+  --root /shared/shen/2026/ultimate \
+  --output-dir /shared/shen/2026/ultimate/audits/backends_latest
+
+python /shared/shen/2026/ultimate/01_tools/write_v3_status_report.py \
+  --root /shared/shen/2026/ultimate \
+  --output-dir /shared/shen/2026/ultimate/reports
+```
+
+Backend fields are written into preflight, module manifests, reports, and
+production audit outputs:
+
+- `backend_id`
+- `backend_status`
+- `backend_analysis_level`
+- `backend_delivery_allowed`
+- `backend_validation_evidence_allowed`
+- `backend_skip_reason`
+- `backend_resource_profile`
+- `backend_slurm_job_id`
+
+Current `fully_automatic_mvp` entries are intentionally conservative matrix or
+validated-entrypoint backends. High-value V3 targets such as CellTypist,
+Scrublet, LIANA, CopyKAT/inferCNV, scVelo, pseudobulk DESeq2/edgeR, Signac or
+SnapATAC2, MuData, squidpy, scirpy, DSB, WGCNA R, and public database download
+backends stay `planned_fully_automatic` until they have a real runner, pytest,
+Slurm validation, and report warnings. Licensed tools such as Cell Ranger and
+Space Ranger remain user-provided path backends.
+
 ## Technical Triage
 
-`ultimate triage` helps Codex turn a raw-data request into a concrete technical
-run plan. It checks whether the request is technically ready, recommends modules
-or presets, lists missing metadata/dependencies/licenses, and drafts runnable
-configuration artifacts. It does not start analysis, does not quote, does not
-call the production pipeline, and does not create `run_manifest.json` or
-`production_approval.json`.
+`ultimate triage` only checks whether a request is technically ready to run. It
+does not start analysis, does not quote, does not call the production pipeline,
+and does not create `run_manifest.json` or `production_approval.json`.
 
 ```bash
 ultimate triage \
@@ -155,10 +191,20 @@ hpc-sbatch /shared/shen/2026/ultimate/slurm/scrna_mvp_validation.sbatch
 
 `validated_backend` 只表示真实公开数据或已有验证数据可以作为平台能力证据，不是客户正式交付。正式客户项目必须在生产配置和审批记录齐全后才允许标为 `production_backend`；普通 CLI 不能仅靠 `--analysis-level production_backend` 直接生成正式交付级 manifest。
 
-## Production Readiness And Intake
+## Production Readiness And Triage
 
-For a new analysis request, start with an intake package when the raw data and
-requirements need to be organized before running:
+For a new order, start by giving Codex the raw data paths and analysis request.
+Codex can use `triage` to turn that material into a reviewable technical plan:
+
+```bash
+ultimate triage --request config/analysis_request.yaml --output-dir triage/<job_id>
+```
+
+The triage output should recommend candidate modules, tools, presets, missing
+metadata, licensed-tool requirements, and a suggested `project.yaml`. It must not
+start heavy computation, quote the project, or mark the job as production.
+
+When reusable forms and catalogs are useful, create an intake package:
 
 ```bash
 ultimate prepare-intake \
@@ -169,9 +215,10 @@ ultimate prepare-intake \
 
 The package contains:
 
-- `templates/customer_project_intake.tsv`: raw data location, requested
-  analysis, organism, grouping/design hints, optional clinical table, licensed
-  tool paths if known, delivery format, and style choice.
+- `templates/customer_project_intake.tsv`: optional structured fields for raw
+  data paths, organism, input type, group design, clinical table, licensed tool
+  paths, delivery format, and style choice. The user does not need to pre-select
+  every module or backend before Codex triage.
 - `module_input_catalog.tsv`: accepted human/mouse raw inputs and required
   sample-sheet columns for every module.
 - `figure_style_catalog.tsv`: style keys, colors, and recommended use cases.
@@ -181,15 +228,17 @@ The package contains:
 
 The standard workbench flow is:
 
-1. Provide raw data paths and an analysis request; Codex uses triage/intake
-   outputs to choose the relevant Ultimate modules and draft `project.yaml`.
-2. Run `ultimate preflight --config config/project.yaml` and resolve missing
-   sample columns, paths, references, or licensed tools before execution.
-3. Render a style review with `ultimate styles --style <style_key> --output-dir
+1. Provide raw data paths and a natural-language analysis request.
+2. Run `ultimate triage` or prepare an intake package to produce a reviewable
+   module/tool/preset recommendation.
+3. Create or refine `config/project.yaml`.
+4. Run `ultimate preflight --config config/project.yaml` and resolve missing
+   sample columns, paths, references, or licensed tools.
+5. Render a style review with `ultimate styles --style <style_key> --output-dir
    <project>/style_review`.
-4. Submit raw or large analyses through Slurm, then rebuild reports with
+6. Submit raw or large analyses through Slurm, then rebuild reports with
    `ultimate report --run-dir <run_dir>`.
-5. Deliver `run_manifest.json`, `raw_qc_manifest.json`, figures, tables,
+7. Deliver `run_manifest.json`, `raw_qc_manifest.json`, figures, tables,
    objects, `report.html`, and `methods.md`.
 
 ## Validated Run Handoff
@@ -226,7 +275,7 @@ hpc-sbatch /shared/shen/2026/ultimate/jobs/demo_all_001/config/run_ultimate.sbat
 ```
 
 `hpc-sbatch` should submit a ready sbatch script. Do not rely on passing extra
-config arguments through the wrapper. For real projects, use `ultimate
+config arguments through the wrapper. For real orders, use `ultimate
 prepare-job` first; it creates `jobs/<job_id>/config/run_ultimate.sbatch`,
 `production_approval.json`, logs, deliverables, and the fixed output directory
 under `/shared/shen/2026/ultimate/jobs/<job_id>/`. Production runs require
@@ -297,7 +346,9 @@ bundle should include `reports/validation_index/validation_index.tsv`,
 `audits/production_latest/production_audit.tsv`,
 `audits/production_latest/production_audit.json`,
 `audits/storage_latest/storage_audit_summary.json`, and
-`audits/production_latest/v2_status_report.md`.
+the current workbench status report. The helper script may keep its historical
+filename for compatibility, but the report should be read as the current
+Ultimate workbench status, not as a fixed version-stage label.
 
 ## Current Single-Cell Completion Snapshot
 
@@ -335,8 +386,8 @@ Interpretation policy:
 - `partial:licensed_optional_missing`: open pipeline is usable; upstream vendor
   tools such as Cell Ranger, Cell Ranger ATAC/ARC, or Space Ranger require a
   user-provided licensed path.
-- `partial:data_required` or `partial:dependency_required`: run only after the
-  listed data or dependency gap is resolved.
+- `partial:data_required` or `partial:dependency_required`: quote and run only
+  after the listed data or dependency gap is resolved.
 
 Matrix-level smoke validations are not a promise of best parameters for every
 large project. Fragments-level scATAC, full raw FASTQ, and complete Visium

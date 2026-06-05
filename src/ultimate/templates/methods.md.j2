@@ -48,6 +48,13 @@
 - 状态：`{{ module.status }}`
 - analysis_level：`{{ module.get("analysis_level", "not_recorded") }}`
 - 交付许可：`{{ module.get("delivery_allowed", false) }}`；验证证据许可：`{{ module.get("validation_evidence_allowed", false) }}`；原因：`{{ module.get("non_delivery_reason", "") or "none" }}`
+{% set backend_plan = module.get("backend_plan") or {} %}
+- selected_backend：`{{ module.get("backend_id", backend_plan.get("selected_backend_id", "not_recorded")) }}`
+- backend_status：`{{ module.get("backend_status", backend_plan.get("selected_backend_status", "not_recorded")) }}`；backend_role：`{{ backend_plan.get("selected_backend_role", "not_recorded") }}`；resource_profile：`{{ module.get("backend_resource_profile", backend_plan.get("backend_resource_profile", "not_recorded")) }}`
+- backend_skip_reason：`{{ module.get("backend_skip_reason", backend_plan.get("backend_skip_reason", "")) or "none" }}`
+- skipped_optional_backends：`{{ (backend_plan.get("skipped_optional_backends") or []) | join(", ") or "none" }}`
+- licensed_backend_status：`{% for item in backend_plan.get("licensed_backend_status") or [] %}{{ item.get("backend_id") }}={{ item.get("available") }}{% if not loop.last %}; {% endif %}{% endfor %}{{ "" if backend_plan.get("licensed_backend_status") else "none" }}`
+- backend_interpretation_warnings：`{{ (backend_plan.get("interpretation_warnings") or []) | join("; ") or "none" }}`
 {% set raw_qc = module.get("raw_qc") or {} %}
 {% set artifacts = module.get("artifacts") or {"tables": {}, "figures": {}, "objects": {}} %}
 {% set qc_manifest_path = (artifacts.get("tables") or {}).get("module_qc_manifest") %}

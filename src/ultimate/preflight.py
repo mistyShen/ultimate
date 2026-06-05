@@ -12,6 +12,7 @@ from typing import Any
 import pandas as pd
 
 from ultimate.config import enabled_modules, load_analysis_request, load_samples, output_dir
+from ultimate.backend_registry import build_backend_plan
 from ultimate.bulk import BULK_MODULES, bulk_requirement_checks
 from ultimate.constants import MODULE_SPECS
 from ultimate.raw_qc import PATH_COLUMNS, RAW_CONTRACTS
@@ -70,8 +71,10 @@ def _check_module(config: dict[str, Any], samples: pd.DataFrame, module_name: st
         "optional_r_packages": _r_package_checks(spec.optional_r_packages, config, module_name),
         "python_packages": bulk_requirement_checks(module_name) if module_name in BULK_MODULES else {},
     }
+    backend_plan = build_backend_plan(module_name, config)
     raw_report = _raw_preflight(module_cfg, samples, module_name)
     checks["raw"] = raw_report
+    checks["backend_plan"] = backend_plan
     warnings = []
     if checks["required_sample_columns"]:
         warnings.append("missing_required_sample_columns")
@@ -90,10 +93,12 @@ def _check_module(config: dict[str, Any], samples: pd.DataFrame, module_name: st
     missing_raw_paths = raw_report.get("missing_input_paths") or []
     if strict and raw_report["raw_enabled"] and missing_raw_paths:
         warnings.append("raw_input_paths_missing:" + ",".join(missing_raw_paths[:5]))
+    warnings.extend(backend_plan.get("interpretation_warnings") or [])
     return {
         "module": module_name,
         "title_cn": spec.title_cn,
         "input_kind": spec.input_kind,
+        "backend_plan": backend_plan,
         "checks": checks,
         "warnings": warnings,
         "status": "ready_with_warnings" if warnings else "ready",

@@ -141,10 +141,13 @@ def test_production_audit_writes_readiness_artifacts(tmp_path: Path) -> None:
     assert Path(manifest["validation_gap_plan_json"]).exists()
     assert Path(manifest["production_audit_tsv"]).exists()
     assert Path(manifest["final_acceptance_checklist"]).exists()
+    assert Path(manifest["backend_maturity_table"]).exists()
+    assert Path(manifest["backend_registry"]).exists()
     assert Path(manifest["module_maturity_table"]).exists()
     assert Path(manifest["module_standardization_matrix"]).exists()
     assert Path(manifest["tool_coverage_by_module"]).exists()
     assert "final_acceptance_summary" in manifest
+    assert "backend_registry_summary" in manifest
     assert "validation_gap_summary" in manifest
     assert manifest["module_standardization_summary"]["ready"] == len(MODULE_ORDER)
     assert Path(manifest["next_steps"]).exists()
@@ -168,6 +171,8 @@ def test_production_audit_layers_v2_core_separately_from_v3_partial(tmp_path: Pa
     by_requirement = {row["requirement"]: row for row in rows}
     assert by_requirement["v2_core_modules_validated"]["status"] == "pass"
     assert by_requirement["v3_specialty_modules_tracked_not_blocking_v2"]["status"] == "pass"
+    assert by_requirement["v3_backend_registry_ready"]["status"] == "pass"
+    assert by_requirement["v3_fully_automatic_backends_gated"]["status"] == "pass"
     assert "blocked_reason=blocked reason visible for pytest" in by_requirement["v3_specialty_modules_tracked_not_blocking_v2"]["evidence"]
 
 

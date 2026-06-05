@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import gzip
+import importlib.util
 import json
+import shutil
+import subprocess
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -85,6 +88,7 @@ def run_scrna_validation(
     public_dataset: bool = False,
     dataset_label: str | None = None,
     production_approval: dict[str, Any] | None = None,
+    celltypist_model: Path | None = None,
 ) -> dict[str, Any]:
     if analysis_level == "production_backend" and production_approval is None:
         raise ValueError("production_backend requires --production-approval with an approved JSON gate file")
@@ -125,6 +129,18 @@ def run_scrna_validation(
     sc.pp.filter_cells(adata, min_genes=min(5, max(1, adata.n_vars // 10)))
     sc.pp.filter_genes(adata, min_cells=2)
     counts_adata = adata.copy()
+    backend_rows: list[dict[str, Any]] = []
+    backend_artifacts: dict[str, str] = {}
+    scrublet_status, scrublet_artifacts = _run_scrublet_backend(
+        counts_adata=counts_adata,
+        adata=adata,
+        tables=tables,
+        figures=figures,
+        analysis_level=level.analysis_level,
+        random_seed=random_seed,
+    )
+    backend_rows.append(scrublet_status)
+    backend_artifacts.update(scrublet_artifacts)
     pseudobulk_matrix_source = "raw_counts_or_input_counts"
     if input_type == "h5ad" and _has_log1p_metadata(adata):
         pseudobulk_matrix_source = "input_log_expression_values"
@@ -152,6 +168,26 @@ def run_scrna_validation(
     sc.tl.rank_genes_groups(adata, groupby="cluster", method="wilcoxon", pts=True)
     _write_tables(sc, adata, tables, level.analysis_level)
     pseudobulk_paths = _write_pseudobulk(counts_adata, adata.obs, tables, level.analysis_level)
+    pseudobulk_status, pseudobulk_backend_artifacts = _run_pseudobulk_de_backend(
+        tables=tables,
+        analysis_level=level.analysis_level,
+    )
+    backend_rows.append(pseudobulk_status)
+    backend_artifacts.update(pseudobulk_backend_artifacts)
+    celltypist_status, celltypist_artifacts = _run_celltypist_backend(
+        adata=adata,
+        tables=tables,
+        analysis_level=level.analysis_level,
+        model_path=celltypist_model,
+    )
+    backend_rows.append(celltypist_status)
+    backend_artifacts.update(celltypist_artifacts)
+    backend_execution_manifest = _write_backend_execution_manifest(
+        tables=tables,
+        backend_rows=backend_rows,
+        backend_artifacts=backend_artifacts,
+        analysis_level=level.analysis_level,
+    )
     annotation_warning = _write_annotation_placeholder(adata, tables, level.analysis_level)
     _write_figures(sc, adata, figures)
     h5ad_path = objects / "scrna_mvp.h5ad"
@@ -176,6 +212,7 @@ def run_scrna_validation(
         public_dataset=public_dataset,
         dataset_label=dataset_label,
         production_approval=production_approval,
+        celltypist_model=celltypist_model,
     )
 
     manifest = {
@@ -190,6 +227,7 @@ def run_scrna_validation(
         "n_genes": int(adata.n_vars),
         "validation_scope": "scRNA MVP: input ingest, QC, filtering, normalization, HVG, PCA, UMAP, clustering, marker, condition DE, composition, signature enrichment, pseudobulk design-ready matrix, h5ad/report/manifest.",
         "pseudobulk_de_status": "design_ready_matrix_only",
+        "backend_execution_status": _backend_execution_summary(backend_rows),
         "pseudobulk_matrix_source": pseudobulk_matrix_source,
         "cell_type_annotation_status": "placeholder_not_cell_type",
         "cell_type_annotation_warning": annotation_warning,
@@ -198,6 +236,9 @@ def run_scrna_validation(
         "objects": {"h5ad": str(h5ad_path)},
         "figure_manifest": str(figure_manifest),
         "raw_qc_manifest": str(raw_qc_manifest),
+        "backend_execution_manifest": str(backend_execution_manifest),
+        "backend_artifacts": backend_artifacts,
+        "backend_status": backend_rows,
         "pseudobulk_outputs": {name: str(path) for name, path in pseudobulk_paths.items()},
         "reproducible_command": reproducible_command,
     }
@@ -392,6 +433,158 @@ def _write_tables(sc, adata, tables: Path, analysis_level: str) -> None:
     enrichment.to_csv(tables / "basic_enrichment.tsv", sep="\t", index=False)
 
 
+def _run_scrublet_backend(
+    *,
+    counts_adata,
+    adata,
+    tables: Path,
+    figures: Path,
+    analysis_level: str,
+    random_seed: int,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    backend_id = "scrna.qc.scrublet"
+    score_path = tables / "doublet_scores.tsv"
+    summary_path = tables / "doublet_summary.tsv"
+    figure_path = figures / "doublet_score_histogram.png"
+    if importlib.util.find_spec("scrublet") is None:
+        reason = "dependency_missing:scrublet"
+        _write_skip_table(score_path, backend_id, analysis_level, reason)
+        _write_skip_table(summary_path, backend_id, analysis_level, reason)
+        return _backend_row(backend_id, "skipped", analysis_level, reason), {
+            "doublet_scores": str(score_path),
+            "doublet_summary": str(summary_path),
+        }
+    try:
+        import matplotlib.pyplot as plt
+        import scrublet as scr
+
+        scrub = scr.Scrublet(counts_adata.X, random_state=random_seed)
+        scores, predicted = scrub.scrub_doublets(verbose=False)
+        adata.obs["scrublet_score"] = scores
+        adata.obs["scrublet_predicted_doublet"] = predicted.astype(bool)
+        pd.DataFrame(
+            {
+                "barcode": adata.obs_names.astype(str),
+                "scrublet_score": scores,
+                "predicted_doublet": predicted.astype(bool),
+                "analysis_level": analysis_level,
+            }
+        ).to_csv(score_path, sep="\t", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "backend_id": backend_id,
+                    "status": "ready",
+                    "n_cells": int(len(scores)),
+                    "predicted_doublets": int(np.asarray(predicted).sum()),
+                    "doublet_rate": float(np.asarray(predicted).mean()) if len(scores) else 0.0,
+                    "analysis_level": analysis_level,
+                    "warning": "doublet calls are model- and threshold-dependent QC flags, not cell type labels",
+                }
+            ]
+        ).to_csv(summary_path, sep="\t", index=False)
+        apply_clinical_journal_style()
+        fig, ax = plt.subplots(figsize=(5.8, 4.0))
+        ax.hist(scores, bins=30, color="#7EA6C8", edgecolor="white")
+        ax.set_xlabel("Scrublet score")
+        ax.set_ylabel("Cells")
+        fig.tight_layout()
+        save_figure(figure_path)
+        return _backend_row(backend_id, "ready", analysis_level, ""), {
+            "doublet_scores": str(score_path),
+            "doublet_summary": str(summary_path),
+            "doublet_score_histogram": str(figure_path),
+        }
+    except Exception as exc:
+        reason = f"backend_failed:{type(exc).__name__}:{exc}"
+        _write_skip_table(score_path, backend_id, analysis_level, reason)
+        _write_skip_table(summary_path, backend_id, analysis_level, reason)
+        return _backend_row(backend_id, "failed", analysis_level, reason), {
+            "doublet_scores": str(score_path),
+            "doublet_summary": str(summary_path),
+        }
+
+
+def _run_celltypist_backend(*, adata, tables: Path, analysis_level: str, model_path: Path | None) -> tuple[dict[str, Any], dict[str, str]]:
+    backend_id = "scrna.annotation.celltypist"
+    annotation_path = tables / "celltypist_annotation.tsv"
+    confidence_path = tables / "annotation_confidence.tsv"
+    warning_path = tables / "annotation_warning.tsv"
+    if importlib.util.find_spec("celltypist") is None:
+        reason = "dependency_missing:celltypist"
+        _write_skip_table(annotation_path, backend_id, analysis_level, reason)
+        _write_skip_table(confidence_path, backend_id, analysis_level, reason)
+        _write_annotation_warning_table(warning_path, backend_id, analysis_level, reason)
+        return _backend_row(backend_id, "skipped", analysis_level, reason), _celltypist_artifacts(annotation_path, confidence_path, warning_path)
+    if model_path is None or not model_path.exists():
+        reason = "model_not_configured:celltypist_model_required_to_avoid_implicit_download"
+        _write_skip_table(annotation_path, backend_id, analysis_level, reason)
+        _write_skip_table(confidence_path, backend_id, analysis_level, reason)
+        _write_annotation_warning_table(warning_path, backend_id, analysis_level, reason)
+        return _backend_row(backend_id, "skipped", analysis_level, reason), _celltypist_artifacts(annotation_path, confidence_path, warning_path)
+    try:
+        import celltypist
+
+        result = celltypist.annotate(adata, model=str(model_path), majority_voting=True)
+        predictions = result.predicted_labels.copy()
+        predictions.index.name = "barcode"
+        predictions = predictions.reset_index()
+        predictions["annotation_status"] = "celltypist_model_prediction"
+        predictions["analysis_level"] = analysis_level
+        predictions.to_csv(annotation_path, sep="\t", index=False)
+        if hasattr(result, "probability_matrix"):
+            probabilities = result.probability_matrix.copy()
+            probabilities.index.name = "barcode"
+            probabilities.reset_index().to_csv(confidence_path, sep="\t", index=False)
+        else:
+            _write_skip_table(confidence_path, backend_id, analysis_level, "probability_matrix_not_available")
+        _write_annotation_warning_table(
+            warning_path,
+            backend_id,
+            analysis_level,
+            "CellTypist labels depend on the supplied model/reference and require manual review before delivery.",
+        )
+        return _backend_row(backend_id, "ready", analysis_level, ""), _celltypist_artifacts(annotation_path, confidence_path, warning_path)
+    except Exception as exc:
+        reason = f"backend_failed:{type(exc).__name__}:{exc}"
+        _write_skip_table(annotation_path, backend_id, analysis_level, reason)
+        _write_skip_table(confidence_path, backend_id, analysis_level, reason)
+        _write_annotation_warning_table(warning_path, backend_id, analysis_level, reason)
+        return _backend_row(backend_id, "failed", analysis_level, reason), _celltypist_artifacts(annotation_path, confidence_path, warning_path)
+
+
+def _run_pseudobulk_de_backend(*, tables: Path, analysis_level: str) -> tuple[dict[str, Any], dict[str, str]]:
+    backend_id = "scrna.pseudobulk.deseq2_edger"
+    status_path = tables / "pseudobulk_de_backend_status.tsv"
+    result_path = tables / "pseudobulk_de_results.tsv"
+    script_path = tables / "pseudobulk_deseq2_edgeR_handoff.R"
+    counts_path = tables / "pseudobulk_counts.tsv"
+    design_path = tables / "pseudobulk_design.tsv"
+    reason = _pseudobulk_design_blocker(design_path)
+    if not reason:
+        rscript = shutil.which("Rscript")
+        if not rscript:
+            reason = "dependency_missing:Rscript"
+        else:
+            packages = _available_r_packages(rscript, ("DESeq2", "edgeR"))
+            if not (packages.get("DESeq2") or packages.get("edgeR")):
+                reason = "dependency_missing:DESeq2_or_edgeR"
+            else:
+                reason = "r_backend_available_not_executed_in_lightweight_validation"
+                _write_pseudobulk_status(status_path, backend_id, analysis_level, "design_ready_r_backend_available", reason)
+                _write_skip_table(result_path, backend_id, analysis_level, reason)
+                _write_pseudobulk_r_handoff(script_path, counts_path, design_path)
+                return _backend_row(backend_id, "design_ready_r_backend_available", analysis_level, reason), _pseudobulk_artifacts(
+                    status_path,
+                    result_path,
+                    script_path,
+                )
+    _write_pseudobulk_status(status_path, backend_id, analysis_level, "skipped", reason)
+    _write_skip_table(result_path, backend_id, analysis_level, reason)
+    _write_pseudobulk_r_handoff(script_path, counts_path, design_path)
+    return _backend_row(backend_id, "skipped", analysis_level, reason), _pseudobulk_artifacts(status_path, result_path, script_path)
+
+
 def _write_figures(sc, adata, figures: Path) -> None:
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -517,6 +710,147 @@ def _write_pseudobulk(counts_adata, obs: pd.DataFrame, tables: Path, analysis_le
     }
 
 
+def _pseudobulk_design_blocker(design_path: Path) -> str:
+    if not design_path.exists():
+        return "missing:pseudobulk_design.tsv"
+    design = pd.read_csv(design_path, sep="\t")
+    if design.empty:
+        return "empty:pseudobulk_design.tsv"
+    if not {"condition", "cluster", "sample_id"}.issubset(design.columns):
+        return "invalid_design:missing_condition_cluster_or_sample_id"
+    blockers = []
+    for cluster, frame in design.groupby("cluster", observed=False):
+        replicate_counts = frame.groupby("condition")["sample_id"].nunique()
+        if replicate_counts.shape[0] < 2:
+            blockers.append(f"cluster_{cluster}:need_two_conditions")
+        elif int(replicate_counts.min()) < 2:
+            blockers.append(f"cluster_{cluster}:need_at_least_two_samples_per_condition")
+    return ";".join(blockers)
+
+
+def _available_r_packages(rscript: str, packages: tuple[str, ...]) -> dict[str, bool]:
+    script = "cat(paste(installed.packages()[, 'Package'], collapse='\\n'))"
+    try:
+        completed = subprocess.run([rscript, "-e", script], check=False, text=True, capture_output=True, timeout=45)
+    except Exception:
+        return {package: False for package in packages}
+    installed = set(completed.stdout.splitlines())
+    return {package: package in installed for package in packages}
+
+
+def _write_pseudobulk_status(path: Path, backend_id: str, analysis_level: str, status: str, reason: str) -> None:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "reason": reason,
+                "analysis_level": analysis_level,
+                "warning": "pseudobulk DESeq2/edgeR must use raw counts and sufficient biological replicates",
+            }
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_pseudobulk_r_handoff(path: Path, counts_path: Path, design_path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env Rscript",
+                "# Design-ready handoff for DESeq2/edgeR pseudobulk backend.",
+                "# Generated by ultimate validate-scrna; edit contrasts only after reviewing design.",
+                f"counts_path <- {json.dumps(str(counts_path))}",
+                f"design_path <- {json.dumps(str(design_path))}",
+                "counts <- read.delim(counts_path, check.names = FALSE)",
+                "design <- read.delim(design_path, check.names = FALSE)",
+                "stopifnot('feature_id' %in% colnames(counts))",
+                "stopifnot(all(c('pseudobulk_id', 'condition', 'cluster') %in% colnames(design)))",
+                "# TODO: run per-cluster DESeq2/edgeR after confirming replicate structure and contrasts.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _pseudobulk_artifacts(status_path: Path, result_path: Path, script_path: Path) -> dict[str, str]:
+    return {
+        "pseudobulk_de_backend_status": str(status_path),
+        "pseudobulk_de_results": str(result_path),
+        "pseudobulk_deseq2_edgeR_handoff": str(script_path),
+    }
+
+
+def _celltypist_artifacts(annotation_path: Path, confidence_path: Path, warning_path: Path) -> dict[str, str]:
+    return {
+        "celltypist_annotation": str(annotation_path),
+        "annotation_confidence": str(confidence_path),
+        "annotation_warning": str(warning_path),
+    }
+
+
+def _write_skip_table(path: Path, backend_id: str, analysis_level: str, reason: str) -> None:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": "skipped",
+                "reason": reason,
+                "analysis_level": analysis_level,
+                "delivery_allowed": False,
+            }
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_annotation_warning_table(path: Path, backend_id: str, analysis_level: str, warning: str) -> None:
+    pd.DataFrame(
+        [{"backend_id": backend_id, "annotation_status": "requires_review_or_skipped", "warning": warning, "analysis_level": analysis_level}]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _backend_row(backend_id: str, status: str, analysis_level: str, reason: str) -> dict[str, Any]:
+    return {
+        "backend_id": backend_id,
+        "status": status,
+        "analysis_level": analysis_level,
+        "delivery_allowed": False,
+        "validation_evidence_allowed": analysis_level == "validated_backend" and status in {"ready", "design_ready_r_backend_available"},
+        "reason": reason,
+    }
+
+
+def _write_backend_execution_manifest(
+    *,
+    tables: Path,
+    backend_rows: list[dict[str, Any]],
+    backend_artifacts: dict[str, str],
+    analysis_level: str,
+) -> Path:
+    table_path = tables / "backend_execution.tsv"
+    pd.DataFrame(backend_rows).to_csv(table_path, sep="\t", index=False)
+    manifest = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "analysis_level": analysis_level,
+        "status_summary": _backend_execution_summary(backend_rows),
+        "backend_execution_table": str(table_path),
+        "backend_artifacts": backend_artifacts,
+        "backends": backend_rows,
+        "warning": "skipped/failed backend rows are explicit evidence boundaries and are not formal analysis results",
+    }
+    path = tables / "backend_execution_manifest.json"
+    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _backend_execution_summary(backend_rows: list[dict[str, Any]]) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    for row in backend_rows:
+        status = str(row.get("status") or "unknown")
+        summary[status] = summary.get(status, 0) + 1
+    return summary
+
+
 def _safe_id(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {"_", "-", "."} else "_" for ch in value)
 
@@ -556,6 +890,7 @@ def _reproducible_command(
     public_dataset: bool,
     dataset_label: str | None,
     production_approval: dict[str, Any] | None,
+    celltypist_model: Path | None = None,
 ) -> str:
     pieces = [
         "ultimate",
@@ -582,6 +917,8 @@ def _reproducible_command(
     approval_path = (production_approval or {}).get("_approval_path")
     if approval_path:
         pieces.extend(["--production-approval", str(approval_path)])
+    if celltypist_model is not None:
+        pieces.extend(["--celltypist-model", str(celltypist_model)])
     return " ".join(pieces)
 
 
@@ -630,6 +967,7 @@ def _write_report(manifest: dict[str, Any], md_path: Path, html_path: Path) -> N
         f"- 是否允许作为客户正式交付：`{manifest['delivery_allowed']}`",
         f"- 说明：{manifest['non_delivery_reason'] or 'production_backend 可作为正式交付结果。'}",
         f"- 细胞类型注释警示：{manifest['cell_type_annotation_warning']}",
+        f"- backend 执行摘要：`{json.dumps(manifest.get('backend_execution_status', {}), ensure_ascii=False)}`",
         "",
         "## 数据概览",
         f"- 细胞数：{manifest['n_cells']}",
@@ -638,7 +976,8 @@ def _write_report(manifest: dict[str, Any], md_path: Path, html_path: Path) -> N
         "## 已验证步骤",
         "- 输入读取、QC、过滤、归一化、高变基因、PCA、UMAP、聚类、marker gene、条件差异、细胞组成、基础 signature 富集、pseudobulk design-ready matrix、h5ad 导出、图表和 manifest。",
         "- cell type annotation 当前是 cluster placeholder，不能当作真实细胞类型结论。",
-        "- pseudobulk DE 当前导出 design-ready matrix，尚未自动运行 DESeq2/edgeR。",
+        "- Scrublet、CellTypist、pseudobulk DESeq2/edgeR 等 backend 会在具备依赖和输入条件时执行；缺依赖、缺模型或设计不足会写入 backend_execution_manifest，而不是伪装成完成。",
+        "- pseudobulk DE 当前写出真实 R handoff 和设计检查；只有 Rscript 与 DESeq2/edgeR、重复数和 contrasts 齐全后才可升级为正式 DE 结果。",
         "",
         "## 复现命令",
         f"`{manifest['reproducible_command']}`",
