@@ -219,6 +219,97 @@ def test_validation_index_reads_nested_slurm_job_id(tmp_path: Path) -> None:
     assert rows[0]["order_readiness_status"] == "ready_for_validation_evidence"
 
 
+def test_validation_index_includes_prepared_jobs_and_delivery_scope_priority(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run = root / "jobs" / "JOB001" / "runs" / "RUN001"
+    (run / "reports").mkdir(parents=True)
+    (run / "logs").mkdir(parents=True)
+    (run / "results" / "figures").mkdir(parents=True)
+    (run / "results" / "tables").mkdir(parents=True)
+    (run / "objects").mkdir(parents=True)
+    (run / "reports" / "report.html").write_text("<html></html>", encoding="utf-8")
+    (run / "reports" / "methods.md").write_text("methods", encoding="utf-8")
+    (run / "logs" / "run.log").write_text("ok", encoding="utf-8")
+    (run / "results" / "figures" / "pca.png").write_text("png", encoding="utf-8")
+    (run / "results" / "tables" / "qc.tsv").write_text("a\n1\n", encoding="utf-8")
+    (run / "objects" / "object.rds").write_text("object", encoding="utf-8")
+    (run / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "module": "rnaseq",
+                "status": "ready",
+                "analysis_level": "production_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": True,
+                "validation_evidence_allowed": True,
+                "non_delivery_reason": "",
+                "slurm_job_id": "123",
+                "delivery_scope": "customer_delivery",
+                "production_approval": {
+                    "approved": True,
+                    "approved_by": "pytest",
+                    "approved_at": "2026-06-05T00:00:00Z",
+                    "project_id": "JOB001",
+                    "input_path": str(run / "config.yaml"),
+                    "output_dir": str(run),
+                    "delivery_scope": "customer_delivery",
+                    "reason": "pytest",
+                },
+                "delivery_gate": {
+                    "status": "ready",
+                    "delivery_allowed": True,
+                    "validation_evidence_allowed": True,
+                    "approval_status": "approved",
+                    "delivery_scope": "internal_rehearsal",
+                },
+                "figures": ["results/figures/pca.png"],
+                "tables": ["results/tables/qc.tsv"],
+                "objects": {"rds": "objects/object.rds"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_validation_index(root=root, output_dir=tmp_path / "index")
+
+    rows = json.loads(Path(result["validation_index_json"]).read_text(encoding="utf-8"))
+    row = rows[0]
+    assert row["run_kind"] == "production_rehearsal"
+    assert row["delivery_scope"] == "internal_rehearsal"
+    assert row["delivery_gate_validation_allowed"] == "true"
+    assert row["production_approval_status"] == "approved"
+    assert row["has_slurm_evidence"] == "true"
+
+
+def test_validation_index_demo_or_smoke_cannot_be_ready_for_delivery(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    for name, level in {"demo": "demo_result", "smoke": "smoke_backend"}.items():
+        run = root / "validations" / name
+        (run / "reports").mkdir(parents=True)
+        (run / "reports" / "report.html").write_text("<html></html>", encoding="utf-8")
+        (run / "reports" / "methods.md").write_text("methods", encoding="utf-8")
+        (run / "run_manifest.json").write_text(
+            json.dumps(
+                {
+                    "status": "ready",
+                    "analysis_level": level,
+                    "is_demo": level == "demo_result",
+                    "is_stub": False,
+                    "delivery_allowed": False,
+                    "validation_evidence_allowed": False,
+                    "non_delivery_reason": "not_delivery",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    result = build_validation_index(root=root, output_dir=tmp_path / "index")
+
+    rows = json.loads(Path(result["validation_index_json"]).read_text(encoding="utf-8"))
+    assert {row["order_readiness_status"] for row in rows} == {"not_ready"}
+
+
 def test_validation_index_indexes_delivery_gate_when_present(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
     run = root / "validations" / "unified_demo_run"

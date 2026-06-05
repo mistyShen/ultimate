@@ -19,7 +19,10 @@
 - 正式交付许可：`{{ gate.get("delivery_allowed", false) }}`
 - 验证证据许可：`{{ gate.get("validation_evidence_allowed", false) }}`
 - 生产审批：`{{ gate.get("approval_status", "not_recorded") }}`
+- delivery_scope：`{{ gate.get("delivery_scope", (manifest.get("production_approval") or {}).get("delivery_scope", manifest.get("delivery_scope", "not_recorded"))) }}`
 - 生产模块：`{{ (gate.get("production_modules") or []) | join(", ") or "none" }}`
+- 可交付模块：`{{ (gate.get("deliverable_modules") or []) | join(", ") or "none" }}`
+- 验证证据模块：`{{ (gate.get("validation_evidence_modules") or []) | join(", ") or "none" }}`
 - 阻断原因：`{{ (gate.get("blockers") or []) | join("; ") or gate.get("non_delivery_reason", "none") }}`
 - 不可交付模块：`{% for item in gate.get("blocked_modules") or [] %}{{ item.get("module", "unknown") }}={{ item.get("analysis_level", "not_recorded") }}{% if not loop.last %}; {% endif %}{% endfor %}{{ "" if gate.get("blocked_modules") else "none" }}`
 
@@ -44,7 +47,7 @@
 
 - 状态：`{{ module.status }}`
 - analysis_level：`{{ module.get("analysis_level", "not_recorded") }}`
-- 交付许可：`{{ module.get("delivery_allowed", false) }}`；原因：`{{ module.get("non_delivery_reason", "") or "none" }}`
+- 交付许可：`{{ module.get("delivery_allowed", false) }}`；验证证据许可：`{{ module.get("validation_evidence_allowed", false) }}`；原因：`{{ module.get("non_delivery_reason", "") or "none" }}`
 {% set raw_qc = module.get("raw_qc") or {} %}
 {% set artifacts = module.get("artifacts") or {"tables": {}, "figures": {}, "objects": {}} %}
 {% set qc_manifest_path = (artifacts.get("tables") or {}).get("module_qc_manifest") %}
@@ -56,6 +59,8 @@
 - 样本数：{{ module.get("n_samples", "NA") }}
 - 已知限制：`{{ (module.get("limitations") or []) | join("; ") }}`
 - Handoff/可选后端：`{{ ((module.get("handoff") or {}).get("handoff_tools") or []) | join(", ") or "none" }}`
+- handoff_status：`{{ (module.get("handoff") or {}).get("handoff_status", "not_recorded") }}`
+- handoff_statuses：`{{ ((module.get("handoff") or {}).get("handoff_statuses") or []) | join(", ") or "none" }}`
 {% set tool_summary = (module.get("handoff") or {}).get("tool_decision_summary") or {} %}
 {% set v2_tool_summary = (module.get("handoff") or {}).get("v2_disposition_summary") or {} %}
 - 默认后端：`{{ (tool_summary.get("keep_default") or []) | join(", ") or "none" }}`
@@ -65,6 +70,8 @@
 - v2 optional_backend：`{{ (v2_tool_summary.get("optional_backend") or []) | join(", ") or "none" }}`
 - v2 handoff_adapter：`{{ (v2_tool_summary.get("handoff_adapter") or []) | join(", ") or "none" }}`
 - v2 licensed_path_detection：`{{ (v2_tool_summary.get("licensed_path_detection") or []) | join(", ") or "none" }}`
+- v2 reference_only：`{{ (v2_tool_summary.get("reference_only") or []) | join(", ") or "none" }}`
+- v2 rejected_cleaned：`{{ (v2_tool_summary.get("rejected_cleaned") or []) | join(", ") or "none" }}`
 - MVP 表格：`{{ (mvp_spec.get("tables") or []) | join(", ") or "not_recorded" }}`
 - MVP 图表：`{{ (mvp_spec.get("figures") or []) | join(", ") or "not_recorded" }}`
 - MVP 对象/交接文件：`{{ mvp_spec.get("object", "not_recorded") }}`

@@ -93,6 +93,28 @@ ultimate trial-tools --root /shared/shen/2026/ultimate --batch scrna_core --no-i
 pytest -q
 ```
 
+## Technical Triage
+
+`ultimate triage` only checks whether a request is technically ready to run. It
+does not start analysis, does not quote, does not call the production pipeline,
+and does not create `run_manifest.json` or `production_approval.json`.
+
+```bash
+ultimate triage \
+  --request config/analysis_request.yaml \
+  --output-dir triage/<job_id>
+```
+
+Triage output status is one of `ready_to_run`, `needs_metadata`,
+`needs_dependency`, `needs_license`, `needs_manual_review`, or
+`not_supported`. The manifest is always `analysis_level=smoke_backend`,
+`delivery_allowed=false`, `validation_evidence_allowed=false`, and
+`non_delivery_reason=triage_only_not_analysis_run`.
+
+Triage writes `triage_manifest.json`, `triage_report.md/html`,
+`suggested_project.yaml`, `samplesheet_template.tsv`, `slurm_command.txt`,
+`missing_requirements.tsv`, and `risk_flags.tsv`.
+
 ## scRNA MVP Validation
 
 `validate-scrna` 的验证级路径统一称为 `scrna_mvp`。真实公开数据验证通过 Slurm 运行，不在登录节点做重计算：

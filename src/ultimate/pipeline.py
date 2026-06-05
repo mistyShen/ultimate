@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -132,9 +133,15 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
     manifest_path = out_dir / "run_manifest.json"
     manifest["run_manifest_path"] = str(manifest_path)
     manifest["logs"]["run_context"] = str(_write_run_context_log(out_dir, manifest))
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    report_manifest = build_report(out_dir)
-    manifest["report"] = report_manifest
+    return finalize_run_outputs(out_dir, manifest_path, manifest)
+
+
+def finalize_run_outputs(out_dir: Path, manifest_path: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    """Write manifest, reproducibility package, and reports with a stable order."""
+    out_dir = out_dir.resolve()
+    manifest_path = manifest_path.resolve()
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     repro_manifest = export_reproducible_package(out_dir)
     manifest["reproducible_package"] = repro_manifest
@@ -142,8 +149,31 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
     report_manifest = build_report(out_dir)
     manifest["report"] = report_manifest
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    export_reproducible_package(out_dir)
+    report_manifest = build_report(out_dir)
+    manifest["report"] = report_manifest
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    repro_manifest = export_reproducible_package(out_dir)
+    manifest["reproducible_package"] = repro_manifest
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    _mirror_final_run_manifest(out_dir, manifest_path)
     return manifest
+
+
+def _mirror_final_run_manifest(out_dir: Path, manifest_path: Path) -> None:
+    parts = out_dir.resolve().parts
+    if "jobs" not in parts or "runs" not in parts:
+        return
+    try:
+        jobs_index = parts.index("jobs")
+        runs_index = parts.index("runs")
+    except ValueError:
+        return
+    if runs_index <= jobs_index + 1:
+        return
+    job_dir = Path(*parts[: jobs_index + 2])
+    target = job_dir / "deliverables" / "latest_run_manifest.json"
+    if target.parent.exists():
+        shutil.copy2(manifest_path, target)
 
 
 def _write_module_log(run_dir: Path, module_name: str, payload: dict[str, Any]) -> Path:

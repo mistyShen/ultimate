@@ -63,11 +63,13 @@ def _maturity_level(module_name: str, validation: str, production_status: str, c
         return "6_customer_delivery_ready"
     if str(capability.get("production_rehearsed") or "").lower() == "true":
         return "5_production_rehearsed"
-    if validation == "available":
+    if validation == "available" and evidence_manifest:
         if "internal" in validation_label or "/0518" in evidence_manifest or "nsclc" in validation_label:
             return "4_internal_validated"
         return "3_public_validated"
-    if production_status.startswith("ready") or "backend" in backend:
+    if production_status.startswith("ready"):
+        return "2_demo_smoke_passed"
+    if backend.startswith("ready:"):
         return "2_demo_smoke_passed"
     if production_status.startswith("partial") or validation.startswith("partial"):
         return "1_smoke_skeleton"

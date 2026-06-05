@@ -46,6 +46,7 @@ INDEX_FIELDS = (
     "delivery_gate_status",
     "delivery_gate_allowed",
     "delivery_gate_validation_evidence_allowed",
+    "delivery_gate_validation_allowed",
     "delivery_gate_approval_status",
     "delivery_scope",
     "delivery_gate_blockers",
@@ -117,6 +118,7 @@ def _iter_validation_manifests(*, root: Path, validations_dir: Path) -> list[Pat
     paths = set(validations_dir.glob("*/run_manifest.json"))
     paths.update((root / "validation_runs").glob("*/*/run_manifest.json"))
     paths.update((root / "validations" / "bulk_demo_python" / "project" / "runs").glob("*/run_manifest.json"))
+    paths.update((root / "jobs").glob("*/runs/*/run_manifest.json"))
     return sorted(path for path in paths if path.exists())
 
 
@@ -166,7 +168,7 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
     )
     row = {
         "run_name": run_dir.name,
-        "run_kind": _run_kind(path),
+        "run_kind": _run_kind(path, manifest),
         "module": module_label,
         "status": str(manifest.get("status", "")),
         "guard_status": guard_status,
@@ -225,8 +227,15 @@ def _stringify_bool(value: Any) -> str:
     return "" if value is None else str(value)
 
 
-def _run_kind(path: Path) -> str:
+def _run_kind(path: Path, manifest: dict[str, Any]) -> str:
     parts = path.parts
+    if "jobs" in parts and "runs" in parts:
+        scope = _delivery_scope(manifest)
+        if scope == "internal_rehearsal":
+            return "production_rehearsal"
+        if scope == "customer_delivery":
+            return "customer_delivery"
+        return "prepared_job"
     if "validation_runs" in parts:
         return "validation_runs"
     if "bulk_demo_python" in parts:
@@ -394,13 +403,15 @@ def _production_approval_status(manifest: dict[str, Any]) -> str:
 
 
 def _delivery_scope(manifest: dict[str, Any]) -> str:
-    approval = manifest.get("production_approval")
-    if isinstance(approval, dict) and approval.get("delivery_scope"):
-        return str(approval["delivery_scope"])
     gate = manifest.get("delivery_gate")
     if isinstance(gate, dict) and gate.get("delivery_scope"):
         return str(gate["delivery_scope"])
-    return "not_applicable"
+    approval = manifest.get("production_approval")
+    if isinstance(approval, dict) and approval.get("delivery_scope"):
+        return str(approval["delivery_scope"])
+    if manifest.get("delivery_scope"):
+        return str(manifest["delivery_scope"])
+    return ""
 
 
 def _delivery_gate_fields(manifest: dict[str, Any]) -> dict[str, str]:
@@ -410,6 +421,7 @@ def _delivery_gate_fields(manifest: dict[str, Any]) -> dict[str, str]:
             "delivery_gate_status": "",
             "delivery_gate_allowed": "",
             "delivery_gate_validation_evidence_allowed": "",
+            "delivery_gate_validation_allowed": "",
             "delivery_gate_approval_status": "",
             "delivery_gate_blockers": "",
         }
@@ -422,6 +434,7 @@ def _delivery_gate_fields(manifest: dict[str, Any]) -> dict[str, str]:
         "delivery_gate_status": str(gate.get("status", "")),
         "delivery_gate_allowed": _stringify_bool(gate.get("delivery_allowed", "")),
         "delivery_gate_validation_evidence_allowed": _stringify_bool(gate.get("validation_evidence_allowed", "")),
+        "delivery_gate_validation_allowed": _stringify_bool(gate.get("validation_evidence_allowed", "")),
         "delivery_gate_approval_status": str(gate.get("approval_status", "")),
         "delivery_gate_blockers": blocker_text,
     }

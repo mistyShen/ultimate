@@ -19,9 +19,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from validation_manifest_utils import add_validation_guard_fields
 
 from ultimate.config import dump_yaml
-from ultimate.pipeline import run_pipeline_from_config
-from ultimate.report import build_report
-from ultimate.reproducibility import export_reproducible_package
+from ultimate.pipeline import finalize_run_outputs, run_pipeline_from_config
 
 
 DEFAULT_MATRIX_URL = "https://raw.githubusercontent.com/bioconnector/workshops/master/data/airway_rawcounts.csv"
@@ -136,17 +134,7 @@ def run_validation(
     )
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    report_manifest = build_report(output_dir)
-    manifest["report"] = report_manifest
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    repro_manifest = export_reproducible_package(output_dir)
-    manifest["reproducible_package"] = repro_manifest
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    report_manifest = build_report(output_dir)
-    manifest["report"] = report_manifest
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    export_reproducible_package(output_dir)
-    return manifest
+    return finalize_run_outputs(output_dir, manifest_path, manifest)
 
 
 def _prepare_airway_inputs(

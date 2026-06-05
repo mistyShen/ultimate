@@ -65,6 +65,9 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
     assert "交付门控" in html_report
     assert "analysis_level" in methods_report
     assert "analysis_level" in html_report
+    for token in ("delivery_scope", "handoff_statuses", "reference_only", "rejected_cleaned"):
+        assert token in methods_report
+        assert token in html_report
     assert len(run_manifest["modules"]) == len(MODULE_ORDER)
     for module in run_manifest["modules"]:
         assert module["analysis_level"] in {"demo_result", "smoke_backend", "validated_backend", "production_backend"}

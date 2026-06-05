@@ -100,6 +100,22 @@ REQUIRED_GUARD_FIELDS = (
 
 VALID_ANALYSIS_LEVELS = {"demo_result", "smoke_backend", "validated_backend", "production_backend"}
 
+V2_CORE_MODULES = ("rnaseq", "scrna", "vdj", "cite_seq", "functional_state")
+V2_EXTENDED_PARTIAL_MODULES = ("scatac", "multiome", "spatial", "mtdna", "methylation")
+V3_SPECIALTY_MODULES = (
+    "scdna",
+    "perturb_seq",
+    "hto_demux",
+    "genotype_demux",
+    "tumor_sc",
+    "method_tools",
+    "publicdb",
+    "clinical_assoc",
+    "wgcna",
+    "single_gene",
+    "proteomics",
+)
+
 VALIDATION_RUN_REQUIREMENTS = {
     "slurm_rnaseq_public": {
         "label_cn": "airway bulk RNA-seq 公开 count matrix Slurm 验证",
@@ -1114,6 +1130,7 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
     registry_rows = _tool_registry_snapshot_rows()
     registry_ready, registry_note = _tool_registry_triage_status(registry_rows)
     validation_status = {str(row["validation_key"]): str(row["status"]) for row in validation_rows}
+    capability_by_module = {str(row.get("module")): row for row in capability_rows}
     ready_capabilities = [row for row in capability_rows if str(row["production_status"]) == "ready_basic"]
     partial_capabilities = [row for row in capability_rows if str(row["production_status"]) != "ready_basic"]
     prepared_delivery_ready, prepared_delivery_note = _prepared_job_delivery_status(root)
@@ -1157,27 +1174,22 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
             ",".join(f"{key}={validation_status.get(key, 'missing')}" for key in ("scrna_mvp_h5ad", "scrna_mvp_10x_mtx")),
         ),
         _requirement_row(
-            "slurm_singlecell_modalities_validated",
-            "单细胞核心模态完成 Slurm 验证",
-            all(
-                validation_status.get(key) == "ready"
-                for key in (
-                    "slurm_scrna",
-                    "slurm_scatac",
-                    "slurm_multiome",
-                    "slurm_vdj",
-                    "slurm_spatial",
-                    "slurm_cite_seq",
-                    "slurm_scdna",
-                    "slurm_mtdna",
-                    "slurm_method_tools",
-                    "slurm_tumor_sc",
-                    "slurm_perturb_seq",
-                    "slurm_hto_demux",
-                    "slurm_genotype_demux",
-                )
-            ),
-            ",".join(f"{key}={validation_status.get(key, 'missing')}" for key in validation_status if key.startswith("slurm_")),
+            "v2_core_modules_validated",
+            "v2 core 模块具备真实 validated_backend 证据",
+            _module_group_ready(capability_by_module, V2_CORE_MODULES),
+            _module_group_note(capability_by_module, V2_CORE_MODULES),
+        ),
+        _requirement_row(
+            "v2_extended_modules_partial_or_ready",
+            "v2 extended 模块至少 partial/validated，不阻断 core 交付秩序",
+            _module_group_not_missing(capability_by_module, V2_EXTENDED_PARTIAL_MODULES),
+            _module_group_note(capability_by_module, V2_EXTENDED_PARTIAL_MODULES),
+        ),
+        _requirement_row(
+            "v3_specialty_modules_tracked_not_blocking_v2",
+            "v3 specialty 模块记录 blocked/partial/ready 原因，但不阻断 v2 core",
+            _module_group_tracked(capability_by_module, V3_SPECIALTY_MODULES),
+            _module_group_note(capability_by_module, V3_SPECIALTY_MODULES),
         ),
         _requirement_row(
             "bulk_and_tabular_modalities_validated",
@@ -1235,6 +1247,29 @@ def _final_acceptance_rows(root: Path, capability_rows: list[dict[str, Any]], va
         ),
     ]
     return rows
+
+
+def _module_group_ready(capability_by_module: dict[str, dict[str, Any]], modules: tuple[str, ...]) -> bool:
+    return all(str(capability_by_module.get(module, {}).get("validation") or "") == "available" for module in modules)
+
+
+def _module_group_not_missing(capability_by_module: dict[str, dict[str, Any]], modules: tuple[str, ...]) -> bool:
+    return all(str(capability_by_module.get(module, {}).get("validation") or "missing") != "missing" for module in modules)
+
+
+def _module_group_tracked(capability_by_module: dict[str, dict[str, Any]], modules: tuple[str, ...]) -> bool:
+    return all(module in capability_by_module for module in modules)
+
+
+def _module_group_note(capability_by_module: dict[str, dict[str, Any]], modules: tuple[str, ...]) -> str:
+    notes = []
+    for module in modules:
+        row = capability_by_module.get(module, {})
+        validation = str(row.get("validation") or "missing")
+        production = str(row.get("production_status") or "missing")
+        next_action = str(row.get("next_action") or "not_recorded")
+        notes.append(f"{module}:validation={validation},production={production},blocked_reason={next_action}")
+    return ";".join(notes)
 
 
 def _requirement_row(requirement: str, label_cn: str, passed: bool, evidence: str) -> dict[str, Any]:

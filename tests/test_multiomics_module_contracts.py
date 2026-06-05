@@ -93,6 +93,23 @@ def test_module_maturity_table_has_required_columns(tmp_path: Path) -> None:
     assert all(row["analysis_level"] != "validated_backend" for row in rows)
 
 
+def test_module_maturity_does_not_upgrade_without_real_validation_evidence(tmp_path: Path) -> None:
+    rows = build_module_maturity_rows(
+        tmp_path,
+        capability_rows=[
+            {
+                "module": "rnaseq",
+                "validation": "available",
+                "production_status": "ready_basic",
+                "basic_backend": "ready:python_bulk_backend",
+                "evidence_manifest": "",
+            }
+        ],
+    )
+    rnaseq = next(row for row in rows if row["module_name"] == "rnaseq")
+    assert rnaseq["maturity_level"] == "2_demo_smoke_passed"
+
+
 def test_module_standardization_matrix_is_ready() -> None:
     rows = build_module_standardization_rows()
     assert len(rows) == len(MODULE_ORDER)

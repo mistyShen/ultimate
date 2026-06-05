@@ -8,7 +8,7 @@ from click.testing import CliRunner
 from ultimate.cli import main
 from ultimate.constants import MODULE_ORDER
 from ultimate.modules.common import module_mvp_table_schemas
-from ultimate.production_audit import _delivery_gate_gaps, _manifest_artifact_status, run_production_audit
+from ultimate.production_audit import _delivery_gate_gaps, _final_acceptance_rows, _manifest_artifact_status, run_production_audit
 from ultimate.validation_index import build_validation_index
 
 
@@ -148,6 +148,26 @@ def test_production_audit_writes_readiness_artifacts(tmp_path: Path) -> None:
     assert manifest["module_standardization_summary"]["ready"] == len(MODULE_ORDER)
     assert Path(manifest["next_steps"]).exists()
     assert sum(manifest["summary"].values()) == len(MODULE_ORDER)
+
+
+def test_production_audit_layers_v2_core_separately_from_v3_partial(tmp_path: Path) -> None:
+    core = {"rnaseq", "scrna", "vdj", "cite_seq", "functional_state"}
+    capability_rows = [
+        {
+            "module": module,
+            "validation": "available" if module in core else "partial:data_required",
+            "production_status": "ready_basic" if module in core else "partial:data_required",
+            "next_action": "blocked reason visible for pytest",
+        }
+        for module in MODULE_ORDER
+    ]
+
+    rows = _final_acceptance_rows(tmp_path / "ultimate", capability_rows, [])
+
+    by_requirement = {row["requirement"]: row for row in rows}
+    assert by_requirement["v2_core_modules_validated"]["status"] == "pass"
+    assert by_requirement["v3_specialty_modules_tracked_not_blocking_v2"]["status"] == "pass"
+    assert "blocked_reason=blocked reason visible for pytest" in by_requirement["v3_specialty_modules_tracked_not_blocking_v2"]["evidence"]
 
 
 def test_delivery_gate_audit_keeps_legacy_manifests_optional_and_flags_inconsistent_gate() -> None:

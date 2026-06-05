@@ -17,6 +17,7 @@ from ultimate.production_audit import run_production_audit
 from ultimate.report import build_report
 from ultimate.reproducibility import export_reproducible_package
 from ultimate.singlecell_audit import run_singlecell_audit
+from ultimate.triage import run_triage
 from ultimate.validation_index import build_validation_index
 
 
@@ -94,6 +95,15 @@ def run_command(config_path: Path, production_approval: Path | None) -> None:
         manifest = run_pipeline_from_config(config_path, production_approval_path=production_approval)
     except RuntimeError as exc:
         raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("triage")
+@click.option("--request", "request_path", type=click.Path(path_type=Path, exists=True, dir_okay=False), required=True)
+@click.option("--output-dir", type=click.Path(path_type=Path), required=True)
+def triage_command(request_path: Path, output_dir: Path) -> None:
+    """Assess technical readiness without running analysis or creating production artifacts."""
+    manifest = run_triage(request_path=request_path, output_dir=output_dir)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 
