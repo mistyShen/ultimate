@@ -255,6 +255,8 @@ def _infer_module_from_run_dir(run_dir: Path) -> str:
     if "bulk_demo_python" in run_dir.parts:
         return ",".join(MODULE_ORDER)
     aliases = {
+        "rnaseq": "rnaseq",
+        "bulk_rnaseq": "rnaseq",
         "scrna": "scrna",
         "scatac": "scatac",
         "multiome": "multiome",

@@ -282,6 +282,78 @@ def test_validated_run_dir_imports_real_evidence_as_validated_backend(tmp_path: 
     assert module["delivery_allowed"] is False
 
 
+def test_validated_run_source_can_be_production_rehearsal_with_current_approval(tmp_path: Path) -> None:
+    manifest = init_project("scrna", tmp_path / "validated_source_rehearsal", demo_data=False)
+    config_path = Path(manifest["config_path"])
+    loaded = load_config(config_path)
+
+    source_run = tmp_path / "validated_source_rehearsal" / "validated" / "scrna_source"
+    figures = source_run / "results" / "figures"
+    tables = source_run / "results" / "tables"
+    objects = source_run / "objects"
+    for directory in (figures, tables, objects):
+        directory.mkdir(parents=True, exist_ok=True)
+    (figures / "umap.png").write_text("figure", encoding="utf-8")
+    (tables / "markers.tsv").write_text("gene\tscore\nA\t1\n", encoding="utf-8")
+    (objects / "validated.h5ad").write_text("object", encoding="utf-8")
+    (source_run / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "analysis_level": "validated_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": False,
+                "validation_evidence_allowed": True,
+                "non_delivery_reason": "validation_evidence_only_not_customer_delivery",
+                "figures": [str(figures / "umap.png")],
+                "tables": [str(tables / "markers.tsv")],
+                "objects": {"h5ad": str(objects / "validated.h5ad")},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = loaded.raw
+    config["modules"]["scrna"]["validated_run_dir"] = "../validated/scrna_source"
+    config["modules"]["scrna"]["analysis_level"] = "production_backend"
+    config["modules"]["scrna"]["is_demo"] = False
+    config["modules"]["scrna"].setdefault("raw", {})["enabled"] = False
+    dump_yaml(config, config_path)
+    output_dir = Path(load_config(config_path).raw["project"]["output_dir"])
+    approval_path = tmp_path / "scrna_rehearsal_approval.json"
+    approval_path.write_text(
+        json.dumps(
+            {
+                "approved": True,
+                "approved_by": "pytest",
+                "approved_at": "2026-06-05T00:00:00Z",
+                "project_id": "validated_source_rehearsal",
+                "input_path": str(config_path.resolve()),
+                "output_dir": str(output_dir.resolve()),
+                "delivery_scope": "internal_rehearsal",
+                "reason": "pytest scrna production-style rehearsal",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    run_manifest = run_pipeline_from_config(config_path, production_approval_path=approval_path)
+    module = run_manifest["modules"][0]
+
+    assert run_manifest["delivery_gate"]["status"] == "ready"
+    assert run_manifest["delivery_gate"]["delivery_scope"] == "internal_rehearsal"
+    assert module["analysis_level"] == "production_backend"
+    assert module["delivery_allowed"] is True
+    assert module["validation_evidence_allowed"] is True
+    assert "source_validated_backend_promoted_by_current_production_approval" in module["skip_reasons"]
+    delivery_index = (output_dir / "delivery_index.tsv").read_text(encoding="utf-8")
+    assert f"figure\t{figures / 'umap.png'}" in delivery_index
+    assert f"table\t{tables / 'markers.tsv'}" in delivery_index
+    assert f"object\t{objects / 'validated.h5ad'}" in delivery_index
+    assert "\texternal_declared" in delivery_index
+
+
 def test_validated_run_source_production_level_is_not_delivery_without_current_approval(tmp_path: Path) -> None:
     manifest = init_project("scrna", tmp_path / "validated_source_production", demo_data=True)
     config_path = Path(manifest["config_path"])

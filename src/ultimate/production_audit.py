@@ -39,6 +39,7 @@ SINGLE_CELL_MODULES = {
 }
 
 VALIDATION_HINTS = {
+    "rnaseq": ("slurm_rnaseq_airway_public", "airway public bulk RNA-seq count-matrix validation"),
     "scrna": ("slurm_scrna_nsclc_lambrechts", "NSCLC scRNA production validation"),
     "scatac": ("slurm_scatac_10x_pbmc", "10x PBMC scATAC public validation"),
     "multiome": ("slurm_multiome_10x_pbmc", "10x PBMC Multiome public validation"),
@@ -50,6 +51,10 @@ VALIDATION_HINTS = {
     "perturb_seq": ("slurm_perturb_seq_adamson_public", "Adamson public Perturb-seq h5ad validation"),
     "hto_demux": ("slurm_hto_demux_seurat_public", "Seurat public HTO count demultiplex matrix validation"),
     "genotype_demux": ("slurm_genotype_demux_vireo_public", "Vireo/cellSNP public genotype demultiplex matrix validation"),
+    "clinical_assoc": ("slurm_tabular_airway_public", "airway public clinical association table validation"),
+    "publicdb": ("slurm_tabular_airway_public", "airway public database-style cached table validation"),
+    "wgcna": ("slurm_tabular_airway_public", "airway public WGCNA-ready matrix QC and handoff validation"),
+    "single_gene": ("slurm_tabular_airway_public", "airway public single-gene report validation"),
     "tumor_sc": ("slurm_tumor_sc_maynard_raw_counts", "NSCLC tumor single-cell raw-count specialty validation"),
     "method_tools": ("slurm_method_tools_nsclc", "NSCLC scRNA method-tools baseline validation"),
 }
@@ -94,6 +99,24 @@ REQUIRED_GUARD_FIELDS = (
 VALID_ANALYSIS_LEVELS = {"demo_result", "smoke_backend", "validated_backend", "production_backend"}
 
 VALIDATION_RUN_REQUIREMENTS = {
+    "slurm_rnaseq_public": {
+        "label_cn": "airway bulk RNA-seq 公开 count matrix Slurm 验证",
+        "run_dir": "validations/slurm_rnaseq_airway_public",
+        "module": "rnaseq",
+        "min_tables": 8,
+        "min_figures": 4,
+        "min_objects": 1,
+        "min_reports": 2,
+    },
+    "slurm_tabular_public": {
+        "label_cn": "airway 表格/公共库模块公开矩阵 Slurm 验证",
+        "run_dir": "validations/slurm_tabular_airway_public",
+        "module": "tabular_public",
+        "min_tables": 20,
+        "min_figures": 12,
+        "min_objects": 4,
+        "min_reports": 8,
+    },
     "scrna_mvp_h5ad": {
         "label_cn": "scRNA MVP h5ad 真实公开数据验证",
         "run_dir": "validation_runs/scrna_mvp_validation/h5ad",
@@ -242,6 +265,22 @@ VALIDATION_RUN_REQUIREMENTS = {
 }
 
 VALIDATION_RUN_COMMANDS = {
+    "slurm_rnaseq_public": {
+        "slurm_script": "slurm/bulk_validation_suite.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/bulk_validation_suite.sbatch",
+        "prerequisite_command": "",
+        "module_or_scope": "rnaseq",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
+    "slurm_tabular_public": {
+        "slurm_script": "slurm/bulk_validation_suite.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/bulk_validation_suite.sbatch",
+        "prerequisite_command": "",
+        "module_or_scope": "clinical_assoc/publicdb/wgcna/single_gene",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
     "scrna_mvp_h5ad": {
         "slurm_script": "slurm/scrna_mvp_validation.sbatch",
         "recommended_entrypoint": "hpc-sbatch",
@@ -507,9 +546,6 @@ def _standardization_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def _validation_evidence(root: Path, module: str) -> dict[str, str]:
-    if module in BULK_MODULES:
-        return {"validation": "not_required", "validation_label": "", "evidence_manifest": "", "evidence_artifacts": ""}
-
     if module in VALIDATION_HINTS:
         validation_dir, validation_label = VALIDATION_HINTS[module]
         run_dir = root / "validations" / validation_dir
@@ -525,8 +561,11 @@ def _validation_evidence(root: Path, module: str) -> dict[str, str]:
             "validation": "partial:validation_manifest_not_ready" if manifest.exists() else "missing",
             "validation_label": validation_label,
             "evidence_manifest": str(manifest) if manifest.exists() else "",
-            "evidence_artifacts": "",
-        }
+                "evidence_artifacts": "",
+            }
+
+    if module in BULK_MODULES:
+        return {"validation": "not_required", "validation_label": "", "evidence_manifest": "", "evidence_artifacts": ""}
 
     if module in DERIVED_VALIDATION_HINTS:
         hint = DERIVED_VALIDATION_HINTS[module]
@@ -1305,21 +1344,57 @@ def _slurm_adapter_files_present(root: Path) -> bool:
 def _prepared_job_delivery_status(root: Path) -> tuple[bool, str]:
     job_dirs = _prepared_job_dirs(root)
     if not job_dirs:
-        return False, "checked_jobs=0 ready_jobs=0 missing=jobs/*/runs/*/run_manifest.json"
+        return False, "checked_jobs=0 ready_jobs=0 scoped_ready_jobs=0 missing=jobs/*/runs/*/run_manifest.json"
     ready_count = 0
+    scoped_ready_count = 0
     gaps: list[str] = []
+    legacy_or_unscoped: list[str] = []
     for job_dir in job_dirs:
         missing = _prepared_job_delivery_gaps(job_dir)
         if missing:
             gaps.append(f"{job_dir.name}:{','.join(missing)}")
         else:
             ready_count += 1
-    note = f"checked_jobs={len(job_dirs)} ready_jobs={ready_count}"
+            scope_status, scope_note = _prepared_job_delivery_scope_status(job_dir)
+            if scope_status:
+                scoped_ready_count += 1
+            else:
+                legacy_or_unscoped.append(f"{job_dir.name}:{scope_note}")
+    note = f"checked_jobs={len(job_dirs)} ready_jobs={ready_count} scoped_ready_jobs={scoped_ready_count}"
     if gaps:
         note += f" missing={';'.join(gaps[:5])}"
         if len(gaps) > 5:
             note += f";additional_missing_jobs={len(gaps) - 5}"
-    return ready_count > 0 and ready_count == len(job_dirs), note
+    if legacy_or_unscoped:
+        note += f" legacy_or_unscoped={';'.join(legacy_or_unscoped[:5])}"
+        if len(legacy_or_unscoped) > 5:
+            note += f";additional_legacy_or_unscoped_jobs={len(legacy_or_unscoped) - 5}"
+    return scoped_ready_count >= 2, note
+
+
+def _prepared_job_delivery_scope_status(job_dir: Path) -> tuple[bool, str]:
+    latest_run_dir = _latest_ready_run_dir(job_dir)
+    if latest_run_dir is None:
+        return False, "latest_ready_run_missing"
+    manifest = _read_json(latest_run_dir / "run_manifest.json")
+    gate = manifest.get("delivery_gate") if isinstance(manifest.get("delivery_gate"), dict) else {}
+    approval = manifest.get("production_approval") if isinstance(manifest.get("production_approval"), dict) else {}
+    modules = manifest.get("modules") if isinstance(manifest.get("modules"), list) else []
+    has_production_module = any(
+        isinstance(module, dict)
+        and (module.get("analysis_level") == "production_backend" or module.get("delivery_allowed") is True)
+        for module in modules
+    )
+    scope = str(approval.get("delivery_scope") or gate.get("delivery_scope") or "")
+    if not has_production_module:
+        return False, "production_module_missing"
+    if scope not in {"internal_rehearsal", "customer_delivery"}:
+        return False, "delivery_scope_missing"
+    if approval.get("approved") is not True:
+        return False, "production_approval_not_approved"
+    if gate.get("status") != "ready" or gate.get("delivery_allowed") is not True:
+        return False, f"delivery_gate_not_ready:{gate.get('status', '')}"
+    return True, f"delivery_scope={scope}"
 
 
 def _validation_index_status(root: Path) -> tuple[bool, str]:

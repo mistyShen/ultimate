@@ -89,10 +89,12 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
         production_approval=approval_summary,
         run_status=run_summary["status"],
     )
+    run_level_fields = _aggregate_run_level_fields(module_manifests, delivery_gate)
     manifest = {
         "run_id": run_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": run_summary["status"],
+        **run_level_fields,
         "project": config.get("project", {}),
         "analysis_request": analysis_request,
         "output_dir": str(out_dir),
@@ -268,4 +270,35 @@ def _summarize_run(module_manifests: list[dict[str, Any]]) -> dict[str, Any]:
         "partial_modules": partial_modules,
         "module_status": module_status,
         "module_skip_reasons": module_skip_reasons,
+    }
+
+
+def _aggregate_run_level_fields(module_manifests: list[dict[str, Any]], delivery_gate: dict[str, Any]) -> dict[str, Any]:
+    levels = {str(module.get("analysis_level") or "") for module in module_manifests if isinstance(module, dict)}
+    if "production_backend" in levels:
+        analysis_level = "production_backend"
+    elif "validated_backend" in levels:
+        analysis_level = "validated_backend"
+    elif levels and levels <= {"demo_result"}:
+        analysis_level = "demo_result"
+    else:
+        analysis_level = "smoke_backend"
+    is_demo = any(module.get("is_demo") is True for module in module_manifests if isinstance(module, dict))
+    is_stub = any(module.get("is_stub") is True for module in module_manifests if isinstance(module, dict))
+    delivery_allowed = bool(delivery_gate.get("delivery_allowed") is True)
+    validation_evidence_allowed = bool(delivery_gate.get("validation_evidence_allowed") is True and not is_demo and not is_stub)
+    reasons = [
+        str(module.get("non_delivery_reason"))
+        for module in module_manifests
+        if isinstance(module, dict) and module.get("non_delivery_reason")
+    ]
+    gate_reason = str(delivery_gate.get("non_delivery_reason") or "")
+    non_delivery_reason = "" if delivery_allowed else (gate_reason or ";".join(sorted(set(reasons))) or "not_marked_for_delivery")
+    return {
+        "analysis_level": analysis_level,
+        "is_demo": is_demo,
+        "is_stub": is_stub,
+        "delivery_allowed": delivery_allowed,
+        "validation_evidence_allowed": validation_evidence_allowed,
+        "non_delivery_reason": non_delivery_reason,
     }

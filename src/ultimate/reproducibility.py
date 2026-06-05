@@ -339,6 +339,7 @@ def _write_repro_readme(
 
 def _write_delivery_index(path: Path, run_dir: Path) -> Path:
     rows = []
+    indexed_paths: set[str] = set()
     for category, directory in (
         ("figure", run_dir / "results" / "figures"),
         ("table", run_dir / "results" / "tables"),
@@ -351,8 +352,61 @@ def _write_delivery_index(path: Path, run_dir: Path) -> Path:
         for item in sorted(directory.rglob("*")):
             if item.is_file():
                 rows.append(_delivery_index_row(category, item, run_dir))
+                indexed_paths.add(str(item.expanduser().resolve()))
+    for row in _declared_external_artifact_rows(run_dir, indexed_paths):
+        rows.append(row)
+        indexed_paths.add(str(Path(str(row["path"])).expanduser().resolve()))
     _write_tsv(path, rows, ("category", "path", "size_bytes", "module", "artifact_key", "artifact_scope"))
     return path
+
+
+def _declared_external_artifact_rows(run_dir: Path, indexed_paths: set[str]) -> list[dict[str, Any]]:
+    manifest_path = run_dir / "run_manifest.json"
+    if not manifest_path.exists():
+        return []
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    modules = manifest.get("modules") if isinstance(manifest.get("modules"), list) else []
+    rows: list[dict[str, Any]] = []
+    category_map = {
+        "figures": "figure",
+        "tables": "table",
+        "objects": "object",
+        "reports": "module_report",
+    }
+    for module in modules:
+        if not isinstance(module, dict):
+            continue
+        module_name = str(module.get("module") or "")
+        artifacts = module.get("artifacts") if isinstance(module.get("artifacts"), dict) else {}
+        for artifact_group, category in category_map.items():
+            payload = artifacts.get(artifact_group)
+            if isinstance(payload, dict):
+                pairs = payload.items()
+            elif isinstance(payload, list):
+                pairs = ((Path(str(value)).stem, value) for value in payload)
+            else:
+                continue
+            for key, value in pairs:
+                item = Path(str(value)).expanduser()
+                if not item.is_file():
+                    continue
+                resolved = str(item.resolve())
+                if resolved in indexed_paths:
+                    continue
+                rows.append(
+                    {
+                        "category": category,
+                        "path": str(item),
+                        "size_bytes": item.stat().st_size,
+                        "module": module_name,
+                        "artifact_key": str(key),
+                        "artifact_scope": "external_declared",
+                    }
+                )
+    return rows
 
 
 def _delivery_index_row(category: str, item: Path, run_dir: Path) -> dict[str, Any]:

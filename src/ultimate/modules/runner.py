@@ -228,13 +228,18 @@ def _run_validated_run_backend(
     artifacts["tables"]["validated_run_summary"] = str(summary_path)
     try:
         current_module_cfg = (config.get("modules") or {}).get(module_name) or {}
+        current_module_cfg = (config.get("modules") or {}).get(module_name) or {}
+        current_requested_level = str(current_module_cfg.get("analysis_level") or "")
         requested_level = str(source_manifest.get("analysis_level") or "validated_backend")
         real_ready, real_note = require_real_evidence(source_manifest)
         if not real_ready:
             status = "partial:validated_run_not_real_evidence"
             skip_reasons.append(f"source_not_real_evidence:{real_note}")
             requested_level = "smoke_backend"
-        if requested_level == "production_backend" and current_module_cfg.get("analysis_level") != "production_backend":
+        elif current_requested_level == "production_backend":
+            requested_level = "production_backend"
+            skip_reasons.append("source_validated_backend_promoted_by_current_production_approval")
+        if requested_level == "production_backend" and current_requested_level != "production_backend":
             requested_level = "validated_backend"
             skip_reasons.append("source_production_backend_downgraded:current_run_not_production_approved")
         level = classify_analysis_level(

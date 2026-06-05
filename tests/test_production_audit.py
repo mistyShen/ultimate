@@ -12,6 +12,113 @@ from ultimate.production_audit import _delivery_gate_gaps, _manifest_artifact_st
 from ultimate.validation_index import build_validation_index
 
 
+def _write_scoped_prepared_job(root: Path, job_id: str) -> None:
+    job_dir = root / "jobs" / job_id
+    run_dir = job_dir / "runs" / job_id
+    (job_dir / "deliverables").mkdir(parents=True)
+    (job_dir / "reproducible_code").mkdir(parents=True)
+    (run_dir / "results" / "figures" / "rnaseq").mkdir(parents=True)
+    (run_dir / "results" / "tables" / "rnaseq").mkdir(parents=True)
+    (run_dir / "objects" / "rnaseq").mkdir(parents=True)
+    (run_dir / "reports").mkdir(parents=True)
+    (run_dir / "reproducible_code").mkdir(parents=True)
+    figure_path = run_dir / "results" / "figures" / "rnaseq" / "pca.png"
+    table_path = run_dir / "results" / "tables" / "rnaseq" / "sample_qc.tsv"
+    object_path = run_dir / "objects" / "rnaseq" / "rnaseq_mvp_object.rds"
+    report_path = run_dir / "reports" / "report.html"
+    methods_path = run_dir / "reports" / "methods.md"
+    rerun_path = run_dir / "reproducible_code" / "rerun.sh"
+    for path, text in {
+        figure_path: "png",
+        table_path: "sample_id\tqc\nS1\tok\n",
+        object_path: "object",
+        report_path: "<html>report</html>",
+        methods_path: "methods",
+        rerun_path: "#!/usr/bin/env bash\n",
+    }.items():
+        path.write_text(text, encoding="utf-8")
+    run_manifest = {
+        "status": "ready",
+        "modules": [
+            {
+                "module": "rnaseq",
+                "status": "complete_python_bulk_backend",
+                "analysis_level": "production_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": True,
+                "validation_evidence_allowed": False,
+                "non_delivery_reason": "",
+                "artifacts": {
+                    "figures": {"pca": str(figure_path)},
+                    "tables": {"sample_qc": str(table_path)},
+                    "objects": {"mvp_object": str(object_path)},
+                },
+            }
+        ],
+        "production_approval": {
+            "approved": True,
+            "approved_by": "pytest",
+            "approved_at": "2026-06-05T00:00:00Z",
+            "project_id": job_id,
+            "input_path": str(root / "projects" / job_id),
+            "output_dir": str(run_dir),
+            "reason": "internal rehearsal test",
+            "delivery_scope": "internal_rehearsal",
+        },
+        "delivery_gate": {
+            "status": "ready",
+            "delivery_allowed": True,
+            "validation_evidence_allowed": False,
+            "approval_status": "approved",
+            "delivery_scope": "internal_rehearsal",
+            "blocked_modules": [],
+        },
+    }
+    (job_dir / "job_manifest.json").write_text(json.dumps({"job_id": job_id}), encoding="utf-8")
+    (run_dir / "run_manifest.json").write_text(json.dumps(run_manifest), encoding="utf-8")
+    delivery_index = "\n".join(
+        [
+            "category\tpath\tsize_bytes",
+            f"figure\t{figure_path}\t{figure_path.stat().st_size}",
+            f"table\t{table_path}\t{table_path.stat().st_size}",
+            f"object\t{object_path}\t{object_path.stat().st_size}",
+            f"report\t{report_path}\t{report_path.stat().st_size}",
+            f"report\t{methods_path}\t{methods_path.stat().st_size}",
+            f"reproducible_code\t{rerun_path}\t{rerun_path.stat().st_size}",
+        ]
+    ) + "\n"
+    required = {
+        job_dir / "deliverables" / "latest_run_manifest.json": json.dumps(run_manifest),
+        job_dir / "deliverables" / "latest_report.html": report_path.read_text(encoding="utf-8"),
+        job_dir / "deliverables" / "latest_methods.md": methods_path.read_text(encoding="utf-8"),
+        job_dir / "deliverables" / "latest_delivery_index.tsv": delivery_index,
+        job_dir / "reproducible_code" / "rerun.sh": rerun_path.read_text(encoding="utf-8"),
+        job_dir / "reproducible_code" / "software_versions.tsv": "name\tversion\nultimate\ttest\n",
+        job_dir / "reproducible_code" / "latest_repro_manifest.json": '{"run_dir": "test"}',
+        run_dir / "reproducible_code" / "repro_manifest.json": '{"run_dir": "test"}',
+    }
+    for path, text in required.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    (job_dir / "deliverables" / "latest_run_pointer.json").write_text(
+        json.dumps(
+            {
+                "latest_run_dir": str(run_dir),
+                "run_manifest": str(run_dir / "run_manifest.json"),
+                "copied_artifacts": {
+                    "run_manifest": str(job_dir / "deliverables" / "latest_run_manifest.json"),
+                    "report_html": str(job_dir / "deliverables" / "latest_report.html"),
+                    "methods_md": str(job_dir / "deliverables" / "latest_methods.md"),
+                    "delivery_index": str(job_dir / "deliverables" / "latest_delivery_index.tsv"),
+                },
+                "policy": "job-level files are small latest-run mirrors; large result objects remain referenced from the run directory",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_production_audit_writes_readiness_artifacts(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
     (root / ".conda" / "envs" / "ultimate-core").mkdir(parents=True)
@@ -552,6 +659,51 @@ def test_production_audit_rejects_demo_slurm_validation_even_with_artifacts(tmp_
     assert "analysis_level=demo_result" in row
 
 
+def test_production_audit_accepts_airway_tabular_public_validation_for_bulk_modules(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run_dir = root / "validations" / "slurm_tabular_airway_public"
+    (run_dir / "results" / "tables").mkdir(parents=True)
+    (run_dir / "results" / "figures").mkdir(parents=True)
+    (run_dir / "objects").mkdir(parents=True)
+    (run_dir / "reports").mkdir(parents=True)
+    for idx in range(20):
+        (run_dir / "results" / "tables" / f"table_{idx}.tsv").write_text("a\n1\n", encoding="utf-8")
+    for idx in range(12):
+        (run_dir / "results" / "figures" / f"figure_{idx}.png").write_text("png", encoding="utf-8")
+    for idx in range(4):
+        (run_dir / "objects" / f"object_{idx}.json").write_text("object", encoding="utf-8")
+    (run_dir / "reports" / "report.html").write_text("<html>report</html>", encoding="utf-8")
+    (run_dir / "reports" / "methods.md").write_text("methods", encoding="utf-8")
+    (run_dir / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "module": "tabular_public",
+                "modules_validated": ["clinical_assoc", "publicdb", "wgcna", "single_gene"],
+                "analysis_level": "validated_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": False,
+                "validation_evidence_allowed": True,
+                "non_delivery_reason": "validation_evidence_only_not_customer_delivery",
+                "slurm_job_id": "12345",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = run_production_audit(root=root, output_dir=tmp_path / "audit")
+
+    evidence = Path(manifest["validation_evidence_matrix"]).read_text(encoding="utf-8")
+    row = next(line for line in evidence.splitlines() if line.startswith("slurm_tabular_public\t"))
+    assert "\tready\t" in row
+    maturity = Path(manifest["module_maturity_table"]).read_text(encoding="utf-8")
+    for module in ("clinical_assoc", "publicdb", "wgcna", "single_gene"):
+        module_row = next(line for line in maturity.splitlines() if line.startswith(f"{module}\t"))
+        assert "\t3_public_validated\t" in module_row
+        assert "\tvalidated_backend\t" in module_row
+
+
 def test_production_audit_validation_index_detects_stale_underlying_manifest(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
     run = root / "validations" / "scrna_public"
@@ -619,102 +771,15 @@ def test_production_audit_final_acceptance_requires_prepared_job_delivery_mirror
 
 def test_production_audit_final_acceptance_accepts_prepared_job_delivery_mirror(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
-    job_dir = root / "jobs" / "JOB001"
-    run_dir = job_dir / "runs" / "JOB001"
-    (job_dir / "deliverables").mkdir(parents=True)
-    (job_dir / "reproducible_code").mkdir(parents=True)
-    (run_dir / "results" / "figures" / "rnaseq").mkdir(parents=True)
-    (run_dir / "results" / "tables" / "rnaseq").mkdir(parents=True)
-    (run_dir / "objects" / "rnaseq").mkdir(parents=True)
-    (run_dir / "reports").mkdir(parents=True)
-    (run_dir / "reproducible_code").mkdir(parents=True)
-    figure_path = run_dir / "results" / "figures" / "rnaseq" / "pca.png"
-    table_path = run_dir / "results" / "tables" / "rnaseq" / "sample_qc.tsv"
-    object_path = run_dir / "objects" / "rnaseq" / "rnaseq_mvp_object.rds"
-    report_path = run_dir / "reports" / "report.html"
-    methods_path = run_dir / "reports" / "methods.md"
-    rerun_path = run_dir / "reproducible_code" / "rerun.sh"
-    for path, text in {
-        figure_path: "png",
-        table_path: "sample_id\tqc\nS1\tok\n",
-        object_path: "object",
-        report_path: "<html>report</html>",
-        methods_path: "methods",
-        rerun_path: "#!/usr/bin/env bash\n",
-    }.items():
-        path.write_text(text, encoding="utf-8")
-    (job_dir / "job_manifest.json").write_text('{"job_id": "JOB001"}', encoding="utf-8")
-    run_manifest = {
-        "status": "ready",
-        "modules": [
-            {
-                "module": "rnaseq",
-                "status": "complete_python_bulk_backend",
-                "analysis_level": "demo_result",
-                "is_demo": True,
-                "is_stub": False,
-                "delivery_allowed": False,
-                "validation_evidence_allowed": False,
-                "non_delivery_reason": "demo_result_not_customer_delivery",
-                "artifacts": {
-                    "figures": {"pca": str(figure_path)},
-                    "tables": {"sample_qc": str(table_path)},
-                    "objects": {"mvp_object": str(object_path)},
-                },
-            }
-        ],
-        "production_approval": {},
-    }
-    (run_dir / "run_manifest.json").write_text(json.dumps(run_manifest), encoding="utf-8")
-    required = {
-        job_dir / "deliverables" / "latest_run_manifest.json": json.dumps(run_manifest),
-        job_dir / "deliverables" / "latest_report.html": "<html>report</html>",
-        job_dir / "deliverables" / "latest_methods.md": "methods",
-        job_dir
-        / "deliverables"
-        / "latest_delivery_index.tsv": "\n".join(
-            [
-                "category\tpath\tsize_bytes",
-                f"figure\t{figure_path}\t{figure_path.stat().st_size}",
-                f"table\t{table_path}\t{table_path.stat().st_size}",
-                f"object\t{object_path}\t{object_path.stat().st_size}",
-                f"report\t{report_path}\t{report_path.stat().st_size}",
-                f"report\t{methods_path}\t{methods_path.stat().st_size}",
-                f"reproducible_code\t{rerun_path}\t{rerun_path.stat().st_size}",
-            ]
-        )
-        + "\n",
-        job_dir / "reproducible_code" / "rerun.sh": rerun_path.read_text(encoding="utf-8"),
-        job_dir / "reproducible_code" / "software_versions.tsv": "name\tversion\nultimate\ttest\n",
-        job_dir / "reproducible_code" / "latest_repro_manifest.json": '{"run_dir": "test"}',
-        run_dir / "reproducible_code" / "repro_manifest.json": '{"run_dir": "test"}',
-    }
-    for path, text in required.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    (job_dir / "deliverables" / "latest_run_pointer.json").write_text(
-        json.dumps(
-            {
-                "latest_run_dir": str(run_dir),
-                "run_manifest": str(run_dir / "run_manifest.json"),
-                "copied_artifacts": {
-                    "run_manifest": str(job_dir / "deliverables" / "latest_run_manifest.json"),
-                    "report_html": str(job_dir / "deliverables" / "latest_report.html"),
-                    "methods_md": str(job_dir / "deliverables" / "latest_methods.md"),
-                    "delivery_index": str(job_dir / "deliverables" / "latest_delivery_index.tsv"),
-                },
-                "policy": "job-level files are small latest-run mirrors; large result objects remain referenced from the run directory",
-            }
-        ),
-        encoding="utf-8",
-    )
+    _write_scoped_prepared_job(root, "JOB001")
+    _write_scoped_prepared_job(root, "JOB002")
 
     manifest = run_production_audit(root=root, output_dir=tmp_path / "audit")
 
     final = Path(manifest["final_acceptance_checklist"]).read_text(encoding="utf-8")
     row = next(line for line in final.splitlines() if line.startswith("prepared_job_delivery_mirror_ready\t"))
     assert "\tpass\t" in row
-    assert "checked_jobs=1 ready_jobs=1" in row
+    assert "checked_jobs=2 ready_jobs=2 scoped_ready_jobs=2" in row
 
 
 def test_production_audit_requires_module_report_job_mirrors_when_declared(tmp_path: Path) -> None:
