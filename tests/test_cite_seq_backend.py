@@ -87,7 +87,7 @@ def test_cite_seq_backend_generates_mvp_outputs(tmp_path: Path) -> None:
     assert cite["module"] == "cite_seq"
     assert cite["status"] == "complete_cite_seq_clr_backend"
     assert cite["backend_id"] == "cite_seq.default.clr_mvp"
-    assert cite["backend_status"] == "fully_automatic_mvp"
+    assert cite["backend_status"] == "fully_automatic_validated_entrypoint"
     assert cite["analysis_level"] == "smoke_backend"
     assert cite["delivery_allowed"] is False
     for key in ("adt_qc", "antibody_panel", "adt_normalized_matrix", "adt_marker_summary", "rna_protein_consistency"):

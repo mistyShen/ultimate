@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import h5py
 import matplotlib
 
 matplotlib.use("Agg")
@@ -165,7 +164,7 @@ def run_cite_seq_backend(*, config: dict[str, Any], output_dir: Path, samples: p
         "backend_slurm_job_id": backend_plan["backend_slurm_job_id"],
         "formal_backend": {
             "python_entrypoint": "ultimate.cite_seq_backend.run_cite_seq_backend",
-            "status": "fully_automatic_mvp" if not status.startswith("partial") else "partial_inputs_missing",
+            "status": "fully_automatic_validated_entrypoint" if not status.startswith("partial") else "partial_inputs_missing",
         },
         "skip_reasons": missing_inputs,
     }
@@ -363,7 +362,7 @@ def _base_fields(analysis_fields: dict[str, Any], input_artifact: str, source_da
         "input_modality": "rna_adt_matrix",
         "analysis_level": analysis_fields.get("analysis_level"),
         "result_scope": "cite_seq_clr_mvp",
-        "method_status": "fully_automatic_mvp",
+        "method_status": "fully_automatic_validated_entrypoint",
         "delivery_allowed": analysis_fields.get("delivery_allowed"),
     }
 
@@ -523,15 +522,36 @@ def _write_cite_object(*, objects_dir: Path, data: dict[str, Any], max_cells: in
         md.MuData({"rna": rna, "adt": adt}).write_h5mu(object_path)
         status = "h5mu_written"
     except Exception as exc:
-        with h5py.File(object_path, "w") as handle:
-            handle.attrs["object_status"] = "h5mu_like_hdf5_fallback"
-            handle.attrs["fallback_reason"] = f"{type(exc).__name__}:{exc}"
-            handle.create_dataset("obs/cell_id", data=np.array(cells, dtype="S")[selected])
-            handle.create_dataset("rna/X", data=np.asarray(data["rna"], dtype=float)[selected], compression="gzip")
-            handle.create_dataset("adt/X", data=np.asarray(data["adt"], dtype=float)[selected], compression="gzip")
-            handle.create_dataset("rna/var/feature_id", data=np.array(data["rna_features"], dtype="S"))
-            handle.create_dataset("adt/var/antibody_id", data=np.array(data["adt_features"], dtype="S"))
-        status = "h5mu_like_hdf5_fallback"
+        first_error = f"{type(exc).__name__}:{exc}"
+        try:
+            import h5py
+
+            with h5py.File(object_path, "w") as handle:
+                handle.attrs["object_status"] = "h5mu_like_hdf5_fallback"
+                handle.attrs["fallback_reason"] = first_error
+                handle.create_dataset("obs/cell_id", data=np.array(cells, dtype="S")[selected])
+                handle.create_dataset("rna/X", data=np.asarray(data["rna"], dtype=float)[selected], compression="gzip")
+                handle.create_dataset("adt/X", data=np.asarray(data["adt"], dtype=float)[selected], compression="gzip")
+                handle.create_dataset("rna/var/feature_id", data=np.array(data["rna_features"], dtype="S"))
+                handle.create_dataset("adt/var/antibody_id", data=np.array(data["adt_features"], dtype="S"))
+            status = "h5mu_like_hdf5_fallback"
+        except Exception as fallback_exc:  # pragma: no cover - only when optional HDF5 stack is absent
+            object_path.write_text(
+                json.dumps(
+                    {
+                        "object_status": "json_fallback_not_h5mu",
+                        "primary_reason": first_error,
+                        "fallback_reason": f"{type(fallback_exc).__name__}:{fallback_exc}",
+                        "n_cells": int(len(cells)),
+                        "n_rna_features": int(len(data["rna_features"])),
+                        "n_adt_features": int(len(data["adt_features"])),
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            status = "json_fallback_not_h5mu"
     manifest_path = objects_dir / "cite_mvp_object_manifest.json"
     manifest_path.write_text(json.dumps({"object": str(object_path), "status": status, "max_cells": int(max_cells)}, indent=2, ensure_ascii=False), encoding="utf-8")
     return {"mvp_object": str(object_path), "object_manifest": str(manifest_path)}

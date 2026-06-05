@@ -1,32 +1,34 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=ult_cite_backend
+#SBATCH --job-name=ult_multiome_backend
 #SBATCH --output=/shared/shen/2026/ultimate/logs/%x_%j.out
 #SBATCH --error=/shared/shen/2026/ultimate/logs/%x_%j.err
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --time=04:00:00
 
 set -euo pipefail
 
 PROJECT_ROOT="${ULTIMATE_ROOT:-/shared/shen/2026/ultimate}"
 CORE_ENV="${ULTIMATE_CORE_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-core}"
-SCRNA_ENV="${ULTIMATE_SCRNA_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-scrna}"
-SCRNA_FALLBACK_ENV="${ULTIMATE_SCRNA_FALLBACK_ENV:-/shared/shen/2026/singlecell_workbench/.conda/envs/scw-py311}"
+MULTIOME_ENV="${ULTIMATE_MULTIOME_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-scatac-multiome}"
+SCRNA_FALLBACK_ENV="${ULTIMATE_SCRNA_FALLBACK_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-scrna}"
 CONDA_SH="${CONDA_SH:-/share/home/nshen/miniconda3/etc/profile.d/conda.sh}"
-INPUT_H5="${ULTIMATE_CITE_SEQ_INPUT:-$PROJECT_ROOT/public_data/cite_seq/pbmc_10k_protein_v3_filtered_feature_bc_matrix.h5}"
-OUT_DIR="${ULTIMATE_CITE_SEQ_OUT:-$PROJECT_ROOT/validations/slurm_cite_seq_10x_pbmc_unified}"
+INPUT_H5="${ULTIMATE_MULTIOME_INPUT:-$PROJECT_ROOT/public_data/multiome/10k_PBMC_Multiome_nextgem_Chromium_Controller_filtered_feature_bc_matrix.h5}"
+OUT_DIR="${ULTIMATE_MULTIOME_OUT:-$PROJECT_ROOT/validations/slurm_multiome_10x_pbmc}"
 
 mkdir -p "$PROJECT_ROOT/logs" "$OUT_DIR/config" "$OUT_DIR/reports"
 source "$CONDA_SH"
 
 select_python() {
-  for candidate in "$SCRNA_ENV/bin/python" "$SCRNA_FALLBACK_ENV/bin/python" "$CORE_ENV/bin/python"; do
+  for candidate in "$MULTIOME_ENV/bin/python" "$SCRNA_FALLBACK_ENV/bin/python" "$CORE_ENV/bin/python"; do
     if [[ -x "$candidate" ]] && "$candidate" - <<'PY' >/dev/null 2>&1
 import click
 import jinja2
 import yaml
-import scanpy
 import h5py
+import scipy
+import anndata
+import mudata
 PY
     then
       echo "$candidate"
@@ -53,7 +55,7 @@ out.mkdir(parents=True, exist_ok=True)
 (out / "reports").mkdir(exist_ok=True)
 manifest = {
     "generated_at": datetime.now(timezone.utc).isoformat(),
-    "module": "cite_seq",
+    "module": "multiome",
     "output_dir": str(out),
     "status": status,
     "analysis_level": "smoke_backend",
@@ -62,7 +64,7 @@ manifest = {
     "delivery_allowed": False,
     "validation_evidence_allowed": False,
     "non_delivery_reason": f"validation_not_completed:{reason}",
-    "backend_id": "cite_seq.default.clr_mvp",
+    "backend_id": "multiome.default.muon_mvp",
     "backend_status": "fully_automatic_validated_entrypoint",
     "backend_skip_reason": reason,
     "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
@@ -79,7 +81,7 @@ manifest = {
 }
 (out / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 (out / "reports" / "methods.md").write_text(
-    "# CITE-seq unified backend validation skipped\n\n"
+    "# Multiome unified backend validation skipped\n\n"
     "analysis_level: `smoke_backend`\n\n"
     "delivery_allowed: `false`\n\n"
     "validation_evidence_allowed: `false`\n\n"
@@ -87,7 +89,7 @@ manifest = {
     encoding="utf-8",
 )
 (out / "reports" / "report.html").write_text(
-    "<html><body><h1>CITE-seq unified backend validation skipped</h1>"
+    "<html><body><h1>Multiome unified backend validation skipped</h1>"
     "<p>analysis_level: smoke_backend</p>"
     "<p>delivery_allowed: false</p>"
     f"<p>{reason}</p></body></html>",
@@ -103,12 +105,12 @@ if [[ ! -s "$INPUT_H5" ]]; then
 fi
 
 if [[ ! -s "$INPUT_H5" ]]; then
-  write_skip_manifest "partial:data_required" "public_data/cite_seq lacks 10x CITE-seq feature-barcode H5 after download attempt"
+  write_skip_manifest "partial:data_required" "public_data/multiome lacks 10x Multiome filtered feature-barcode H5 after download attempt"
   exit 0
 fi
 
 if ! PYTHON_BIN="$(select_python)"; then
-  write_skip_manifest "partial:dependency_required" "No Python environment with scanpy, h5py, click, jinja2, and yaml was found"
+  write_skip_manifest "partial:dependency_required" "No Python environment with h5py, scipy, anndata, mudata, click, jinja2, and yaml was found"
   exit 0
 fi
 
@@ -116,7 +118,7 @@ export PYTHONPATH="$PROJECT_ROOT/src"
 
 cat > "$OUT_DIR/config/project.yaml" <<YAML
 project:
-  name: slurm_cite_seq_10x_pbmc_unified
+  name: slurm_multiome_10x_pbmc
   organism: human
   output_dir: $OUT_DIR
   server_root: $PROJECT_ROOT
@@ -124,7 +126,7 @@ project:
   overwrite: true
 samples:
   items:
-    - sample_id: pbmc_cite_seq
+    - sample_id: pbmc_multiome
       condition: public_validation
       input_path: $INPUT_H5
 design:
@@ -132,18 +134,19 @@ design:
   control: public_validation
   case: public_validation
 modules:
-  cite_seq:
+  multiome:
     enabled: true
-    preset: standard
+    preset: multiome
     input_h5: $INPUT_H5
     analysis_level: validated_backend
     public_dataset: true
-    max_cells_object: ${ULTIMATE_CITE_SEQ_MAX_CELLS_OBJECT:-3000}
+    max_cells_object: ${ULTIMATE_MULTIOME_MAX_CELLS_OBJECT:-3000}
+    max_features_object: ${ULTIMATE_MULTIOME_MAX_FEATURES_OBJECT:-2500}
     raw:
       enabled: false
-      input_type: 10x_h5
+      input_type: 10x_arc_h5
 report:
-  title: 10x PBMC CITE-seq unified backend validation
+  title: 10x PBMC Multiome unified backend validation
   style: soft_color
 YAML
 

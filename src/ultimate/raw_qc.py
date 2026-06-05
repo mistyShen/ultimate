@@ -222,7 +222,15 @@ def run_raw_qc(*, module_name: str, config: dict[str, Any], output_dir: Path, sa
     qc_table_path = tables_dir / "raw_qc_summary.tsv"
     qc_table.to_csv(qc_table_path, sep="\t", index=False)
 
-    output_matrix, matrix_source = _write_standard_matrix(module_name, samples, raw_cfg, input_rows, input_type, objects_dir)
+    output_matrix, matrix_source = _write_standard_matrix(
+        module_name,
+        samples,
+        raw_cfg,
+        input_rows,
+        input_type,
+        objects_dir,
+        enabled=enabled,
+    )
     output_object = _write_standard_object(module_name, samples, raw_cfg, objects_dir, output_matrix)
     command_plan = _write_command_plan(module_name, input_rows, raw_cfg, tables_dir)
     figure_paths = _write_raw_qc_figures(module_name, qc_table, figures_dir)
@@ -319,8 +327,23 @@ def _write_standard_matrix(
     input_rows: pd.DataFrame,
     input_type: str,
     objects_dir: Path,
+    *,
+    enabled: bool = True,
 ) -> tuple[Path, str]:
     configured = raw_cfg.get("output_matrix")
+    if not enabled:
+        path = Path(configured) if configured else objects_dir / f"{module_name}_standard_matrix.tsv"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(
+            [
+                {
+                    "module": module_name,
+                    "status": "raw_qc_disabled",
+                    "note": "raw.enabled=false; no raw-stage standard matrix was generated.",
+                }
+            ]
+        ).to_csv(path, sep="\t", index=False)
+        return path, "raw_disabled_no_standard_matrix_generated"
     if configured:
         configured_path = Path(configured)
         if configured_path.exists():
