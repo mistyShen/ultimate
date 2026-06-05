@@ -349,7 +349,7 @@ def test_production_capability_requires_guarded_validation_evidence(tmp_path: Pa
 
 def test_production_capability_rejects_contradictory_demo_validation_manifest(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
-    run_dir = root / "validations" / "slurm_vdj_10x_pbmc"
+    run_dir = root / "validations" / "slurm_vdj_10x_pbmc_unified"
     run_dir.mkdir(parents=True)
     (run_dir / "run_manifest.json").write_text(
         json.dumps(
@@ -565,7 +565,7 @@ def test_manifest_artifact_status_checks_declared_module_reports(tmp_path: Path)
 
 def test_production_audit_rejects_validation_with_unrelated_artifact_files(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
-    run_dir = root / "validations" / "slurm_vdj_10x_pbmc"
+    run_dir = root / "validations" / "slurm_vdj_10x_pbmc_unified"
     (run_dir / "results" / "tables").mkdir(parents=True)
     (run_dir / "results" / "figures").mkdir(parents=True)
     (run_dir / "objects").mkdir(parents=True)
@@ -660,7 +660,7 @@ def test_production_audit_accepts_bulk_demo_as_smoke_not_validation_evidence(tmp
 
 def test_production_audit_rejects_demo_slurm_validation_even_with_artifacts(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
-    run_dir = root / "validations" / "slurm_vdj_10x_pbmc"
+    run_dir = root / "validations" / "slurm_vdj_10x_pbmc_unified"
     (run_dir / "results" / "tables").mkdir(parents=True)
     (run_dir / "results" / "figures").mkdir(parents=True)
     (run_dir / "objects").mkdir(parents=True)

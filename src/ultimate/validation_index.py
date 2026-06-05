@@ -39,6 +39,9 @@ INDEX_FIELDS = (
     "module_names",
     "module_count",
     "ready_module_count",
+    "backend_ids",
+    "backend_statuses",
+    "backend_slurm_job_ids",
     "has_report_html",
     "has_methods_md",
     "has_slurm_evidence",
@@ -200,6 +203,9 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
         "module_names": ",".join(module_names),
         "module_count": _stringify(((manifest.get("summary") or {}).get("module_count") if isinstance(manifest.get("summary"), dict) else None) or len(modules)),
         "ready_module_count": _stringify(ready_module_count),
+        "backend_ids": ",".join(_backend_values(manifest, modules, "backend_id")),
+        "backend_statuses": ",".join(_backend_values(manifest, modules, "backend_status")),
+        "backend_slurm_job_ids": ",".join(_backend_values(manifest, modules, "backend_slurm_job_id")),
         "has_report_html": _stringify_bool(reports.exists() and reports.stat().st_size > 0),
         "has_methods_md": _stringify_bool(methods.exists() and methods.stat().st_size > 0),
         "has_slurm_evidence": _stringify_bool(bool(slurm_job_id)),
@@ -220,6 +226,32 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
         "guard_invalid_fields": ",".join(guard_invalid),
     }
     return row
+
+
+def _backend_values(manifest: dict[str, Any], modules: list[dict[str, Any]], key: str) -> list[str]:
+    values: list[str] = []
+    direct = manifest.get(key)
+    if direct:
+        values.append(str(direct))
+    for module in modules:
+        if not isinstance(module, dict):
+            continue
+        value = module.get(key)
+        if value:
+            values.append(str(value))
+            continue
+        backend = module.get("backend") if isinstance(module.get("backend"), dict) else {}
+        if key == "backend_id":
+            value = backend.get("selected_backend_id")
+        elif key == "backend_status":
+            value = backend.get("selected_backend_status")
+        elif key == "backend_slurm_job_id":
+            value = backend.get("backend_slurm_job_id")
+        else:
+            value = None
+        if value:
+            values.append(str(value))
+    return sorted(dict.fromkeys(values))
 
 
 def _derived_rows_from_manifest(*, row: dict[str, str], path: Path) -> list[dict[str, str]]:
@@ -352,10 +384,12 @@ def _first_manifest(root: Path, filename: str) -> Path | None:
 
 def _artifact_status(manifest: dict[str, Any], run_dir: Path) -> tuple[str, list[str]]:
     gaps: list[str] = []
+    checked_any = False
     for key in ("figures", "tables"):
         values = manifest.get(key)
         if not isinstance(values, list):
             continue
+        checked_any = True
         for value in values:
             artifact_path = _resolve_artifact_path(run_dir, value)
             if not artifact_path.exists():
@@ -364,15 +398,33 @@ def _artifact_status(manifest: dict[str, Any], run_dir: Path) -> tuple[str, list
                 gaps.append(f"empty_{key}:{value}")
     objects = manifest.get("objects")
     if isinstance(objects, dict):
+        checked_any = True
         for name, value in objects.items():
             artifact_path = _resolve_artifact_path(run_dir, value)
             if not artifact_path.exists():
                 gaps.append(f"missing_object:{name}")
             elif artifact_path.is_file() and artifact_path.stat().st_size == 0:
                 gaps.append(f"empty_object:{name}")
+    modules = manifest.get("modules") if isinstance(manifest.get("modules"), list) else []
+    for module in modules:
+        if not isinstance(module, dict):
+            continue
+        module_name = str(module.get("module") or module.get("module_name") or "unknown")
+        artifacts = module.get("artifacts") if isinstance(module.get("artifacts"), dict) else {}
+        for category in ("tables", "figures", "objects"):
+            values = artifacts.get(category)
+            if not isinstance(values, dict):
+                continue
+            checked_any = True
+            for name, value in values.items():
+                artifact_path = _resolve_artifact_path(run_dir, value)
+                if not artifact_path.exists():
+                    gaps.append(f"missing_module_{category}:{module_name}:{name}")
+                elif artifact_path.is_file() and artifact_path.stat().st_size == 0:
+                    gaps.append(f"empty_module_{category}:{module_name}:{name}")
     if gaps:
         return "missing_or_empty_artifacts", gaps
-    if any(isinstance(manifest.get(key), expected) for key, expected in (("figures", list), ("tables", list), ("objects", dict))):
+    if checked_any:
         return "ready", gaps
     return "not_checked", gaps
 
