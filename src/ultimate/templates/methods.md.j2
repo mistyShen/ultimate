@@ -57,9 +57,14 @@
 - 已知限制：`{{ (module.get("limitations") or []) | join("; ") }}`
 - Handoff/可选后端：`{{ ((module.get("handoff") or {}).get("handoff_tools") or []) | join(", ") or "none" }}`
 {% set tool_summary = (module.get("handoff") or {}).get("tool_decision_summary") or {} %}
+{% set v2_tool_summary = (module.get("handoff") or {}).get("v2_disposition_summary") or {} %}
 - 默认后端：`{{ (tool_summary.get("keep_default") or []) | join(", ") or "none" }}`
 - 可选后端：`{{ (tool_summary.get("keep_optional") or []) | join(", ") or "none" }}`
 - 授权路径检测：`{{ (tool_summary.get("licensed_path_only") or []) | join(", ") or "none" }}`
+- v2 default_backend：`{{ (v2_tool_summary.get("default_backend") or []) | join(", ") or "none" }}`
+- v2 optional_backend：`{{ (v2_tool_summary.get("optional_backend") or []) | join(", ") or "none" }}`
+- v2 handoff_adapter：`{{ (v2_tool_summary.get("handoff_adapter") or []) | join(", ") or "none" }}`
+- v2 licensed_path_detection：`{{ (v2_tool_summary.get("licensed_path_detection") or []) | join(", ") or "none" }}`
 - MVP 表格：`{{ (mvp_spec.get("tables") or []) | join(", ") or "not_recorded" }}`
 - MVP 图表：`{{ (mvp_spec.get("figures") or []) | join(", ") or "not_recorded" }}`
 - MVP 对象/交接文件：`{{ mvp_spec.get("object", "not_recorded") }}`

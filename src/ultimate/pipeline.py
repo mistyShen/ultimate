@@ -90,6 +90,7 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
         run_status=run_summary["status"],
     )
     run_level_fields = _aggregate_run_level_fields(module_manifests, delivery_gate)
+    slurm_context = _slurm_context()
     manifest = {
         "run_id": run_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -100,7 +101,9 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
         "output_dir": str(out_dir),
         "config_snapshot": str(config_snapshot),
         "reproducible_command": f"ultimate run --config {config.get('_config_path', '<config.yaml>')}",
-        "slurm": _slurm_context(),
+        "slurm_job_id": slurm_context.get("slurm_job_id", ""),
+        "slurm_job_name": slurm_context.get("slurm_job_name", ""),
+        "slurm": slurm_context,
         "python": {
             "version": sys.version.split()[0],
             "executable": sys.executable,

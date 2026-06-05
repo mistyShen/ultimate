@@ -20,6 +20,15 @@ DECISIONS = (
     "rejected_cleaned",
 )
 
+DECISION_TO_V2_DISPOSITION = {
+    "keep_default": "default_backend",
+    "keep_optional": "optional_backend",
+    "adapter_only": "handoff_adapter",
+    "reference_only": "reference_only",
+    "licensed_path_only": "licensed_path_detection",
+    "rejected_cleaned": "rejected_cleaned",
+}
+
 SIZE_GB = {
     "none": 0.0,
     "tiny": 0.1,
@@ -555,6 +564,7 @@ def _audit_row(tool: ToolSpec, checks: dict[str, dict[str, bool]]) -> dict[str, 
         "check_key": check_key,
         "check_passed": installed,
         "status": status,
+        "v2_disposition": DECISION_TO_V2_DISPOSITION.get(tool.decision, tool.decision),
         "estimated_gb": SIZE_GB.get(tool.size_class, 1.0),
         "final_disposition_cn": _disposition_cn(tool.decision),
     }

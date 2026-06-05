@@ -39,6 +39,14 @@ def _write_scoped_prepared_job(root: Path, job_id: str) -> None:
         path.write_text(text, encoding="utf-8")
     run_manifest = {
         "status": "ready",
+        "analysis_level": "production_backend",
+        "is_demo": False,
+        "is_stub": False,
+        "delivery_allowed": True,
+        "validation_evidence_allowed": True,
+        "non_delivery_reason": "",
+        "slurm_job_id": f"pytest-{job_id}",
+        "slurm": {"slurm_job_id": f"pytest-{job_id}", "slurm_job_name": "pytest_rehearsal"},
         "modules": [
             {
                 "module": "rnaseq",
@@ -95,6 +103,7 @@ def _write_scoped_prepared_job(root: Path, job_id: str) -> None:
         job_dir / "deliverables" / "latest_delivery_index.tsv": delivery_index,
         job_dir / "reproducible_code" / "rerun.sh": rerun_path.read_text(encoding="utf-8"),
         job_dir / "reproducible_code" / "software_versions.tsv": "name\tversion\nultimate\ttest\n",
+        job_dir / "reproducible_code" / "input_checksums.tsv": "path\tsha256\npytest\t0\n",
         job_dir / "reproducible_code" / "latest_repro_manifest.json": '{"run_dir": "test"}',
         run_dir / "reproducible_code" / "repro_manifest.json": '{"run_dir": "test"}',
     }
@@ -704,6 +713,49 @@ def test_production_audit_accepts_airway_tabular_public_validation_for_bulk_modu
         assert "\tvalidated_backend\t" in module_row
 
 
+def test_production_audit_accepts_arrmdata_methylation_public_validation(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run_dir = root / "validations" / "slurm_methylation_arrmdata_public"
+    (run_dir / "results" / "tables").mkdir(parents=True)
+    (run_dir / "results" / "figures").mkdir(parents=True)
+    (run_dir / "objects").mkdir(parents=True)
+    (run_dir / "reports").mkdir(parents=True)
+    for idx in range(8):
+        (run_dir / "results" / "tables" / f"table_{idx}.tsv").write_text("a\n1\n", encoding="utf-8")
+    for idx in range(4):
+        (run_dir / "results" / "figures" / f"figure_{idx}.png").write_text("png", encoding="utf-8")
+    (run_dir / "objects" / "methylation_mvp_object.rds").write_text("object", encoding="utf-8")
+    (run_dir / "reports" / "report.html").write_text("<html>report</html>", encoding="utf-8")
+    (run_dir / "reports" / "methods.md").write_text("methods", encoding="utf-8")
+    (run_dir / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "module": "methylation",
+                "dataset": "ARRmData",
+                "analysis_level": "validated_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": False,
+                "validation_evidence_allowed": True,
+                "non_delivery_reason": "validation_evidence_only_not_customer_delivery",
+                "slurm_job_id": "12345",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = run_production_audit(root=root, output_dir=tmp_path / "audit")
+
+    evidence = Path(manifest["validation_evidence_matrix"]).read_text(encoding="utf-8")
+    row = next(line for line in evidence.splitlines() if line.startswith("slurm_methylation_public\t"))
+    assert "\tready\t" in row
+    maturity = Path(manifest["module_maturity_table"]).read_text(encoding="utf-8")
+    module_row = next(line for line in maturity.splitlines() if line.startswith("methylation\t"))
+    assert "\t3_public_validated\t" in module_row
+    assert "\tvalidated_backend\t" in module_row
+
+
 def test_production_audit_validation_index_detects_stale_underlying_manifest(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
     run = root / "validations" / "scrna_public"
@@ -767,6 +819,19 @@ def test_production_audit_final_acceptance_requires_prepared_job_delivery_mirror
     assert "\tpartial\t" in row
     assert "checked_jobs=1" in row
     assert "latest_run_pointer" in row
+
+
+def test_production_audit_requires_prepared_job_input_checksums_mirror(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    _write_scoped_prepared_job(root, "JOB001")
+    (root / "jobs" / "JOB001" / "reproducible_code" / "input_checksums.tsv").unlink()
+
+    manifest = run_production_audit(root=root, output_dir=tmp_path / "audit")
+
+    final = Path(manifest["final_acceptance_checklist"]).read_text(encoding="utf-8")
+    row = next(line for line in final.splitlines() if line.startswith("prepared_job_delivery_mirror_ready\t"))
+    assert "\tpartial\t" in row
+    assert "input_checksums" in row
 
 
 def test_production_audit_final_acceptance_accepts_prepared_job_delivery_mirror(tmp_path: Path) -> None:

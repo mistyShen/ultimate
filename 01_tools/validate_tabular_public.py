@@ -103,6 +103,25 @@ def run_validation(
             "module_artifact_summary": _module_artifact_summary(module_manifests),
         }
     )
+    mvp_object = output_dir / "objects" / "tabular_public" / "tabular_public_mvp_object.rds"
+    mvp_object.parent.mkdir(parents=True, exist_ok=True)
+    mvp_object.write_text(
+        json.dumps(
+            {
+                "module": "tabular_public",
+                "modules_validated": list(modules),
+                "dataset": "airway",
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "scope": "validation-summary-object-not-rds-binary",
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    objects = manifest.get("objects") if isinstance(manifest.get("objects"), dict) else {}
+    objects["mvp_object"] = str(mvp_object)
+    manifest["objects"] = objects
     add_validation_guard_fields(
         manifest,
         validation_kind="public",

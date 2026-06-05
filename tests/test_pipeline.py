@@ -537,6 +537,14 @@ def test_unified_run_accepts_valid_production_approval_for_real_input(tmp_path: 
 
     run_manifest = run_pipeline_from_config(config_path, production_approval_path=approval_path)
 
+    assert run_manifest["analysis_level"] == "production_backend"
+    assert run_manifest["is_demo"] is False
+    assert run_manifest["is_stub"] is False
+    assert run_manifest["delivery_allowed"] is True
+    assert run_manifest["validation_evidence_allowed"] is True
+    assert run_manifest["non_delivery_reason"] == ""
+    assert "slurm_job_id" in run_manifest
+    assert "slurm" in run_manifest
     assert run_manifest["production_approval"]["approved"] is True
     assert run_manifest["production_approval"]["approval_path"] == str(approval_path.resolve())
     assert run_manifest["production_approval"]["input_path"] == str(config_path.resolve())
@@ -576,12 +584,15 @@ def test_prepared_job_run_mirrors_latest_deliverables_to_job_root(tmp_path: Path
     assert (job_dir / "deliverables" / "module_reports" / "rnaseq" / "run_manifest.json").exists()
     assert (job_dir / "reproducible_code" / "rerun.sh").exists()
     assert (job_dir / "reproducible_code" / "software_versions.tsv").exists()
+    assert (job_dir / "reproducible_code" / "input_checksums.tsv").exists()
     assert (job_dir / "reproducible_code" / "latest_repro_manifest.json").exists()
     pointer = json.loads((job_dir / "deliverables" / "latest_run_pointer.json").read_text(encoding="utf-8"))
     mirrored_run_manifest = json.loads((job_dir / "deliverables" / "latest_run_manifest.json").read_text(encoding="utf-8"))
     final_run_manifest = json.loads((job_dir / "runs" / "DELIVERY001" / "run_manifest.json").read_text(encoding="utf-8"))
     mirrored_repro = json.loads((job_dir / "reproducible_code" / "latest_repro_manifest.json").read_text(encoding="utf-8"))
     run_repro = json.loads((job_dir / "runs" / "DELIVERY001" / "reproducible_code" / "repro_manifest.json").read_text(encoding="utf-8"))
+    mirrored_checksums = (job_dir / "reproducible_code" / "input_checksums.tsv").read_text(encoding="utf-8")
+    run_checksums = (job_dir / "runs" / "DELIVERY001" / "reproducible_code" / "input_checksums.tsv").read_text(encoding="utf-8")
     assert pointer["latest_run_dir"] == str(job_dir / "runs" / "DELIVERY001")
     assert pointer["policy"].startswith("job-level files are small")
     assert Path(pointer["copied_artifacts"]["delivery_index"]).exists()
@@ -590,6 +601,7 @@ def test_prepared_job_run_mirrors_latest_deliverables_to_job_root(tmp_path: Path
     assert Path(pointer["copied_artifacts"]["module_reports"]["rnaseq"]["run_manifest"]).exists()
     assert mirrored_run_manifest == final_run_manifest
     assert mirrored_repro == run_repro
+    assert mirrored_checksums == run_checksums
     assert "job_level_delivery" in run_repro
 
 
@@ -643,11 +655,21 @@ def test_prepared_production_job_with_approval_writes_delivery_mirrors(tmp_path:
     assert (job_dir / "deliverables" / "module_reports" / "rnaseq" / "methods.md").exists()
     assert (job_dir / "deliverables" / "module_reports" / "rnaseq" / "run_manifest.json").exists()
     assert (job_dir / "reproducible_code" / "rerun.sh").exists()
+    assert (job_dir / "reproducible_code" / "software_versions.tsv").exists()
+    assert (job_dir / "reproducible_code" / "input_checksums.tsv").exists()
     assert (job_dir / "reproducible_code" / "latest_repro_manifest.json").exists()
 
     mirrored_run_manifest = json.loads((job_dir / "deliverables" / "latest_run_manifest.json").read_text(encoding="utf-8"))
     final_run_manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert (job_dir / "reproducible_code" / "input_checksums.tsv").read_text(encoding="utf-8") == (
+        run_dir / "reproducible_code" / "input_checksums.tsv"
+    ).read_text(encoding="utf-8")
     assert mirrored_run_manifest == final_run_manifest
+    assert mirrored_run_manifest["analysis_level"] == "production_backend"
+    assert mirrored_run_manifest["delivery_allowed"] is True
+    assert mirrored_run_manifest["validation_evidence_allowed"] is True
+    assert "slurm_job_id" in mirrored_run_manifest
+    assert "slurm" in mirrored_run_manifest
     assert mirrored_run_manifest["delivery_gate"]["status"] == "ready"
     assert mirrored_run_manifest["delivery_gate"]["delivery_allowed"] is True
     assert mirrored_run_manifest["production_approval"]["approved"] is True

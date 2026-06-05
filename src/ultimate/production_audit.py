@@ -18,6 +18,7 @@ from ultimate.modules.common import MODULE_MVP_FIGURES, MODULE_MVP_OBJECTS, MODU
 from ultimate.plot_style import available_styles
 from ultimate.raw_qc import RAW_CONTRACTS
 from ultimate.tool_registry import TOOL_REGISTRY
+from ultimate.tool_registry import DECISION_TO_V2_DISPOSITION
 
 
 SINGLE_CELL_MODULES = {
@@ -52,6 +53,7 @@ VALIDATION_HINTS = {
     "hto_demux": ("slurm_hto_demux_seurat_public", "Seurat public HTO count demultiplex matrix validation"),
     "genotype_demux": ("slurm_genotype_demux_vireo_public", "Vireo/cellSNP public genotype demultiplex matrix validation"),
     "clinical_assoc": ("slurm_tabular_airway_public", "airway public clinical association table validation"),
+    "methylation": ("slurm_methylation_arrmdata_public", "ARRmData public methylation beta-matrix validation"),
     "publicdb": ("slurm_tabular_airway_public", "airway public database-style cached table validation"),
     "wgcna": ("slurm_tabular_airway_public", "airway public WGCNA-ready matrix QC and handoff validation"),
     "single_gene": ("slurm_tabular_airway_public", "airway public single-gene report validation"),
@@ -116,6 +118,15 @@ VALIDATION_RUN_REQUIREMENTS = {
         "min_figures": 12,
         "min_objects": 4,
         "min_reports": 8,
+    },
+    "slurm_methylation_public": {
+        "label_cn": "ARRmData 甲基化 beta matrix 公开 Slurm 验证",
+        "run_dir": "validations/slurm_methylation_arrmdata_public",
+        "module": "methylation",
+        "min_tables": 8,
+        "min_figures": 4,
+        "min_objects": 1,
+        "min_reports": 2,
     },
     "scrna_mvp_h5ad": {
         "label_cn": "scRNA MVP h5ad 真实公开数据验证",
@@ -279,6 +290,14 @@ VALIDATION_RUN_COMMANDS = {
         "recommended_command": "hpc-sbatch {root}/slurm/bulk_validation_suite.sbatch",
         "prerequisite_command": "",
         "module_or_scope": "clinical_assoc/publicdb/wgcna/single_gene",
+        "compute_policy": "slurm_required_for_public_validation",
+    },
+    "slurm_methylation_public": {
+        "slurm_script": "slurm/bulk_validation_suite.sbatch",
+        "recommended_entrypoint": "hpc-sbatch",
+        "recommended_command": "hpc-sbatch {root}/slurm/bulk_validation_suite.sbatch",
+        "prerequisite_command": "",
+        "module_or_scope": "methylation",
         "compute_policy": "slurm_required_for_public_validation",
     },
     "scrna_mvp_h5ad": {
@@ -1231,6 +1250,7 @@ def _tool_registry_snapshot_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for tool in TOOL_REGISTRY:
         row = asdict(tool)
+        row["v2_disposition"] = DECISION_TO_V2_DISPOSITION.get(tool.decision, tool.decision)
         row["triage_ready"] = bool(tool.decision and tool.reason_cn and tool.decision in {
             "keep_default",
             "keep_optional",
@@ -1245,16 +1265,20 @@ def _tool_registry_snapshot_rows() -> list[dict[str, Any]]:
 
 def _tool_registry_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     decision_counts: dict[str, int] = {}
+    disposition_counts: dict[str, int] = {}
     module_counts: dict[str, int] = {}
     for row in rows:
         decision = str(row.get("decision") or "missing")
+        disposition = str(row.get("v2_disposition") or DECISION_TO_V2_DISPOSITION.get(decision, decision))
         module = str(row.get("module") or "missing")
         decision_counts[decision] = decision_counts.get(decision, 0) + 1
+        disposition_counts[disposition] = disposition_counts.get(disposition, 0) + 1
         module_counts[module] = module_counts.get(module, 0) + 1
     return {
         "tool_count": len(rows),
         "triage_ready_count": sum(1 for row in rows if row.get("triage_ready") is True),
         "decision_counts": decision_counts,
+        "v2_disposition_counts": disposition_counts,
         "module_counts": module_counts,
     }
 
@@ -1266,8 +1290,13 @@ def _tool_registry_triage_status(rows: list[dict[str, Any]]) -> tuple[bool, str]
         if row.get("triage_ready") is not True
     ]
     decisions = sorted({str(row.get("decision") or "") for row in rows})
+    dispositions = sorted({str(row.get("v2_disposition") or DECISION_TO_V2_DISPOSITION.get(str(row.get("decision") or ""), "")) for row in rows})
     ready = len(rows) >= len(TOOL_REGISTRY) and not missing
-    note = f"registry_tool_count={len(rows)} expected={len(TOOL_REGISTRY)} decisions={','.join(decisions)}"
+    note = (
+        f"registry_tool_count={len(rows)} expected={len(TOOL_REGISTRY)} "
+        f"v2_dispositions={','.join(disposition for disposition in dispositions if disposition)} "
+        f"legacy_decisions={','.join(decisions)}"
+    )
     if missing:
         note += " missing_triage=" + ",".join(missing[:10])
     return ready, note
@@ -1520,6 +1549,7 @@ def _prepared_job_delivery_gaps(job_dir: Path) -> list[str]:
         "latest_delivery_index": job_dir / "deliverables" / "latest_delivery_index.tsv",
         "rerun_script": job_dir / "reproducible_code" / "rerun.sh",
         "software_versions": job_dir / "reproducible_code" / "software_versions.tsv",
+        "input_checksums": job_dir / "reproducible_code" / "input_checksums.tsv",
         "latest_repro_manifest": job_dir / "reproducible_code" / "latest_repro_manifest.json",
     }
     missing = [name for name, path in required.items() if not _nonempty(path)]
@@ -1548,6 +1578,17 @@ def _prepared_job_delivery_gaps(job_dir: Path) -> list[str]:
     if module_guard_status != "ready":
         missing.append(f"module_guard:{module_guard_note}")
     missing.extend(_delivery_gate_gaps(run_manifest_data))
+    slurm_id = str(
+        run_manifest_data.get("slurm_job_id")
+        or ((run_manifest_data.get("slurm") or {}).get("slurm_job_id") if isinstance(run_manifest_data.get("slurm"), dict) else "")
+        or ((run_manifest_data.get("slurm") or {}).get("job_id") if isinstance(run_manifest_data.get("slurm"), dict) else "")
+        or ""
+    )
+    if not slurm_id:
+        missing.append("slurm_job_id")
+    for field in ("analysis_level", "is_demo", "is_stub", "delivery_allowed", "validation_evidence_allowed", "non_delivery_reason"):
+        if field not in run_manifest_data:
+            missing.append(f"run_guard:{field}")
     run_repro_manifest = latest_run_dir / "reproducible_code" / "repro_manifest.json"
     if not _same_json_file(run_repro_manifest, required["latest_repro_manifest"]):
         missing.append("latest_repro_manifest_stale")

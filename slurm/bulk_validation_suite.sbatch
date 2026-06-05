@@ -14,6 +14,7 @@ CONDA_SH="${CONDA_SH:-/share/home/nshen/miniconda3/etc/profile.d/conda.sh}"
 RUN_ROOT="$PROJECT_ROOT/validations/bulk_demo_python"
 RNASEQ_PUBLIC_RUN="$PROJECT_ROOT/validations/slurm_rnaseq_airway_public"
 TABULAR_PUBLIC_RUN="$PROJECT_ROOT/validations/slurm_tabular_airway_public"
+METHYLATION_PUBLIC_RUN="$PROJECT_ROOT/validations/slurm_methylation_arrmdata_public"
 
 mkdir -p "$PROJECT_ROOT/logs" "$PROJECT_ROOT/validations"
 source "$CONDA_SH"
@@ -28,6 +29,10 @@ python "$PROJECT_ROOT/01_tools/validate_rnaseq_public.py" \
 python "$PROJECT_ROOT/01_tools/validate_tabular_public.py" \
   --output-dir "$TABULAR_PUBLIC_RUN" \
   --public-data-dir "$PROJECT_ROOT/public_data/rnaseq_airway"
+
+python "$PROJECT_ROOT/01_tools/validate_methylation_public.py" \
+  --output-dir "$METHYLATION_PUBLIC_RUN" \
+  --public-data-dir "$PROJECT_ROOT/public_data/methylation_arrmdata"
 
 ultimate init-project --type all --output-dir "$RUN_ROOT/project" --demo-data
 ultimate preflight --config "$RUN_ROOT/project/config/project.yaml"

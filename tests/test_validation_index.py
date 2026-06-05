@@ -177,6 +177,48 @@ def test_validation_index_adds_module_and_order_readiness_fields(tmp_path: Path)
     assert result["summary"]["delivery_gate_status_counts"]["not_recorded"] == 1
 
 
+def test_validation_index_reads_nested_slurm_job_id(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run = root / "validations" / "nested_slurm_public"
+    (run / "reports").mkdir(parents=True)
+    (run / "logs").mkdir(parents=True)
+    (run / "results" / "figures").mkdir(parents=True)
+    (run / "results" / "tables").mkdir(parents=True)
+    (run / "objects").mkdir(parents=True)
+    (run / "reports" / "report.html").write_text("<html></html>", encoding="utf-8")
+    (run / "reports" / "methods.md").write_text("methods", encoding="utf-8")
+    (run / "logs" / "run.log").write_text("ok", encoding="utf-8")
+    (run / "results" / "figures" / "plot.png").write_text("png", encoding="utf-8")
+    (run / "results" / "tables" / "table.tsv").write_text("a\n1\n", encoding="utf-8")
+    (run / "objects" / "object.h5ad").write_text("object", encoding="utf-8")
+    (run / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "module": "scrna",
+                "status": "ready",
+                "analysis_level": "validated_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": False,
+                "validation_evidence_allowed": True,
+                "non_delivery_reason": "validation_evidence_only_not_customer_delivery",
+                "slurm": {"slurm_job_id": "999"},
+                "figures": ["results/figures/plot.png"],
+                "tables": ["results/tables/table.tsv"],
+                "objects": {"h5ad": "objects/object.h5ad"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_validation_index(root=root, output_dir=tmp_path / "index")
+
+    rows = json.loads(Path(result["validation_index_json"]).read_text(encoding="utf-8"))
+    assert rows[0]["slurm_job_id"] == "999"
+    assert rows[0]["has_slurm_evidence"] == "true"
+    assert rows[0]["order_readiness_status"] == "ready_for_validation_evidence"
+
+
 def test_validation_index_indexes_delivery_gate_when_present(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
     run = root / "validations" / "unified_demo_run"

@@ -137,7 +137,8 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
     ]
     module_label = _module_label(manifest, module_names, run_dir)
     ready_module_count = _ready_module_count(manifest, modules)
-    slurm_job_id = str(manifest.get("slurm_job_id") or ((manifest.get("slurm") or {}).get("job_id") or ""))
+    slurm = manifest.get("slurm") if isinstance(manifest.get("slurm"), dict) else {}
+    slurm_job_id = str(manifest.get("slurm_job_id") or slurm.get("slurm_job_id") or slurm.get("job_id") or "")
     guard_status, guard_missing, guard_invalid = _guard_status(manifest)
     evidence_status = _evidence_status(manifest, guard_status)
     approval_status = _production_approval_status(manifest)
