@@ -10,4 +10,3 @@
 - sample tag / AbSeq / targeted panel 信息
 - genome/reference
 - 输出矩阵路径和 checksum
-

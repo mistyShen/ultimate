@@ -10,4 +10,3 @@
 - 大下载、比对、variant calling 必须通过 Slurm。
 - 参考基因组、panel BED、known sites 和 tumor-normal 配对表必须在运行前人工确认。
 - `sarek` 结果进入 `scdna` 或 `tumor_sc` 模块时，只能作为 genome-level evidence 或 handoff，不可和 scRNA 推断 CNV 混写。
-

@@ -11,4 +11,3 @@
 - genome/reference
 - 官方 pipeline 命令和版本
 - 输出矩阵路径和 checksum
-

@@ -364,6 +364,52 @@ def test_validation_index_indexes_delivery_gate_when_present(tmp_path: Path) -> 
     assert "delivery gate blocked: 1" in report
 
 
+def test_validation_index_adds_functional_state_derived_row_from_scrna_signature_validation(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run = root / "validations" / "slurm_scrna_nsclc_lambrechts"
+    (run / "reports").mkdir(parents=True)
+    (run / "logs").mkdir(parents=True)
+    (run / "results" / "figures").mkdir(parents=True)
+    (run / "results" / "tables").mkdir(parents=True)
+    (run / "objects").mkdir(parents=True)
+    (run / "reports" / "report.html").write_text("<html></html>", encoding="utf-8")
+    (run / "reports" / "methods.md").write_text("methods", encoding="utf-8")
+    (run / "logs" / "run.log").write_text("ok", encoding="utf-8")
+    (run / "results" / "figures" / "signature_score_heatmap.png").write_text("png", encoding="utf-8")
+    (run / "results" / "tables" / "signature_scores_by_cell_type.tsv").write_text("cell_type\tscore\nT\t1\n", encoding="utf-8")
+    (run / "objects" / "scrna_mvp.h5ad").write_text("object", encoding="utf-8")
+    (run / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "module": "scrna",
+                "status": "ready",
+                "analysis_level": "validated_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": False,
+                "validation_evidence_allowed": True,
+                "non_delivery_reason": "validation_evidence_only_not_customer_delivery",
+                "figures": ["results/figures/signature_score_heatmap.png"],
+                "tables": ["results/tables/signature_scores_by_cell_type.tsv"],
+                "objects": {"h5ad": "objects/scrna_mvp.h5ad"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_validation_index(root=root, output_dir=tmp_path / "index")
+
+    rows = json.loads(Path(result["validation_index_json"]).read_text(encoding="utf-8"))
+    by_module = {row["module"]: row for row in rows}
+    assert {"scrna", "functional_state"} <= set(by_module)
+    derived = by_module["functional_state"]
+    assert derived["run_name"] == "slurm_scrna_nsclc_lambrechts__functional_state"
+    assert derived["analysis_level"] == "validated_backend"
+    assert derived["validation_evidence_allowed"] == "true"
+    assert derived["artifact_status"] == "ready"
+    assert "derived_from_scrna_signature_validation" in derived["missing_or_gap"]
+
+
 def test_validation_index_flags_delivery_without_approval(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
     run = root / "validations" / "customer_like_run"

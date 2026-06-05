@@ -485,6 +485,8 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
     final_rows = _final_acceptance_rows(root, capability_rows, validation_rows)
     final_path = output_dir / "final_acceptance_checklist.tsv"
     pd.DataFrame(final_rows).to_csv(final_path, sep="\t", index=False)
+    production_audit_tsv_path = output_dir / "production_audit.tsv"
+    pd.DataFrame(final_rows).to_csv(production_audit_tsv_path, sep="\t", index=False)
 
     maturity_rows = build_module_maturity_rows(root, capability_rows)
     maturity_path = output_dir / "module_maturity_table.tsv"
@@ -525,6 +527,7 @@ def run_production_audit(root: Path, output_dir: Path | None = None) -> dict[str
         "validation_gap_plan": str(validation_gap_path),
         "validation_gap_plan_json": str(validation_gap_json_path),
         "validation_gap_summary": _validation_gap_summary(validation_gap_rows),
+        "production_audit_tsv": str(production_audit_tsv_path),
         "final_acceptance_checklist": str(final_path),
         "module_maturity_table": str(maturity_path),
         "module_standardization_matrix": str(standardization_path),

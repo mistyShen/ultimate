@@ -139,6 +139,7 @@ def test_production_audit_writes_readiness_artifacts(tmp_path: Path) -> None:
     assert Path(manifest["validation_evidence_matrix"]).exists()
     assert Path(manifest["validation_gap_plan"]).exists()
     assert Path(manifest["validation_gap_plan_json"]).exists()
+    assert Path(manifest["production_audit_tsv"]).exists()
     assert Path(manifest["final_acceptance_checklist"]).exists()
     assert Path(manifest["module_maturity_table"]).exists()
     assert Path(manifest["module_standardization_matrix"]).exists()

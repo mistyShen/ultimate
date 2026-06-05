@@ -12,4 +12,3 @@
 - CDR3 nucleotide/amino acid
 - V/J gene
 - sample/cell barcode
-

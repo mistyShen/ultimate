@@ -84,8 +84,13 @@ def build_validation_index(root: Path, output_dir: Path | None = None, validatio
     output_dir = (output_dir or root / "reports" / "validation_index").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    rows = [_row_from_manifest(path) for path in _iter_validation_manifests(root=root, validations_dir=validations_dir)]
-    rows = [row for row in rows if row is not None]
+    rows: list[dict[str, str]] = []
+    for path in _iter_validation_manifests(root=root, validations_dir=validations_dir):
+        row = _row_from_manifest(path)
+        if row is None:
+            continue
+        rows.append(row)
+        rows.extend(_derived_rows_from_manifest(row=row, path=path))
 
     tsv_path = output_dir / "validation_index.tsv"
     json_path = output_dir / "validation_index.json"
@@ -215,6 +220,45 @@ def _row_from_manifest(path: Path) -> dict[str, str] | None:
         "guard_invalid_fields": ",".join(guard_invalid),
     }
     return row
+
+
+def _derived_rows_from_manifest(*, row: dict[str, str], path: Path) -> list[dict[str, str]]:
+    """Index module-specific evidence derived from a validated parent run.
+
+    Some validations intentionally produce evidence for a secondary module
+    without writing a second run_manifest.json. Keep the original manifest as
+    the source of truth, but expose a separate validation-index row so maturity
+    checks can see the module-level evidence directly.
+    """
+    if row.get("analysis_level") != "validated_backend" or row.get("validation_evidence_allowed") != "true":
+        return []
+    module = row.get("module", "")
+    if module != "scrna":
+        return []
+
+    run_dir = path.parent
+    signature_table = run_dir / "results" / "tables" / "signature_scores_by_cell_type.tsv"
+    signature_figure = run_dir / "results" / "figures" / "signature_score_heatmap.png"
+    if not (_nonempty(signature_table) and _nonempty(signature_figure)):
+        return []
+
+    derived = dict(row)
+    derived["run_name"] = f"{row.get('run_name', run_dir.name)}__functional_state"
+    derived["run_kind"] = f"{row.get('run_kind', 'validations')}_derived"
+    derived["module"] = "functional_state"
+    derived["n_tables"] = "1"
+    derived["n_figures"] = "1"
+    derived["object_keys"] = ""
+    derived["module_names"] = ""
+    derived["module_count"] = "1"
+    derived["ready_module_count"] = "1"
+    derived["artifact_status"] = "ready"
+    base_gaps = [item for item in str(row.get("missing_or_gap", "")).split(";") if item and item != "ready"]
+    if not row.get("slurm_job_id"):
+        base_gaps.append("source_slurm_job_id_not_recorded")
+    derived["missing_or_gap"] = ";".join(["derived_from_scrna_signature_validation", *base_gaps])
+    derived["next_action"] = "retain_source_validation_or_rerun_source_with_slurm_job_id_if_required"
+    return [derived]
 
 
 def _stringify(value: Any) -> str:

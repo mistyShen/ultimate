@@ -4,8 +4,10 @@ import json
 import sys
 from pathlib import Path
 
-import h5py
 import numpy as np
+import pytest
+
+h5py = pytest.importorskip("h5py")
 
 
 TOOLS_DIR = Path(__file__).parents[1] / "01_tools"

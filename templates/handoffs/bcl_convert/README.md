@@ -11,4 +11,3 @@ bcl-convert --bcl-input-directory /shared/path/to/runfolder \
   --sample-sheet /shared/path/to/SampleSheet.csv \
   --output-directory /shared/shen/2026/ultimate/external/bcl_convert/fastq
 ```
-

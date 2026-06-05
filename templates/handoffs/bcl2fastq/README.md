@@ -11,4 +11,3 @@ bcl2fastq --runfolder-dir /shared/path/to/runfolder \
   --sample-sheet /shared/path/to/SampleSheet.csv \
   --output-dir /shared/shen/2026/ultimate/external/bcl2fastq/fastq
 ```
-

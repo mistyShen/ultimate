@@ -252,6 +252,41 @@ Every run writes:
 
 Missing optional tools are reported in `preflight_manifest.json`, `run_manifest.json`, and the Chinese report instead of failing silently.
 
+## Remote V2 Evidence Loop
+
+Use this loop when refreshing the production evidence snapshot on the server.
+The first commands are lightweight metadata checks and may run directly; real
+validation or production-style rehearsals still go through Slurm.
+
+```bash
+ROOT=/shared/shen/2026/ultimate
+PY=$ROOT/.conda/envs/ultimate-core/bin/python
+export PYTHONPATH=$ROOT/src
+
+$PY -m pytest -q $ROOT/tests
+$PY -m ultimate.cli audit-modules --root $ROOT \
+  --output-dir $ROOT/audits/module_standardization_latest
+$PY -m ultimate.cli validation-index --root $ROOT \
+  --output-dir $ROOT/reports/validation_index
+$PY -m ultimate.cli audit-production --root $ROOT \
+  --output-dir $ROOT/audits/production_latest
+$PY $ROOT/01_tools/storage_audit.py --root $ROOT \
+  --output-dir $ROOT/audits/storage_latest --budget-gb 500
+$PY $ROOT/01_tools/write_v2_status_report.py --root $ROOT \
+  --output-dir $ROOT/audits/production_latest \
+  --storage-summary $ROOT/audits/storage_latest/storage_audit_summary.json \
+  --pytest-status passed \
+  --pytest-note "full test suite passed"
+```
+
+Production-style rehearsal jobs live under `jobs/<job_id>/` and should be
+submitted with the generated `config/run_ultimate.sbatch`. The refreshed status
+bundle should include `reports/validation_index/validation_index.tsv`,
+`audits/production_latest/production_audit.tsv`,
+`audits/production_latest/production_audit.json`,
+`audits/storage_latest/storage_audit_summary.json`, and
+`audits/production_latest/v2_status_report.md`.
+
 ## Current Single-Cell Completion Snapshot
 
 The single-cell line is now smoke-validated across the core public/available
