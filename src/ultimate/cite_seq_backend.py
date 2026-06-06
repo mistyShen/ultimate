@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -28,7 +30,9 @@ from ultimate.plot_style import apply_clinical_journal_style, continuous_cmap, s
 
 
 CITE_BACKEND_ID = "cite_seq.default.clr_mvp"
+DSB_BACKEND_ID = "cite_seq.optional.dsb"
 CITE_WARNING = "ADT 是抗体 panel 限定的标签计数，不是全蛋白组；RNA/protein 不一致不能自动解释为机制。"
+DSB_WARNING = "DSB normalization 依赖 empty/background droplets 和可选 isotype controls；没有背景信息时不能伪装完成 DSB。"
 
 
 def has_cite_seq_backend_config(config: dict[str, Any]) -> bool:
@@ -109,6 +113,23 @@ def run_cite_seq_backend(*, config: dict[str, Any], output_dir: Path, samples: p
             artifacts["tables"].update(tables)
             artifacts["figures"].update(_write_cite_figures(tables_dir=tables_dir, figures_dir=figures_dir))
             artifacts["objects"].update(_write_cite_object(objects_dir=objects_dir, data=data, max_cells=int(module_cfg.get("max_cells_object", 3000))))
+            dsb_status, dsb_artifacts = _run_dsb_backend(
+                config=config,
+                data=data,
+                tables_dir=tables_dir,
+                figures_dir=figures_dir,
+                objects_dir=objects_dir,
+                analysis_fields=level_fields,
+                input_artifact=str(input_ref or ""),
+                source_dataset=_source_dataset(config),
+            )
+            if dsb_status["requested"]:
+                warnings.append(DSB_WARNING)
+                artifacts["tables"].update(dsb_artifacts.get("tables", {}))
+                artifacts["figures"].update(dsb_artifacts.get("figures", {}))
+                artifacts["objects"].update(dsb_artifacts.get("objects", {}))
+                if dsb_status["status"] == "ready":
+                    status = "complete_cite_seq_clr_dsb_backend"
 
     artifacts["tables"]["tool_coverage"] = write_tool_coverage_table(module_name, tables_dir)
     artifacts["tables"]["backend_plan"] = str(write_backend_plan_table(module_name, config, tables_dir))
@@ -154,6 +175,9 @@ def run_cite_seq_backend(*, config: dict[str, Any], output_dir: Path, samples: p
             "panel_scope_warning": CITE_WARNING,
         },
         "backend_plan": backend_plan,
+        "optional_backend_status": {
+            "cite_seq.optional.dsb": artifacts["tables"].get("dsb_backend_status", "not_requested"),
+        },
         "backend_id": backend_plan["selected_backend_id"],
         "backend_status": backend_plan["selected_backend_status"],
         "backend_analysis_level": backend_plan["backend_analysis_level"],
@@ -444,6 +468,240 @@ def _rna_protein_consistency(rna_features: list[str], adt_features: list[str], r
 def _clr_normalize(adt: np.ndarray) -> np.ndarray:
     log_values = np.log1p(np.asarray(adt, dtype=float))
     return log_values - log_values.mean(axis=1, keepdims=True)
+
+
+def _dsb_requested(config: dict[str, Any]) -> bool:
+    module_cfg = _module_cfg(config)
+    dsb_cfg = module_cfg.get("dsb") if isinstance(module_cfg.get("dsb"), dict) else {}
+    if bool(dsb_cfg.get("enabled") or module_cfg.get("dsb_enabled")):
+        return True
+    requested = module_cfg.get("backends") if isinstance(module_cfg.get("backends"), dict) else {}
+    values = {str(key) for key, value in requested.items() if value not in {None, False, ""}}
+    values.update(str(value) for value in requested.values() if value not in {None, False, ""})
+    return bool({DSB_BACKEND_ID, "dsb", "optional.dsb"} & values)
+
+
+def _dsb_cfg(config: dict[str, Any]) -> dict[str, Any]:
+    module_cfg = _module_cfg(config)
+    return module_cfg.get("dsb") if isinstance(module_cfg.get("dsb"), dict) else {}
+
+
+def _dsb_empty_matrix(config: dict[str, Any]) -> Path | None:
+    module_cfg = _module_cfg(config)
+    raw_cfg = module_cfg.get("raw") if isinstance(module_cfg.get("raw"), dict) else {}
+    dsb_cfg = _dsb_cfg(config)
+    base = Path(str(config.get("_config_path") or ".")).resolve().parent
+    value = (
+        dsb_cfg.get("empty_adt_matrix")
+        or dsb_cfg.get("background_adt_matrix")
+        or module_cfg.get("empty_adt_matrix")
+        or raw_cfg.get("empty_adt_matrix")
+    )
+    return _resolve_path(base, value) if value else None
+
+
+def _run_dsb_backend(
+    *,
+    config: dict[str, Any],
+    data: dict[str, Any],
+    tables_dir: Path,
+    figures_dir: Path,
+    objects_dir: Path,
+    analysis_fields: dict[str, Any],
+    input_artifact: str,
+    source_dataset: str,
+) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
+    if not _dsb_requested(config):
+        return {"backend_id": DSB_BACKEND_ID, "requested": False, "status": "not_requested", "reason": ""}, {}
+
+    status_path = tables_dir / "dsb_backend_status.tsv"
+    manifest_path = tables_dir / "dsb_backend_manifest.json"
+    versions_path = tables_dir / "dsb_backend_versions.tsv"
+    normalized_path = tables_dir / "dsb_normalized_matrix.tsv"
+    background_path = tables_dir / "background_summary.tsv"
+    input_matrix_path = tables_dir / "dsb_cell_adt_input.tsv"
+    log_path = tables_dir / "dsb_backend.log"
+    figure_path = figures_dir / "dsb_heatmap.png"
+    object_path = objects_dir / "cite_seq_dsb_backend.rds"
+    artifacts = {
+        "tables": {
+            "dsb_backend_status": str(status_path),
+            "dsb_backend_manifest": str(manifest_path),
+            "dsb_backend_versions": str(versions_path),
+            "dsb_normalized_matrix": str(normalized_path),
+            "background_summary": str(background_path),
+            "dsb_backend_log": str(log_path),
+        },
+        "figures": {"dsb_heatmap": str(figure_path)},
+        "objects": {"dsb_rds": str(object_path)},
+    }
+
+    reason = ""
+    empty_matrix = _dsb_empty_matrix(config)
+    if empty_matrix is None:
+        reason = "missing_empty_adt_matrix"
+    elif not empty_matrix.exists():
+        reason = f"missing_empty_adt_matrix:{empty_matrix}"
+    rscript = shutil.which("Rscript")
+    if not reason and not rscript:
+        reason = "dependency_missing:Rscript"
+    if not reason and not _r_package_available(rscript, "dsb"):
+        reason = "dependency_missing:dsb"
+
+    if reason:
+        _write_dsb_skip_outputs(
+            status_path=status_path,
+            manifest_path=manifest_path,
+            versions_path=versions_path,
+            normalized_path=normalized_path,
+            background_path=background_path,
+            log_path=log_path,
+            figure_path=figure_path,
+            object_path=object_path,
+            analysis_fields=analysis_fields,
+            reason=reason,
+            input_artifact=input_artifact,
+            source_dataset=source_dataset,
+        )
+        return {"backend_id": DSB_BACKEND_ID, "requested": True, "status": "skipped", "reason": reason}, artifacts
+
+    _write_feature_matrix(
+        path=input_matrix_path,
+        features=list(map(str, data["adt_features"])),
+        cells=list(map(str, data["cells"])),
+        matrix=np.asarray(data["adt"], dtype=float).T,
+    )
+    dsb_cfg = _dsb_cfg(config)
+    controls = dsb_cfg.get("isotype_controls") or dsb_cfg.get("isotype_control_name_vec") or []
+    if isinstance(controls, str):
+        controls_value = controls
+    else:
+        controls_value = ",".join(map(str, controls))
+    script = Path(__file__).resolve().parents[2] / "scripts" / "R" / "cite_seq_dsb_backend.R"
+    command = [
+        rscript,
+        str(script),
+        "--cell-adt",
+        str(input_matrix_path),
+        "--empty-adt",
+        str(empty_matrix),
+        "--tables-dir",
+        str(tables_dir),
+        "--figures-dir",
+        str(figures_dir),
+        "--objects-dir",
+        str(objects_dir),
+        "--analysis-level",
+        str(analysis_fields.get("analysis_level") or "smoke_backend"),
+        "--source-dataset",
+        source_dataset,
+        "--input-artifact",
+        input_artifact,
+        "--isotype-controls",
+        controls_value,
+    ]
+    try:
+        completed = subprocess.run(command, check=True, text=True, capture_output=True, timeout=240)
+        log_path.write_text(
+            "COMMAND\t" + " ".join(command) + "\n\nSTDOUT\n" + completed.stdout + "\n\nSTDERR\n" + completed.stderr,
+            encoding="utf-8",
+        )
+        return {"backend_id": DSB_BACKEND_ID, "requested": True, "status": "ready", "reason": ""}, artifacts
+    except subprocess.CalledProcessError as exc:
+        reason = f"backend_failed:Rscript_exit_{exc.returncode}"
+        log_path.write_text(
+            "COMMAND\t" + " ".join(command) + "\n\nSTDOUT\n" + (exc.stdout or "") + "\n\nSTDERR\n" + (exc.stderr or ""),
+            encoding="utf-8",
+        )
+    except subprocess.TimeoutExpired as exc:
+        reason = "backend_failed:Rscript_timeout"
+        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        log_path.write_text("COMMAND\t" + " ".join(command) + "\n\nSTDOUT\n" + stdout + "\n\nSTDERR\n" + stderr, encoding="utf-8")
+    _write_dsb_skip_outputs(
+        status_path=status_path,
+        manifest_path=manifest_path,
+        versions_path=versions_path,
+        normalized_path=normalized_path,
+        background_path=background_path,
+        log_path=log_path,
+        figure_path=figure_path,
+        object_path=object_path,
+        analysis_fields=analysis_fields,
+        reason=reason,
+        input_artifact=input_artifact,
+        source_dataset=source_dataset,
+        status="failed",
+    )
+    return {"backend_id": DSB_BACKEND_ID, "requested": True, "status": "failed", "reason": reason}, artifacts
+
+
+def _r_package_available(rscript: str | None, package: str) -> bool:
+    if not rscript:
+        return False
+    code = f"quit(status=ifelse(requireNamespace('{package}', quietly=TRUE), 0, 1))"
+    return subprocess.run([rscript, "-e", code], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+
+def _write_feature_matrix(*, path: Path, features: list[str], cells: list[str], matrix: np.ndarray) -> None:
+    frame = pd.DataFrame(np.asarray(matrix, dtype=float), columns=cells)
+    frame.insert(0, "feature_id", features)
+    frame.to_csv(path, sep="\t", index=False)
+
+
+def _write_dsb_skip_outputs(
+    *,
+    status_path: Path,
+    manifest_path: Path,
+    versions_path: Path,
+    normalized_path: Path,
+    background_path: Path,
+    log_path: Path,
+    figure_path: Path,
+    object_path: Path,
+    analysis_fields: dict[str, Any],
+    reason: str,
+    input_artifact: str,
+    source_dataset: str,
+    status: str = "skipped",
+) -> None:
+    base = _base_fields(analysis_fields, input_artifact, source_dataset)
+    row = {
+        **base,
+        "backend_id": DSB_BACKEND_ID,
+        "status": status,
+        "skip_reason": reason,
+        "normalization_method": "DSB_not_run",
+        "interpretation_warning": DSB_WARNING,
+    }
+    pd.DataFrame([row]).to_csv(status_path, sep="\t", index=False)
+    pd.DataFrame([{**row, "cell_id": "none", "antibody_id": "none", "dsb_normalized_adt": 0.0}]).to_csv(normalized_path, sep="\t", index=False)
+    pd.DataFrame([{**row, "antibody_id": "none", "empty_mean": 0.0, "empty_sd": 0.0}]).to_csv(background_path, sep="\t", index=False)
+    pd.DataFrame([{"package": "dsb", "version": "", "status": "not_run", "reason": reason}]).to_csv(versions_path, sep="\t", index=False)
+    manifest = {
+        "backend_id": DSB_BACKEND_ID,
+        "status": status,
+        "analysis_level": analysis_fields.get("analysis_level"),
+        "delivery_allowed": analysis_fields.get("delivery_allowed"),
+        "validation_evidence_allowed": analysis_fields.get("validation_evidence_allowed"),
+        "skip_reason": reason,
+        "interpretation_warning": DSB_WARNING,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    if not log_path.exists():
+        log_path.write_text(f"DSB backend {status}: {reason}\n", encoding="utf-8")
+    object_path.write_text(json.dumps({"status": status, "reason": reason}, indent=2), encoding="utf-8")
+    _write_dsb_skip_figure(figure_path, reason)
+
+
+def _write_dsb_skip_figure(path: Path, reason: str) -> None:
+    tokens = apply_clinical_journal_style()
+    plt.figure(figsize=(5.5, 3.2))
+    plt.text(0.5, 0.58, "DSB skipped", ha="center", va="center", color=tokens["primary"], fontsize=13, fontweight="bold")
+    plt.text(0.5, 0.38, reason[:100], ha="center", va="center", color=tokens["muted"], fontsize=9, wrap=True)
+    plt.axis("off")
+    plt.tight_layout()
+    save_figure(path, style=tokens)
 
 
 def _target_from_antibody(value: str) -> str:

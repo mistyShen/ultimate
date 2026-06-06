@@ -72,6 +72,7 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "scrna.communication.liana": "slurm/scrna_mvp_validation.sbatch",
         "scrna.pseudobulk.deseq2_edger": "slurm/scrna_pseudobulk_de.sbatch",
         "scrna.tumor.copykat": "slurm/tumor_sc_copykat_small_validation.sbatch",
+        "scrna.velocity.scvelo": "slurm/scrna_velocity.sbatch",
         "functional_state.default.signature_scoring": "slurm/bulk_validation_suite.sbatch",
         "tumor_sc.default.summary_handoff": "slurm/tumor_sc_backend_validation.sbatch",
         "method_tools.default.delivery_manifest_mvp": "slurm/method_tools_validation.sbatch",
@@ -80,6 +81,8 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "genotype_demux.default.result_import_mvp": "slurm/genotype_demux_backend_validation.sbatch",
         "mtdna.default.lineage_ready_mvp": "slurm/mtdna_backend_validation.sbatch",
         "scdna.default.matrix_ready_handoff": "slurm/scdna_backend_validation.sbatch",
+        "scepi.default.matrix_handoff_mvp": "slurm/scepi_backend_validation.sbatch",
+        "cite_seq.optional.dsb": "slurm/cite_seq_dsb_validation.sbatch",
     }
 
     for backend_id, slurm_profile in expected.items():

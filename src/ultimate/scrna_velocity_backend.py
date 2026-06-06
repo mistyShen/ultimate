@@ -313,8 +313,6 @@ def _run_scvelo(
     scv.pp.filter_and_normalize(
         adata,
         min_shared_counts=5,
-        n_top_genes=min(max_genes, adata.n_vars),
-        log=False,
     )
     if "X_pca" not in adata.obsm:
         sc.tl.pca(adata, n_comps=max(2, min(30, adata.n_obs - 1, adata.n_vars - 1)), svd_solver="arpack")

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import inspect
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
+import ultimate.scrna_velocity_backend as velocity_backend
 from ultimate.scrna_velocity_backend import has_scrna_velocity_backend_config, run_scrna_velocity_backend
 
 
@@ -31,6 +33,16 @@ def test_scrna_velocity_config_detection(tmp_path: Path) -> None:
     }
 
     assert has_scrna_velocity_backend_config(config) is True
+
+
+def test_scrna_velocity_filter_normalize_avoids_version_fragile_kwargs() -> None:
+    source = inspect.getsource(velocity_backend._run_scvelo)
+    call_start = source.index("scv.pp.filter_and_normalize(")
+    call_end = source.index(")", call_start)
+
+    fragile_call = source[call_start:call_end]
+    assert "n_top_genes" not in fragile_call
+    assert "log=" not in fragile_call
 
 
 def test_scrna_velocity_missing_input_is_guarded(tmp_path: Path) -> None:

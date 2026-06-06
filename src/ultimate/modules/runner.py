@@ -39,6 +39,7 @@ from ultimate.modules.common import (
 )
 from ultimate.plot_style import apply_clinical_journal_style, continuous_cmap, save_figure
 from ultimate.scatac_backend import has_scatac_backend_config, run_scatac_backend
+from ultimate.scepi_backend import has_scepi_backend_config, run_scepi_backend
 from ultimate.scrna_velocity_backend import has_scrna_velocity_backend_config, run_scrna_velocity_backend
 from ultimate.spatial_backend import has_spatial_backend_config, run_spatial_backend
 from ultimate.tumor_sc_backend import has_tumor_sc_backend_config, run_tumor_sc_backend
@@ -60,6 +61,8 @@ def run_module(
         return run_multiome_backend(config=config, output_dir=output_dir, samples=samples)
     if module_name == "scatac" and has_scatac_backend_config(config):
         return run_scatac_backend(config=config, output_dir=output_dir, samples=samples)
+    if module_name == "scepi" and has_scepi_backend_config(config):
+        return run_scepi_backend(config=config, output_dir=output_dir, samples=samples)
     if module_name == "spatial" and has_spatial_backend_config(config):
         return run_spatial_backend(config=config, output_dir=output_dir, samples=samples)
     if module_name == "vdj" and has_vdj_backend_config(config):

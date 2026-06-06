@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from ultimate.config import dump_yaml
 from ultimate.pipeline import run_pipeline_from_config
@@ -42,8 +43,22 @@ def _write_cite_fixture(tmp_path: Path) -> tuple[Path, Path]:
     return rna, adt
 
 
-def _write_config(tmp_path: Path, *, rna: Path, adt: Path, output_name: str = "run") -> Path:
+def _write_config(tmp_path: Path, *, rna: Path, adt: Path, output_name: str = "run", empty_adt: Path | None = None, dsb_enabled: bool = False) -> Path:
     config_path = tmp_path / f"{output_name}.yaml"
+    module_cfg = {
+        "enabled": True,
+        "raw": {
+            "enabled": False,
+            "input_type": "rna_adt_matrix",
+            "count_matrix": str(rna),
+            "adt_counts": str(adt),
+        },
+    }
+    if empty_adt is not None or dsb_enabled:
+        module_cfg["backends"] = {"normalization": "dsb"}
+        module_cfg["dsb"] = {"enabled": True}
+        if empty_adt is not None:
+            module_cfg["dsb"]["empty_adt_matrix"] = str(empty_adt)
     dump_yaml(
         {
             "project": {
@@ -59,17 +74,7 @@ def _write_config(tmp_path: Path, *, rna: Path, adt: Path, output_name: str = "r
                     {"sample_id": "S2", "condition": "treated", "input_path": str(adt)},
                 ]
             },
-            "modules": {
-                "cite_seq": {
-                    "enabled": True,
-                    "raw": {
-                        "enabled": False,
-                        "input_type": "rna_adt_matrix",
-                        "count_matrix": str(rna),
-                        "adt_counts": str(adt),
-                    },
-                }
-            },
+            "modules": {"cite_seq": module_cfg},
         },
         config_path,
     )
@@ -104,6 +109,91 @@ def test_cite_seq_backend_generates_mvp_outputs(tmp_path: Path) -> None:
     methods = (run_dir / "reports" / "cite_seq" / "methods.md").read_text(encoding="utf-8")
     assert "analysis_level" in methods
     assert "ADT 不是全蛋白组" in methods
+
+
+def test_cite_seq_dsb_backend_executes_when_background_and_r_backend_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rna, adt = _write_cite_fixture(tmp_path)
+    empty = tmp_path / "empty_adt_counts.tsv"
+    _write_matrix(
+        empty,
+        [
+            ("CD3_TotalSeqB", [3, 4, 5, 3]),
+            ("CD19_TotalSeqB", [2, 3, 4, 2]),
+            ("CD14_TotalSeqB", [7, 8, 6, 9]),
+        ],
+        ["empty_a", "empty_b", "empty_c", "empty_d"],
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_rscript = fake_bin / "Rscript"
+    fake_rscript.write_text(
+        """#!/usr/bin/env python3
+import json
+import pathlib
+import sys
+
+if "-e" in sys.argv:
+    sys.exit(0)
+args = sys.argv[2:]
+values = {}
+i = 0
+while i < len(args):
+    key = args[i]
+    if key.startswith("--") and i + 1 < len(args):
+        values[key[2:]] = args[i + 1]
+        i += 2
+    else:
+        i += 1
+tables = pathlib.Path(values["tables-dir"])
+figures = pathlib.Path(values["figures-dir"])
+objects = pathlib.Path(values["objects-dir"])
+tables.mkdir(parents=True, exist_ok=True)
+figures.mkdir(parents=True, exist_ok=True)
+objects.mkdir(parents=True, exist_ok=True)
+(tables / "dsb_normalized_matrix.tsv").write_text("module\\tbackend_id\\tcell_id\\tantibody_id\\tdsb_normalized_adt\\tnormalization_method\\tanalysis_level\\n"
+    "cite_seq\\tcite_seq.optional.dsb\\tcell_a\\tCD3_TotalSeqB\\t1.2\\tDSB_with_empty_droplets_no_isotype_controls\\tsmoke_backend\\n")
+(tables / "background_summary.tsv").write_text("module\\tbackend_id\\tantibody_id\\tempty_mean\\tempty_sd\\tanalysis_level\\n"
+    "cite_seq\\tcite_seq.optional.dsb\\tCD3_TotalSeqB\\t4\\t1\\tsmoke_backend\\n")
+(tables / "dsb_backend_status.tsv").write_text("module\\tbackend_id\\tstatus\\tanalysis_level\\tn_cells\\tn_empty_droplets\\tn_adt_features\\tskip_reason\\n"
+    "cite_seq\\tcite_seq.optional.dsb\\tready\\tsmoke_backend\\t4\\t4\\t3\\t\\n")
+(tables / "dsb_backend_versions.tsv").write_text("package\\tversion\\tstatus\\ndsb\\t2.0.1\\tpresent\\n")
+(tables / "dsb_backend_manifest.json").write_text(json.dumps({"backend_id":"cite_seq.optional.dsb","status":"ready"}))
+(figures / "dsb_heatmap.png").write_bytes(b"PNG")
+(objects / "cite_seq_dsb_backend.rds").write_text("rds")
+""",
+        encoding="utf-8",
+    )
+    fake_rscript.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}:{Path('/usr/bin')}")
+    config_path = _write_config(tmp_path, rna=rna, adt=adt, empty_adt=empty, output_name="dsb")
+
+    manifest = run_pipeline_from_config(config_path)
+    run_dir = Path(manifest["output_dir"])
+    cite = manifest["modules"][0]
+
+    assert cite["status"] == "complete_cite_seq_clr_dsb_backend"
+    assert Path(cite["artifacts"]["tables"]["dsb_normalized_matrix"]).exists()
+    assert Path(cite["artifacts"]["tables"]["background_summary"]).exists()
+    assert Path(cite["artifacts"]["figures"]["dsb_heatmap"]).exists()
+    assert Path(cite["artifacts"]["objects"]["dsb_rds"]).exists()
+    status = pd.read_csv(run_dir / "results" / "tables" / "cite_seq" / "dsb_backend_status.tsv", sep="\t")
+    assert set(status["backend_id"]) == {"cite_seq.optional.dsb"}
+    assert set(status["status"]) == {"ready"}
+
+
+def test_cite_seq_dsb_backend_skips_without_background_matrix(tmp_path: Path) -> None:
+    rna, adt = _write_cite_fixture(tmp_path)
+    config_path = _write_config(tmp_path, rna=rna, adt=adt, output_name="dsb_missing_background", dsb_enabled=True)
+
+    manifest = run_pipeline_from_config(config_path)
+    run_dir = Path(manifest["output_dir"])
+    cite = manifest["modules"][0]
+
+    assert cite["status"] == "complete_cite_seq_clr_backend"
+    status = pd.read_csv(run_dir / "results" / "tables" / "cite_seq" / "dsb_backend_status.tsv", sep="\t")
+    assert set(status["status"]) == {"skipped"}
+    assert "missing_empty_adt_matrix" in set(status["skip_reason"])
+    assert cite["delivery_allowed"] is False
 
 
 def test_cite_seq_backend_missing_inputs_remains_non_deliverable(tmp_path: Path) -> None:
