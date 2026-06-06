@@ -4,9 +4,11 @@ import json
 import importlib.util
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from click.testing import CliRunner
 
+import ultimate.scrna_smoke as scrna_smoke
 from ultimate.cli import main
 from ultimate.scrna_smoke import create_demo_inputs, run_scrna_validation
 
@@ -152,6 +154,67 @@ def test_scrna_backend_rows_record_slurm_context(tmp_path: Path, monkeypatch: py
     for row in manifest["backend_status"]:
         assert row["backend_slurm_job_id"] == "pytest-123"
         assert row["backend_slurm_job_name"] == "pytest_scrna"
+
+
+def test_pseudobulk_de_backend_executes_when_r_backend_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tables = tmp_path / "results" / "tables"
+    tables.mkdir(parents=True)
+    counts = pd.DataFrame(
+        {
+            "feature_id": ["GeneA", "GeneB"],
+            "S1__control__cluster0": [10, 20],
+            "S2__control__cluster0": [12, 18],
+            "S3__case__cluster0": [30, 5],
+            "S4__case__cluster0": [28, 6],
+        }
+    )
+    design = pd.DataFrame(
+        {
+            "pseudobulk_id": ["S1__control__cluster0", "S2__control__cluster0", "S3__case__cluster0", "S4__case__cluster0"],
+            "sample_id": ["S1", "S2", "S3", "S4"],
+            "condition": ["control", "control", "case", "case"],
+            "cluster": ["0", "0", "0", "0"],
+        }
+    )
+    counts.to_csv(tables / "pseudobulk_counts.tsv", sep="\t", index=False)
+    design.to_csv(tables / "pseudobulk_design.tsv", sep="\t", index=False)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_rscript = fake_bin / "Rscript"
+    fake_rscript.write_text(
+        """#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
+if "-e" in sys.argv:
+    print("DESeq2\\nedgeR\\njsonlite")
+    raise SystemExit(0)
+args = sys.argv[1:]
+tables = Path(args[args.index("--tables-dir") + 1])
+figures = tables.parent / "figures"
+objects = tables.parent.parent / "objects"
+figures.mkdir(parents=True, exist_ok=True)
+objects.mkdir(parents=True, exist_ok=True)
+(tables / "pseudobulk_de_results.tsv").write_text("feature_id\\tcluster\\tlog2FoldChange\\tpvalue\\tpadj\\tbackend_id\\tbackend_method\\tanalysis_level\\nGeneA\\t0\\t1.5\\t0.01\\t0.05\\tscrna.pseudobulk.deseq2_edger\\tDESeq2\\tvalidated_backend\\n")
+(tables / "pseudobulk_de_backend_status.tsv").write_text("backend_id\\tcluster\\tstatus\\tanalysis_level\\tbackend_method\\nscrna.pseudobulk.deseq2_edger\\t0\\tready\\tvalidated_backend\\tDESeq2\\n")
+(tables / "pseudobulk_de_backend_versions.tsv").write_text("package\\tversion\\nDESeq2\\t1.0\\nedgeR\\t1.0\\njsonlite\\t1.0\\n")
+(tables / "pseudobulk_de_backend_manifest.json").write_text(json.dumps({"backend_id":"scrna.pseudobulk.deseq2_edger","status":"ready","analysis_level":"validated_backend"}))
+(figures / "pseudobulk_de_volcano.png").write_text("png")
+(objects / "scrna_pseudobulk_de_backend.rds").write_text("rds")
+""",
+        encoding="utf-8",
+    )
+    fake_rscript.chmod(0o755)
+    import os
+
+    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    row, artifacts = scrna_smoke._run_pseudobulk_de_backend(tables=tables, analysis_level="validated_backend")
+
+    assert row["status"] == "ready"
+    assert Path(artifacts["pseudobulk_de_backend_manifest"]).exists()
+    assert Path(artifacts["pseudobulk_de_volcano"]).exists()
+    assert Path(artifacts["pseudobulk_de_rds"]).exists()
 
 
 def _require_scrna_runtime() -> None:

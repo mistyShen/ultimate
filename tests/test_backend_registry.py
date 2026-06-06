@@ -23,6 +23,7 @@ def test_backend_registry_covers_all_modules_and_uses_valid_roles() -> None:
     assert set(MODULE_ORDER).issubset(modules)
     assert {backend.backend_role for backend in BACKEND_REGISTRY}.issubset(set(BACKEND_ROLES))
     assert any(backend.backend_id == "scrna.mvp.validate_scrna" for backend in BACKEND_REGISTRY)
+    assert any(backend.backend_id == "scrna.pseudobulk.deseq2_edger" for backend in BACKEND_REGISTRY)
     assert any(backend.backend_id == "rnaseq.de.deseq2_edger" for backend in BACKEND_REGISTRY)
     assert any(backend.backend_status == "licensed_path_detection" for backend in BACKEND_REGISTRY)
 
@@ -47,6 +48,8 @@ def test_backend_plan_records_requested_and_skipped_backends() -> None:
     active_ids = {row["backend_id"] for row in plan["active_backends"]}
     assert "scrna.annotation.celltypist" in active_ids
     assert "scrna.communication.liana" in active_ids
+    skipped_ids = set(plan["skipped_optional_backends"])
+    assert "scrna.pseudobulk.deseq2_edger" in skipped_ids
     assert plan["unknown_requested_backends"] == {"unknown": "not_a_backend"}
     assert not any("backend_not_fully_automatic:scrna.communication.liana" in warning for warning in plan["interpretation_warnings"])
     assert any("候选互作" in warning for warning in plan["interpretation_warnings"])
@@ -67,13 +70,16 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "scrna.annotation.celltypist": "slurm/scrna_mvp_validation.sbatch",
         "scrna.functional.decoupler_gseapy": "slurm/scrna_mvp_validation.sbatch",
         "scrna.communication.liana": "slurm/scrna_mvp_validation.sbatch",
+        "scrna.pseudobulk.deseq2_edger": "slurm/scrna_pseudobulk_de.sbatch",
         "scrna.tumor.copykat": "slurm/tumor_sc_copykat_small_validation.sbatch",
         "functional_state.default.signature_scoring": "slurm/bulk_validation_suite.sbatch",
+        "tumor_sc.default.summary_handoff": "slurm/tumor_sc_backend_validation.sbatch",
         "method_tools.default.delivery_manifest_mvp": "slurm/method_tools_validation.sbatch",
         "hto_demux.default.matrix_assignment_mvp": "slurm/hto_demux_backend_validation.sbatch",
         "perturb_seq.default.guide_assignment_mvp": "slurm/perturb_seq_backend_validation.sbatch",
         "genotype_demux.default.result_import_mvp": "slurm/genotype_demux_backend_validation.sbatch",
         "mtdna.default.lineage_ready_mvp": "slurm/mtdna_backend_validation.sbatch",
+        "scdna.default.matrix_ready_handoff": "slurm/scdna_backend_validation.sbatch",
     }
 
     for backend_id, slurm_profile in expected.items():

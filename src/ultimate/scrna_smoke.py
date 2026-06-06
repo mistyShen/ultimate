@@ -259,6 +259,7 @@ def run_scrna_validation(
             "submit_dir": os.environ.get("SLURM_SUBMIT_DIR", ""),
         },
         "pseudobulk_de_status": "design_ready_matrix_only",
+        "pseudobulk_formal_de_status": pseudobulk_status.get("status", "not_recorded"),
         "backend_execution_status": _backend_execution_summary(backend_rows),
         "pseudobulk_matrix_source": pseudobulk_matrix_source,
         "cell_type_annotation_status": "placeholder_not_cell_type",
@@ -773,6 +774,11 @@ def _run_pseudobulk_de_backend(*, tables: Path, analysis_level: str) -> tuple[di
     status_path = tables / "pseudobulk_de_backend_status.tsv"
     result_path = tables / "pseudobulk_de_results.tsv"
     script_path = tables / "pseudobulk_deseq2_edgeR_handoff.R"
+    manifest_path = tables / "pseudobulk_de_backend_manifest.json"
+    versions_path = tables / "pseudobulk_de_backend_versions.tsv"
+    log_path = tables / "pseudobulk_de_backend.log"
+    figure_path = tables.parent / "figures" / "pseudobulk_de_volcano.png"
+    object_path = tables.parent.parent / "objects" / "scrna_pseudobulk_de_backend.rds"
     counts_path = tables / "pseudobulk_counts.tsv"
     design_path = tables / "pseudobulk_design.tsv"
     reason = _pseudobulk_design_blocker(design_path)
@@ -785,19 +791,90 @@ def _run_pseudobulk_de_backend(*, tables: Path, analysis_level: str) -> tuple[di
             if not (packages.get("DESeq2") or packages.get("edgeR")):
                 reason = "dependency_missing:DESeq2_or_edgeR"
             else:
-                reason = "r_backend_available_not_executed_in_lightweight_validation"
-                _write_pseudobulk_status(status_path, backend_id, analysis_level, "design_ready_r_backend_available", reason)
+                script = Path(__file__).resolve().parents[2] / "scripts" / "R" / "scrna_pseudobulk_de_backend.R"
+                command = [
+                    rscript,
+                    str(script),
+                    "--counts",
+                    str(counts_path),
+                    "--design",
+                    str(design_path),
+                    "--tables-dir",
+                    str(tables),
+                    "--backend-id",
+                    backend_id,
+                    "--analysis-level",
+                    analysis_level,
+                ]
+                try:
+                    completed = subprocess.run(command, check=True, text=True, capture_output=True, timeout=180)
+                    log_path.write_text(
+                        "COMMAND\t" + " ".join(command) + "\n\nSTDOUT\n" + completed.stdout + "\n\nSTDERR\n" + completed.stderr,
+                        encoding="utf-8",
+                    )
+                    _write_pseudobulk_r_handoff(script_path, counts_path, design_path)
+                    return _backend_row(backend_id, "ready", analysis_level, ""), _pseudobulk_artifacts(
+                        status_path,
+                        result_path,
+                        script_path,
+                        manifest_path,
+                        versions_path,
+                        log_path,
+                        figure_path,
+                        object_path,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    reason = f"backend_failed:Rscript_exit_{exc.returncode}"
+                    log_path.write_text(
+                        "COMMAND\t" + " ".join(command) + "\n\nSTDOUT\n" + (exc.stdout or "") + "\n\nSTDERR\n" + (exc.stderr or ""),
+                        encoding="utf-8",
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    reason = "backend_failed:Rscript_timeout"
+                    log_path.write_text(
+                        "COMMAND\t" + " ".join(command) + "\n\nSTDOUT\n" + (exc.stdout or "") + "\n\nSTDERR\n" + (exc.stderr or ""),
+                        encoding="utf-8",
+                    )
+                _write_pseudobulk_status(status_path, backend_id, analysis_level, "failed", reason)
                 _write_skip_table(result_path, backend_id, analysis_level, reason)
+                _write_pseudobulk_backend_manifest(
+                    manifest_path,
+                    backend_id=backend_id,
+                    status="failed",
+                    analysis_level=analysis_level,
+                    reason=reason,
+                    artifacts=_pseudobulk_artifacts(status_path, result_path, script_path, manifest_path, versions_path, log_path),
+                )
                 _write_pseudobulk_r_handoff(script_path, counts_path, design_path)
-                return _backend_row(backend_id, "design_ready_r_backend_available", analysis_level, reason), _pseudobulk_artifacts(
+                return _backend_row(backend_id, "failed", analysis_level, reason), _pseudobulk_artifacts(
                     status_path,
                     result_path,
                     script_path,
-                )
+                    manifest_path,
+                    versions_path,
+                    log_path,
+                    )
     _write_pseudobulk_status(status_path, backend_id, analysis_level, "skipped", reason)
     _write_skip_table(result_path, backend_id, analysis_level, reason)
+    _write_pseudobulk_backend_manifest(
+        manifest_path,
+        backend_id=backend_id,
+        status="skipped",
+        analysis_level=analysis_level,
+        reason=reason,
+        artifacts=_pseudobulk_artifacts(status_path, result_path, script_path, manifest_path, versions_path, log_path),
+    )
+    pd.DataFrame([{"package": "DESeq2_or_edgeR", "version": "", "status": "not_run", "reason": reason}]).to_csv(versions_path, sep="\t", index=False)
+    log_path.write_text(f"pseudobulk DE backend skipped: {reason}\n", encoding="utf-8")
     _write_pseudobulk_r_handoff(script_path, counts_path, design_path)
-    return _backend_row(backend_id, "skipped", analysis_level, reason), _pseudobulk_artifacts(status_path, result_path, script_path)
+    return _backend_row(backend_id, "skipped", analysis_level, reason), _pseudobulk_artifacts(
+        status_path,
+        result_path,
+        script_path,
+        manifest_path,
+        versions_path,
+        log_path,
+    )
 
 
 def _write_figures(sc, adata, figures: Path) -> None:
@@ -931,16 +1008,21 @@ def _pseudobulk_design_blocker(design_path: Path) -> str:
     design = pd.read_csv(design_path, sep="\t")
     if design.empty:
         return "empty:pseudobulk_design.tsv"
-    if not {"condition", "cluster", "sample_id"}.issubset(design.columns):
-        return "invalid_design:missing_condition_cluster_or_sample_id"
+    if not {"pseudobulk_id", "condition", "cluster", "sample_id"}.issubset(design.columns):
+        return "invalid_design:missing_pseudobulk_condition_cluster_or_sample_id"
     blockers = []
+    valid_clusters = 0
     for cluster, frame in design.groupby("cluster", observed=False):
         replicate_counts = frame.groupby("condition")["sample_id"].nunique()
         if replicate_counts.shape[0] < 2:
             blockers.append(f"cluster_{cluster}:need_two_conditions")
         elif int(replicate_counts.min()) < 2:
             blockers.append(f"cluster_{cluster}:need_at_least_two_samples_per_condition")
-    return ";".join(blockers)
+        else:
+            valid_clusters += 1
+    if valid_clusters < 1:
+        return ";".join(blockers)
+    return ""
 
 
 def _available_r_packages(rscript: str, packages: tuple[str, ...]) -> dict[str, bool]:
@@ -965,6 +1047,27 @@ def _write_pseudobulk_status(path: Path, backend_id: str, analysis_level: str, s
             }
         ]
     ).to_csv(path, sep="\t", index=False)
+
+
+def _write_pseudobulk_backend_manifest(
+    path: Path,
+    *,
+    backend_id: str,
+    status: str,
+    analysis_level: str,
+    reason: str,
+    artifacts: dict[str, str],
+) -> None:
+    manifest = {
+        "backend_id": backend_id,
+        "status": status,
+        "analysis_level": analysis_level,
+        "skip_reason": reason,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "artifacts": artifacts,
+        "interpretation_warning": "pseudobulk DESeq2/edgeR uses sample-level pseudobulk counts and must not be interpreted as cell-level independent DE.",
+    }
+    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def _cluster_expression_matrix(adata) -> pd.DataFrame:
@@ -1212,12 +1315,32 @@ def _write_pseudobulk_r_handoff(path: Path, counts_path: Path, design_path: Path
     )
 
 
-def _pseudobulk_artifacts(status_path: Path, result_path: Path, script_path: Path) -> dict[str, str]:
-    return {
+def _pseudobulk_artifacts(
+    status_path: Path,
+    result_path: Path,
+    script_path: Path,
+    manifest_path: Path | None = None,
+    versions_path: Path | None = None,
+    log_path: Path | None = None,
+    figure_path: Path | None = None,
+    object_path: Path | None = None,
+) -> dict[str, str]:
+    artifacts = {
         "pseudobulk_de_backend_status": str(status_path),
         "pseudobulk_de_results": str(result_path),
         "pseudobulk_deseq2_edgeR_handoff": str(script_path),
     }
+    if manifest_path is not None:
+        artifacts["pseudobulk_de_backend_manifest"] = str(manifest_path)
+    if versions_path is not None:
+        artifacts["pseudobulk_de_backend_versions"] = str(versions_path)
+    if log_path is not None:
+        artifacts["pseudobulk_de_backend_log"] = str(log_path)
+    if figure_path is not None:
+        artifacts["pseudobulk_de_volcano"] = str(figure_path)
+    if object_path is not None:
+        artifacts["pseudobulk_de_rds"] = str(object_path)
+    return artifacts
 
 
 def _celltypist_artifacts(annotation_path: Path, confidence_path: Path, warning_path: Path) -> dict[str, str]:
