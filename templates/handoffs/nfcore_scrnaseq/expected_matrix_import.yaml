@@ -1,0 +1,34 @@
+handoff_id: nfcore_scrnaseq_to_ultimate_scrna
+execution_status: not_executed_by_ultimate
+upstream_workflow: nf-core/scrnaseq
+upstream_inputs:
+  fastq_samplesheet: "/shared/shen/2026/ultimate/jobs/<job_id>/config/nfcore_scrnaseq_samplesheet.csv"
+  params_file: "/shared/shen/2026/ultimate/jobs/<job_id>/config/nfcore_scrnaseq_params.yaml"
+  nextflow_config: "/shared/shen/2026/ultimate/jobs/<job_id>/config/nfcore_scrnaseq_nextflow.config"
+expected_upstream_outputs:
+  matrix_candidates:
+    - "/shared/shen/2026/ultimate/jobs/<job_id>/runs/nfcore_scrnaseq/<sample>/outs/filtered_feature_bc_matrix.h5"
+    - "/shared/shen/2026/ultimate/jobs/<job_id>/runs/nfcore_scrnaseq/<sample>/outs/filtered_feature_bc_matrix/"
+    - "/shared/shen/2026/ultimate/jobs/<job_id>/runs/nfcore_scrnaseq/<sample>/solo/*/filtered/"
+  multiqc_html: "/shared/shen/2026/ultimate/jobs/<job_id>/runs/nfcore_scrnaseq/multiqc/multiqc_report.html"
+ultimate_import_config:
+  project:
+    output_dir: "/shared/shen/2026/ultimate/jobs/<job_id>/ultimate_downstream"
+    is_demo: false
+  modules:
+    scrna:
+      enabled: true
+      input_type: "10x_h5_or_mtx"
+      input_path: "<reviewed_nfcore_matrix_or_h5>"
+      upstream_source: "nf-core/scrnaseq handoff"
+      upstream_multiqc_html: "<reviewed_nfcore_multiqc_html>"
+      analysis_level: "smoke_backend"
+      is_demo: false
+      delivery_allowed: false
+      non_delivery_reason: "raw FASTQ upstream was handed off; downstream import requires reviewed matrix/object evidence and approval before production."
+production_gate:
+  production_backend_requires_approval: true
+  raw_fastq_direct_import_allowed: false
+  notes:
+    - "FASTQ is processed by reviewed open-source nf-core/scrnaseq or user-licensed upstream tools, not by Ultimate core."
+    - "Cell type labels, advanced communication, velocity, and regulatory analyses remain downstream/handoff unless separately validated."

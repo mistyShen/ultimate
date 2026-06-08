@@ -1,0 +1,41 @@
+handoff_id: nfcore_rnaseq_to_ultimate_rnaseq
+execution_status: not_executed_by_ultimate
+upstream_workflow: nf-core/rnaseq
+upstream_inputs:
+  fastq_samplesheet: "/shared/shen/2026/ultimate/jobs/<job_id>/config/nfcore_rnaseq_samplesheet.csv"
+  params_file: "/shared/shen/2026/ultimate/jobs/<job_id>/config/nfcore_rnaseq_params.yaml"
+  nextflow_config: "/shared/shen/2026/ultimate/jobs/<job_id>/config/nfcore_rnaseq_nextflow.config"
+expected_upstream_outputs:
+  raw_count_matrix_candidates:
+    - "/shared/shen/2026/ultimate/jobs/<job_id>/runs/nfcore_rnaseq/star_salmon/salmon.merged.gene_counts.tsv"
+    - "/shared/shen/2026/ultimate/jobs/<job_id>/runs/nfcore_rnaseq/featurecounts/featurecounts.merged.counts.tsv"
+  exploratory_normalized_matrix_candidates:
+    - "/shared/shen/2026/ultimate/jobs/<job_id>/runs/nfcore_rnaseq/star_salmon/salmon.merged.gene_tpm.tsv"
+  multiqc_html: "/shared/shen/2026/ultimate/jobs/<job_id>/runs/nfcore_rnaseq/multiqc/star_salmon/multiqc_report.html"
+ultimate_import_config:
+  project:
+    output_dir: "/shared/shen/2026/ultimate/jobs/<job_id>/ultimate_downstream"
+    is_demo: false
+  design:
+    condition_column: "<reviewed_condition_column>"
+    control: "<reviewed_control_level>"
+    case: "<reviewed_case_level>"
+  modules:
+    rnaseq:
+      enabled: true
+      input_matrix: "<reviewed_raw_count_matrix>"
+      input_matrix_kind: "raw_gene_counts"
+      normalized_matrix: "<optional_reviewed_tpm_or_cpm_for_qc_only>"
+      samplesheet: "<reviewed_ultimate_sample_metadata_tsv>"
+      upstream_source: "nf-core/rnaseq handoff"
+      upstream_multiqc_html: "<reviewed_nfcore_multiqc_html>"
+      analysis_level: "smoke_backend"
+      is_demo: false
+      delivery_allowed: false
+      non_delivery_reason: "raw FASTQ upstream was handed off; DE delivery requires reviewed counts/design, biological replicates, and approval before production."
+production_gate:
+  production_backend_requires_approval: true
+  raw_fastq_direct_import_allowed: false
+  notes:
+    - "FASTQ is processed by reviewed open-source nf-core/rnaseq or other user-approved upstream tools, not by Ultimate core."
+    - "TPM/FPKM matrices are QC/display inputs only and must not be treated as DESeq2/edgeR raw count input."

@@ -9,6 +9,7 @@ from ultimate.approval_gate import load_production_approval
 from ultimate.config import load_config
 from ultimate.constants import PROJECT_TYPES
 from ultimate.demo import init_project
+from ultimate.delivery_check import run_delivery_check
 from ultimate.job import prepare_job
 from ultimate.pipeline import run_pipeline_from_config
 from ultimate.plot_style import available_styles, generate_style_review, set_active_style
@@ -129,6 +130,21 @@ def report_command(run_dir: Path) -> None:
 def export_repro_command(run_dir: Path, checksum_max_mb: int) -> None:
     manifest = export_reproducible_package(run_dir, checksum_max_bytes=checksum_max_mb * 1024 * 1024)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("delivery-check")
+@click.option(
+    "--run-dir",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+    help="Run directory or prepared job directory to check before delivery.",
+)
+def delivery_check_command(run_dir: Path) -> None:
+    """Run the delivery QA gate for a production run or prepared job."""
+    manifest = run_delivery_check(run_dir)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+    if manifest.get("status") != "ready":
+        raise click.ClickException("delivery-check blocked: " + ",".join(manifest.get("blockers") or []))
 
 
 @main.command("audit-singlecell")

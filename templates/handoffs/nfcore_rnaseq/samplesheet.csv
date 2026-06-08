@@ -1,3 +1,5 @@
-sample,fastq_1,fastq_2,strandedness
-S1,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S1_R1.fastq.gz,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S1_R2.fastq.gz,auto
-S2,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S2_R1.fastq.gz,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S2_R2.fastq.gz,auto
+sample,fastq_1,fastq_2,strandedness,seq_platform,seq_center
+S1,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S1_L001_R1_001.fastq.gz,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S1_L001_R2_001.fastq.gz,auto,ILLUMINA,USER_REVIEW_REQUIRED
+S1,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S1_L002_R1_001.fastq.gz,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S1_L002_R2_001.fastq.gz,auto,ILLUMINA,USER_REVIEW_REQUIRED
+S2,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S2_L001_R1_001.fastq.gz,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S2_L001_R2_001.fastq.gz,auto,ILLUMINA,USER_REVIEW_REQUIRED
+S2,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S2_L002_R1_001.fastq.gz,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/S2_L002_R2_001.fastq.gz,auto,ILLUMINA,USER_REVIEW_REQUIRED

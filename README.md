@@ -91,6 +91,7 @@ ultimate init-project --type all --output-dir example_projects/demo_all --demo-d
 ultimate preflight --config example_projects/demo_all/config/project.yaml
 ultimate run --config example_projects/demo_all/config/project.yaml
 ultimate report --run-dir example_projects/demo_all/runs/demo_all
+ultimate delivery-check --run-dir /shared/shen/2026/ultimate/jobs/<job_id>
 ultimate styles --style soft_color --output-dir example_projects/style_review
 ultimate audit-production --root /shared/shen/2026/ultimate
 ultimate audit-backends --root /shared/shen/2026/ultimate
@@ -182,6 +183,81 @@ NicheNet-style ligand-target scoring is a mechanism-hypothesis screen and
 requires reviewed labels plus a compatible ligand-target resource.
 chromVAR/Signac motif deviation and gene activity outputs are
 accessibility-derived inferences, not TF activity assays or gene expression.
+
+### V3.3 Production-Style Rehearsal And Delivery QA
+
+V3.3 turns validated backends into an order-facing rehearsal path. It does not
+make validated public evidence a customer delivery; customer or rehearsal
+delivery still requires `production_backend`, an approved production JSON, a
+Slurm job id, reproducibility files, and a passing delivery QA gate.
+
+The delivery QA gate is:
+
+```bash
+ultimate delivery-check --run-dir /shared/shen/2026/ultimate/jobs/<job_id>
+```
+
+`delivery-check` accepts either a concrete run directory with
+`run_manifest.json` or a prepared job directory with
+`deliverables/latest_run_pointer.json`. It writes:
+
+```text
+reports/delivery_check.json
+reports/delivery_check.tsv
+deliverables/latest_delivery_check.json
+deliverables/latest_delivery_check.tsv
+```
+
+It blocks delivery when any required evidence is missing, including:
+
+- `analysis_level=production_backend`
+- `delivery_scope` of `internal_rehearsal` or `customer_delivery`
+- approved `production_approval.json` whose `input_path` and `output_dir`
+  match the run
+- non-empty Slurm job id
+- `report.html`, `methods.md`, `delivery_index.tsv`
+- `software_versions.tsv`, `input_checksums.tsv`, and `rerun.sh`
+- backend execution manifest rows for scRNA/scATAC advanced presets
+- report warning text that preserves interpretation boundaries
+
+The V3.3 rehearsal suite submits three internal production-style jobs under
+`/shared/shen/2026/ultimate/jobs/<job_id>/`:
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/v3_3_production_rehearsal.sbatch
+```
+
+The suite covers:
+
+- `rnaseq` matrix `standard`
+- `scrna` `communication`
+- `scatac` `publication`
+
+Each rehearsal job writes its own `config/project.yaml`,
+`config/production_approval.json`, run manifest, reports, deliverables mirror,
+and reproducible-code package. These runs use
+`delivery_scope=internal_rehearsal`; they are not `customer_delivery`.
+
+After the suite, refresh the status reports:
+
+```bash
+ROOT=/shared/shen/2026/ultimate
+PY=$ROOT/.conda/envs/ultimate-core/bin/python
+
+$PY -m ultimate.cli validation-index --root $ROOT \
+  --output-dir $ROOT/reports/validation_index
+$PY -m ultimate.cli audit-production --root $ROOT \
+  --output-dir $ROOT/audits/production_latest
+$PY -m ultimate.cli audit-backends --root $ROOT \
+  --output-dir $ROOT/audits/backends_latest
+$PY $ROOT/01_tools/write_v3_3_order_ready_report.py \
+  --root $ROOT \
+  --output-dir $ROOT/reports
+```
+
+`reports/v3_3_order_ready_report.md` separates order-ready presets from
+validated-only evidence, handoff-required presets, license-required presets,
+and presets that still require manual review.
 
 ## SCEPI Matrix Backend
 

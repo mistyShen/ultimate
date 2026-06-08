@@ -1,2 +1,3 @@
-sample,fastq_1,fastq_2,strandedness
-SAMPLE_001,/shared/path/to/SAMPLE_001_R1.fastq.gz,/shared/path/to/SAMPLE_001_R2.fastq.gz,auto
+sample,fastq_1,fastq_2,expected_cells,seq_center
+SAMPLE_001,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/SAMPLE_001_L001_R1_001.fastq.gz,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/SAMPLE_001_L001_R2_001.fastq.gz,5000,USER_REVIEW_REQUIRED
+SAMPLE_001,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/SAMPLE_001_L002_R1_001.fastq.gz,/shared/shen/2026/ultimate/jobs/<job_id>/raw_links/SAMPLE_001_L002_R2_001.fastq.gz,5000,USER_REVIEW_REQUIRED

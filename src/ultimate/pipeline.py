@@ -31,6 +31,8 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
     run_id = str(config.get("_run_id") or _run_id(config))
     config["_run_id"] = run_id
     production_approval = _load_pipeline_approval(config, config_path=config_path, output_dir=out_dir, approval_path=production_approval_path)
+    if production_approval:
+        config["_production_approval"] = production_approval
     for directory in ("results/figures", "results/tables", "objects", "reports", "logs", "raw_qc"):
         (out_dir / directory).mkdir(parents=True, exist_ok=True)
     active_style = set_active_style_from_config(config)

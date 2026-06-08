@@ -257,7 +257,7 @@ def run_scrna_mvp_module_backend(*, config: dict[str, Any], output_dir: Path, sa
         analysis_level=module_cfg.get("analysis_level"),
         public_dataset=bool(module_cfg.get("public_dataset") or module_cfg.get("validated_backend")),
         dataset_label=str(module_cfg.get("dataset_label") or module_cfg.get("validation_dataset") or ""),
-        production_approval=None,
+        production_approval=config.get("_production_approval") if isinstance(config.get("_production_approval"), dict) else None,
         celltypist_model=Path(str(celltypist_model)) if celltypist_model else None,
         nichenet_resource=Path(str(nichenet_resource)) if nichenet_resource else None,
     )
@@ -268,6 +268,19 @@ def run_scrna_mvp_module_backend(*, config: dict[str, Any], output_dir: Path, sa
         delivery_allowed=bool(manifest.get("delivery_allowed") is True),
         validation_evidence_allowed=bool(manifest.get("validation_evidence_allowed") is True),
     )
+    selected_backend_id = str(backend_plan.get("selected_backend_id") or "")
+    if selected_backend_id and not any(str(row.get("backend_id") or "") == selected_backend_id for row in backend_execution_rows):
+        backend_execution_rows.insert(
+            0,
+            {
+                "backend_id": selected_backend_id,
+                "status": "ready" if manifest.get("status") == "ready" else str(manifest.get("status") or "not_recorded"),
+                "analysis_level": str(manifest.get("analysis_level") or "smoke_backend"),
+                "delivery_allowed": bool(manifest.get("delivery_allowed") is True),
+                "validation_evidence_allowed": bool(manifest.get("validation_evidence_allowed") is True),
+                "reason": "",
+            },
+        )
     artifacts = {
         "tables": {Path(path).stem: str(path) for path in sorted((output_dir / "results" / "tables").glob("*.tsv"))},
         "figures": {Path(path).stem: str(path) for path in sorted((output_dir / "results" / "figures").glob("*.png"))},

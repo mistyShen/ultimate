@@ -1683,6 +1683,7 @@ def _prepared_job_delivery_gaps(job_dir: Path) -> list[str]:
         "latest_report": job_dir / "deliverables" / "latest_report.html",
         "latest_methods": job_dir / "deliverables" / "latest_methods.md",
         "latest_delivery_index": job_dir / "deliverables" / "latest_delivery_index.tsv",
+        "latest_delivery_check": job_dir / "deliverables" / "latest_delivery_check.json",
         "rerun_script": job_dir / "reproducible_code" / "rerun.sh",
         "software_versions": job_dir / "reproducible_code" / "software_versions.tsv",
         "input_checksums": job_dir / "reproducible_code" / "input_checksums.tsv",
@@ -1707,6 +1708,9 @@ def _prepared_job_delivery_gaps(job_dir: Path) -> list[str]:
     elif run_manifest_data != mirrored_run_manifest_data:
         missing.append("latest_run_manifest_stale")
     missing.extend(_delivery_index_gaps(required["latest_delivery_index"], run_manifest_data))
+    delivery_check = _read_json(required["latest_delivery_check"])
+    if delivery_check.get("status") != "ready" or delivery_check.get("delivery_allowed") is not True:
+        missing.append(f"delivery_check:{delivery_check.get('status', 'missing')}")
     latest_ready_run = _latest_ready_run_dir(job_dir)
     if latest_ready_run and latest_run_dir.resolve() != latest_ready_run.resolve():
         missing.append("latest_run_dir_not_latest_ready")

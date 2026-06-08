@@ -101,6 +101,9 @@ def _write_scoped_prepared_job(root: Path, job_id: str) -> None:
         job_dir / "deliverables" / "latest_report.html": report_path.read_text(encoding="utf-8"),
         job_dir / "deliverables" / "latest_methods.md": methods_path.read_text(encoding="utf-8"),
         job_dir / "deliverables" / "latest_delivery_index.tsv": delivery_index,
+        job_dir / "deliverables" / "latest_delivery_check.json": json.dumps(
+            {"status": "ready", "delivery_allowed": True, "blockers": []}
+        ),
         job_dir / "reproducible_code" / "rerun.sh": rerun_path.read_text(encoding="utf-8"),
         job_dir / "reproducible_code" / "software_versions.tsv": "name\tversion\nultimate\ttest\n",
         job_dir / "reproducible_code" / "input_checksums.tsv": "path\tsha256\npytest\t0\n",
@@ -858,6 +861,19 @@ def test_production_audit_requires_prepared_job_input_checksums_mirror(tmp_path:
     row = next(line for line in final.splitlines() if line.startswith("prepared_job_delivery_mirror_ready\t"))
     assert "\tpartial\t" in row
     assert "input_checksums" in row
+
+
+def test_production_audit_requires_prepared_job_delivery_check(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    _write_scoped_prepared_job(root, "JOB001")
+    (root / "jobs" / "JOB001" / "deliverables" / "latest_delivery_check.json").unlink()
+
+    manifest = run_production_audit(root=root, output_dir=tmp_path / "audit")
+
+    final = Path(manifest["final_acceptance_checklist"]).read_text(encoding="utf-8")
+    row = next(line for line in final.splitlines() if line.startswith("prepared_job_delivery_mirror_ready\t"))
+    assert "\tpartial\t" in row
+    assert "latest_delivery_check" in row
 
 
 def test_production_audit_final_acceptance_accepts_prepared_job_delivery_mirror(tmp_path: Path) -> None:

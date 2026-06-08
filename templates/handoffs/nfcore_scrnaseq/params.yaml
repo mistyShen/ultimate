@@ -2,9 +2,13 @@ input: "/shared/shen/2026/ultimate/jobs/<job_id>/config/nfcore_scrnaseq_samplesh
 outdir: "/shared/shen/2026/ultimate/jobs/<job_id>/runs/nfcore_scrnaseq"
 genome: "GRCh38"
 aligner: "star"
-pseudo_aligner: "salmon"
+protocol: "10XV3"
+multiqc_title: "<job_id> nf-core/scrnaseq handoff QC"
 skip_bbsplit: true
-skip_umi_extract: true
+skip_cellbender: true
+skip_emptydrops: false
+save_reference: false
+save_align_intermeds: false
 max_cpus: 16
 max_memory: "96.GB"
 max_time: "48.h"
