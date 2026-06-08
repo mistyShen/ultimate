@@ -203,8 +203,8 @@ def test_scrna_extra_and_handoff_templates_are_packaged() -> None:
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     scrna = set(pyproject["project"]["optional-dependencies"]["scrna"])
     assert {"scanpy>=1.10", "anndata>=0.10", "pytest>=8.0"}.issubset(scrna)
-    package_data = pyproject["tool"]["setuptools"]["package-data"]["ultimate"]
-    assert "templates/handoffs/nfcore_scrnaseq/*" in package_data
+    data_files = pyproject["tool"]["setuptools"]["data-files"]
+    assert data_files["share/ultimate/templates/handoffs/nfcore_scrnaseq"] == ["templates/handoffs/nfcore_scrnaseq/*"]
     handoff_dir = root / "templates/handoffs/nfcore_scrnaseq"
     for filename in ("README.md", "samplesheet.csv", "params.yaml", "nextflow.config"):
         assert (handoff_dir / filename).exists()

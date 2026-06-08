@@ -59,7 +59,8 @@ def test_cli_prepare_intake(tmp_path: Path) -> None:
     (root / ".conda" / "envs" / "ultimate-core").mkdir(parents=True)
     result = runner.invoke(main, ["prepare-intake", "--root", str(root), "--output-dir", str(output_dir), "--refresh-audit"])
     assert result.exit_code == 0, result.output
-    assert (output_dir / "intake_package_manifest.json").exists()
+    manifest = json.loads((output_dir / "intake_package_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["template_status"]["status"] == "ready"
     assert (output_dir / "module_input_catalog.tsv").exists()
     assert (output_dir / "figure_style_catalog.tsv").exists()
     assert (output_dir / "quote_preflight_checklist.md").exists()

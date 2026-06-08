@@ -10,6 +10,7 @@ import pandas as pd
 from ultimate.config import dump_yaml, validate_project_type
 from ultimate.constants import MODULE_ORDER
 from ultimate.raw_qc import RAW_CONTRACTS
+from ultimate.template_resources import find_template_dir
 
 
 def init_project(project_type: str, output_dir: Path, *, demo_data: bool = False) -> dict[str, Any]:
@@ -137,8 +138,8 @@ def _demo_samples() -> pd.DataFrame:
 
 
 def _copy_intake_templates(intake_dir: Path) -> None:
-    template_dir = Path(__file__).resolve().parents[2] / "templates" / "intake"
-    if not template_dir.exists():
+    template_dir = find_template_dir("intake")
+    if template_dir is None:
         return
     for path in template_dir.iterdir():
         if path.is_file():

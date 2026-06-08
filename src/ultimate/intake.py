@@ -12,6 +12,7 @@ from ultimate.constants import MODULE_ORDER, SUPPORTED_ORGANISMS
 from ultimate.plot_style import available_styles
 from ultimate.production_audit import run_production_audit
 from ultimate.raw_qc import RAW_CONTRACTS
+from ultimate.template_resources import find_template_dir, template_lookup_status
 
 
 def prepare_intake_package(*, root: Path, output_dir: Path | None = None, refresh_audit: bool = False) -> dict[str, Any]:
@@ -25,8 +26,9 @@ def prepare_intake_package(*, root: Path, output_dir: Path | None = None, refres
     else:
         audit_manifest = json.loads((audit_dir / "production_audit.json").read_text(encoding="utf-8"))
 
-    templates_dir = Path(__file__).resolve().parents[2] / "templates" / "intake"
+    templates_dir = find_template_dir("intake")
     copied_templates = _copy_templates(templates_dir, output_dir)
+    template_status = template_lookup_status("intake")
     module_catalog = _write_module_catalog(output_dir)
     style_catalog = _write_style_catalog(output_dir)
     quickstart = _write_quickstart(output_dir, root, audit_manifest)
@@ -40,6 +42,7 @@ def prepare_intake_package(*, root: Path, output_dir: Path | None = None, refres
         "organisms": sorted(SUPPORTED_ORGANISMS),
         "production_summary": audit_manifest.get("summary", {}),
         "templates": copied_templates,
+        "template_status": template_status,
         "module_catalog": str(module_catalog),
         "style_catalog": str(style_catalog),
         "quickstart": str(quickstart),
@@ -52,9 +55,9 @@ def prepare_intake_package(*, root: Path, output_dir: Path | None = None, refres
     return manifest
 
 
-def _copy_templates(template_dir: Path, output_dir: Path) -> dict[str, str]:
+def _copy_templates(template_dir: Path | None, output_dir: Path) -> dict[str, str]:
     copied: dict[str, str] = {}
-    if not template_dir.exists():
+    if template_dir is None or not template_dir.exists():
         return copied
     target = output_dir / "templates"
     target.mkdir(parents=True, exist_ok=True)
