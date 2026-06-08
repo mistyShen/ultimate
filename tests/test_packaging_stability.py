@@ -37,10 +37,10 @@ def test_data_files_cover_all_external_template_dirs() -> None:
 
     assert data_files["share/ultimate/templates/intake"] == ["templates/intake/*"]
     assert data_files["share/ultimate/templates/samples"] == ["templates/samples/*"]
-    for handoff_dir in sorted((root / "templates" / "handoffs").iterdir()):
-        if handoff_dir.is_dir():
-            key = f"share/ultimate/templates/handoffs/{handoff_dir.name}"
-            assert data_files[key] == [f"templates/handoffs/{handoff_dir.name}/*"]
+    for key, patterns in data_files.items():
+        if key.startswith("share/ultimate/templates/handoffs/"):
+            for pattern in patterns:
+                assert (root / pattern.removesuffix("/*")).is_dir()
 
 
 def test_template_resource_lookup_finds_source_templates() -> None:

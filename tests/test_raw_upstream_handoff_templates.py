@@ -135,7 +135,7 @@ def test_dev_entrypoint_check_script_has_local_and_remote_modes() -> None:
     assert "pytest -q \\" in text
     assert "tests/test_cli.py::test_cli_prepare_intake" in text
     assert "pip install -e ." in text
-    assert "ultimate --help" in text
+    assert '"$ultimate_bin" --help' in text
     assert "handoff-check" in text
     assert "prepare-intake" in text
     assert "PYTHONPATH=" not in text

@@ -76,9 +76,14 @@ PY
     tests/test_packaging_stability.py \
     tests/test_handoff_check.py
   "$python_bin" -m pip install -e .
-  ultimate --help >/dev/null
-  ultimate handoff-check --root "$root" --output-dir "$tmp_dir/handoff_check" >/dev/null
-  ultimate prepare-intake --root "$tmp_dir/root" --output-dir "$tmp_dir/intake" --refresh-audit >/dev/null
+  local ultimate_bin
+  ultimate_bin="$(dirname "$("$python_bin" -c 'import sys; print(sys.executable)')")/ultimate"
+  if [[ ! -x "$ultimate_bin" ]]; then
+    ultimate_bin="$(command -v ultimate)"
+  fi
+  "$ultimate_bin" --help >/dev/null
+  "$ultimate_bin" handoff-check --root "$root" --output-dir "$tmp_dir/handoff_check" >/dev/null
+  "$ultimate_bin" prepare-intake --root "$tmp_dir/root" --output-dir "$tmp_dir/intake" --refresh-audit >/dev/null
   "$python_bin" - "$tmp_dir" <<'PY'
 import json
 import sys
@@ -99,6 +104,17 @@ PY
 run_remote_checks() {
   local root="$1"
   local python_bin="$2"
+  if ! command -v hpc-run >/dev/null 2>&1; then
+    if [[ -z "$python_bin" ]]; then
+      if [[ -x "$root/.conda/envs/ultimate-core/bin/python" ]]; then
+        python_bin="$root/.conda/envs/ultimate-core/bin/python"
+      else
+        python_bin="$(command -v python3)"
+      fi
+    fi
+    run_local_checks "$root" "$python_bin"
+    return 0
+  fi
   local remote_python_setup
   if [[ -n "$python_bin" ]]; then
     remote_python_setup="PYTHON_BIN='$python_bin'"
