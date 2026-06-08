@@ -253,6 +253,7 @@ def run_scrna_mvp_module_backend(*, config: dict[str, Any], output_dir: Path, sa
         production_approval=None,
         celltypist_model=Path(str(celltypist_model)) if celltypist_model else None,
     )
+    backend_execution_rows = list(manifest.get("backend_status") or []) if isinstance(manifest.get("backend_status"), list) else []
     backend_plan = enrich_backend_plan_for_run(
         build_backend_plan("scrna", config),
         analysis_level=str(manifest.get("analysis_level") or "smoke_backend"),
@@ -290,6 +291,7 @@ def run_scrna_mvp_module_backend(*, config: dict[str, Any], output_dir: Path, sa
             "backend_skip_reason": backend_plan["backend_skip_reason"],
             "backend_resource_profile": backend_plan["backend_resource_profile"],
             "backend_slurm_job_id": backend_plan["backend_slurm_job_id"],
+            "backend_execution_rows": backend_execution_rows,
             "limitations": list(known_limitations("scrna")),
             "handoff": handoff_plan("scrna"),
             "skip_reasons": [],

@@ -148,7 +148,11 @@ def _write_advanced_backend_execution(run_dir: Path, module_manifests: list[dict
         if not isinstance(module, dict):
             continue
         module_name = str(module.get("module") or "")
-        backend_rows = module.get("backend_status") if isinstance(module.get("backend_status"), list) else []
+        backend_rows = []
+        if isinstance(module.get("backend_execution_rows"), list):
+            backend_rows = module.get("backend_execution_rows") or []
+        elif isinstance(module.get("backend_status"), list):
+            backend_rows = module.get("backend_status") or []
         for row in backend_rows:
             if not isinstance(row, dict):
                 continue

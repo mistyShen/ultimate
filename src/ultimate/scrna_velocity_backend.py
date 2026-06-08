@@ -44,10 +44,9 @@ def has_scrna_velocity_backend_config(config: dict[str, Any]) -> bool:
         return True
     if str(module_cfg.get("preset") or "").lower() == "trajectory" and _primary_input_ref(config) is not None:
         return True
-    return any(
-        velocity_cfg.get(key) or module_cfg.get(key)
-        for key in ("input_h5ad", "input_loom", "input_path", "velocity_input_path", "loom")
-    )
+    if any(velocity_cfg.get(key) for key in ("input_h5ad", "input_loom", "input_path", "velocity_input_path", "loom")):
+        return True
+    return any(module_cfg.get(key) for key in ("input_loom", "velocity_input_path", "loom"))
 
 
 def run_scrna_velocity_backend(*, config: dict[str, Any], output_dir: Path, samples: pd.DataFrame) -> dict[str, Any]:
@@ -226,12 +225,15 @@ def _primary_input_ref(config: dict[str, Any]) -> Path | None:
     velocity_cfg = _velocity_cfg(module_cfg)
     raw_cfg = module_cfg.get("raw") if isinstance(module_cfg.get("raw"), dict) else {}
     base = Path(str(config.get("_config_path") or ".")).resolve().parent
+    use_module_expression_input = str(module_cfg.get("preset") or "").lower() == "trajectory"
     value = (
         velocity_cfg.get("input_h5ad")
         or velocity_cfg.get("input_loom")
         or velocity_cfg.get("input_path")
         or module_cfg.get("velocity_input_path")
         or module_cfg.get("input_loom")
+        or (module_cfg.get("input_h5ad") if use_module_expression_input else None)
+        or (module_cfg.get("input_path") if use_module_expression_input else None)
         or raw_cfg.get("velocity_input_path")
     )
     return _resolve_path(base, value) if value else None
