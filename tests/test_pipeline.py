@@ -8,7 +8,7 @@ from ultimate.config import dump_yaml, load_config
 from ultimate.constants import MODULE_ORDER
 from ultimate.job import prepare_job
 from ultimate.modules.common import GLOBAL_MVP_TABLE_COLUMNS, MODULE_MVP_FIGURES, MODULE_MVP_OBJECTS, MODULE_MVP_TABLES
-from ultimate.pipeline import _write_module_log, run_pipeline_from_config
+from ultimate.pipeline import _write_module_log, finalize_run_outputs, run_pipeline_from_config
 from ultimate.preflight import run_preflight
 
 
@@ -121,6 +121,42 @@ def test_module_log_resets_stale_errors_on_new_run(tmp_path: Path) -> None:
     assert "module_started" in text
     assert "module_completed" in text
     assert "input_read_failed" not in text
+
+
+def test_finalize_run_outputs_does_not_repeat_final_repro_export(tmp_path: Path, monkeypatch) -> None:
+    calls: list[str] = []
+    manifest_path = tmp_path / "run_manifest.json"
+    manifest = {
+        "run_id": "finalize_test",
+        "status": "ready",
+        "analysis_level": "smoke_backend",
+        "delivery_allowed": False,
+        "validation_evidence_allowed": False,
+        "modules": [],
+        "delivery_gate": {"status": "blocked", "delivery_allowed": False},
+    }
+
+    def fake_export(run_dir: Path):
+        calls.append("export")
+        (run_dir / "reproducible_code").mkdir(exist_ok=True)
+        return {"status": "ready", "call_index": calls.count("export")}
+
+    def fake_report(run_dir: Path):
+        calls.append("report")
+        (run_dir / "reports").mkdir(exist_ok=True)
+        return {"status": "ready", "call_index": calls.count("report")}
+
+    monkeypatch.setattr("ultimate.pipeline.export_reproducible_package", fake_export)
+    monkeypatch.setattr("ultimate.pipeline.build_report", fake_report)
+
+    result = finalize_run_outputs(tmp_path, manifest_path, manifest)
+
+    assert calls == ["export", "report", "report"]
+    written = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert written["reproducible_package"]["call_index"] == 1
+    assert written["report"]["call_index"] == 2
+    assert result["reproducible_package"] == written["reproducible_package"]
+    assert result["report"] == written["report"]
 
 
 def test_all_modules_emit_declared_mvp_artifacts(tmp_path: Path) -> None:

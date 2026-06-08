@@ -927,21 +927,6 @@ def _coerce_mvp_table_schema(
                 input_artifact=input_artifact,
                 input_modality=input_modality,
             )
-    for column in GLOBAL_MVP_TABLE_COLUMNS:
-        if column in frame.columns and column not in {"module", "sample_id"}:
-            frame[column] = _default_schema_column(
-                column,
-                module_name,
-                filename,
-                len(frame),
-                matrix=matrix,
-                samples=samples,
-                analysis_fields=analysis_fields,
-                run_id=run_id,
-                source_dataset=source_dataset,
-                input_artifact=input_artifact,
-                input_modality=input_modality,
-            )
     extras = [column for column in frame.columns if column not in schema]
     return frame[schema + extras]
 

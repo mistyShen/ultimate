@@ -1,46 +1,69 @@
 from __future__ import annotations
 
-from ultimate.modules.common import (
-    demo_manifest,
-    handoff_plan,
-    known_limitations,
-    module_contract,
-    preflight_contract,
-    report_contract,
-    run_contract_smoke,
-    validation_plan,
+from ultimate.modules.backend_entrypoints import (
+    backend_metadata as _backend_metadata,
+    contract as _contract,
+    demo as _demo,
+    handoff as _handoff,
+    install_backend_package_router,
+    limitations as _limitations,
+    preflight as _preflight,
+    report as _report,
+    run as _run,
+    validate as _validate,
 )
 
 MODULE_NAME = "methylation"
 
 
 def contract():
-    return module_contract(MODULE_NAME).to_dict()
+    return _contract(MODULE_NAME)
 
 
-def preflight(config=None):
-    return preflight_contract(MODULE_NAME, config=config)
+def preflight(config=None, samples=None):
+    return _preflight(MODULE_NAME, config=config, samples=samples)
 
 
-def demo():
-    return demo_manifest(MODULE_NAME)
+def demo(output_dir=None):
+    return _demo(MODULE_NAME, output_dir=output_dir)
 
 
 def validate():
-    return validation_plan(MODULE_NAME)
+    return _validate(MODULE_NAME)
 
 
-def run(output_dir):
-    return run_contract_smoke(MODULE_NAME, output_dir)
+def run(output_dir, config=None, samples=None):
+    return _run(MODULE_NAME, output_dir, config=config, samples=samples)
 
 
 def report():
-    return report_contract(MODULE_NAME)
+    return _report(MODULE_NAME)
 
 
 def handoff():
-    return handoff_plan(MODULE_NAME)
+    return _handoff(MODULE_NAME)
 
 
 def limitations():
-    return list(known_limitations(MODULE_NAME))
+    return _limitations(MODULE_NAME)
+
+
+def backend_metadata():
+    return _backend_metadata(MODULE_NAME)
+
+
+install_backend_package_router(__name__, MODULE_NAME)
+
+
+__all__ = [
+    "MODULE_NAME",
+    "backend_metadata",
+    "contract",
+    "demo",
+    "handoff",
+    "limitations",
+    "preflight",
+    "report",
+    "run",
+    "validate",
+]

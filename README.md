@@ -135,10 +135,49 @@ production audit outputs:
 Current `fully_automatic_mvp` entries are intentionally conservative matrix or
 validated-entrypoint backends. High-value V3 targets such as CellTypist,
 Scrublet, LIANA, CopyKAT/inferCNV, scVelo, pseudobulk DESeq2/edgeR, Signac or
-SnapATAC2, MuData, squidpy, scirpy, DSB, WGCNA R, and public database download
-backends stay `planned_fully_automatic` until they have a real runner, pytest,
-Slurm validation, and report warnings. Licensed tools such as Cell Ranger and
-Space Ranger remain user-provided path backends.
+SnapATAC2-compatible matrix entrypoints, MuData, squidpy, scirpy, DSB, WGCNA R
+handoff, and public-table backends are tracked at backend level and must keep
+pytest, Slurm validation, and report warnings before they are treated as
+current evidence. Licensed tools such as Cell Ranger and Space Ranger remain
+user-provided path backends.
+
+## SCEPI Matrix Backend
+
+The SCEPI module is a matrix-level single-cell epigenomics MVP, not a full
+modality-specific scBS-seq, scNMT-seq, CUT&Tag, CUT&RUN, or scATAC best-practice
+pipeline. It accepts region/probe/peak matrices where the first column is one
+of `feature_id`, `region_id`, `peak_id`, `probe_id`, or `locus_id`, followed by
+numeric sample/cell columns. h5ad handoff objects are also accepted when the
+runtime has `anndata` available.
+
+The backend writes module artifacts under:
+
+```text
+results/tables/scepi/{feature_qc,sample_qc,missing_value_summary,differential_region_handoff,promoter_summary,enhancer_summary,annotation_summary}.tsv
+results/figures/scepi/{pca,sample_correlation_heatmap,region_heatmap}.png
+objects/scepi/scepi_mvp_object.json
+objects/scepi/scepi_mvp_object.rds
+reports/scepi/{report.html,methods.md}
+```
+
+`differential_region_handoff.tsv` is design-ready/preview output only and must
+not be reported as a formal DMR/DAR result. Public validation is run through
+Slurm:
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/scepi_backend_validation.sbatch
+```
+
+The standalone validation entrypoint is:
+
+```bash
+python /shared/shen/2026/ultimate/01_tools/validate_scepi_public.py \
+  --output-dir /shared/shen/2026/ultimate/validations/slurm_scepi_matrix
+```
+
+Successful validation is `analysis_level=validated_backend`,
+`validation_evidence_allowed=true`, `delivery_allowed=false`, and
+`delivery_scope=not_customer_delivery`.
 
 ## Technical Triage
 

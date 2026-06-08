@@ -96,6 +96,34 @@ def export_reproducible_package(run_dir: Path, *, checksum_max_bytes: int = DEFA
     return repro_manifest
 
 
+def refresh_job_level_delivery_mirrors(run_dir: Path) -> dict[str, Any]:
+    """Refresh prepared-job latest mirrors after reports have been rebuilt.
+
+    `export_reproducible_package` intentionally runs before report rendering in
+    the pipeline finalize order so the report can include reproducibility
+    details. This helper updates only the small job-level mirrors afterward; it
+    does not recalculate checksums, software versions, or rerun scripts.
+    """
+
+    run_dir = run_dir.resolve()
+    repro_manifest_path = run_dir / "reproducible_code" / "repro_manifest.json"
+    if not repro_manifest_path.exists():
+        return {}
+    try:
+        repro_manifest = json.loads(repro_manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    delivery_index = _write_delivery_index(run_dir / "delivery_index.tsv", run_dir)
+    repro_manifest["delivery_index"] = str(delivery_index)
+    job_level_delivery = _write_job_level_delivery(run_dir=run_dir, repro_manifest=repro_manifest, repro_manifest_path=repro_manifest_path)
+    if not job_level_delivery:
+        return {}
+    repro_manifest["job_level_delivery"] = job_level_delivery
+    repro_manifest_path.write_text(json.dumps(repro_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    _copy_if_exists(repro_manifest_path, Path(job_level_delivery["reproducible_code_dir"]) / "latest_repro_manifest.json")
+    return job_level_delivery
+
+
 def _copy_if_exists(source: Path, target: Path) -> Path | None:
     if not source.exists():
         return None

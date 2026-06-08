@@ -30,6 +30,27 @@ from ultimate.plot_style import apply_clinical_journal_style, save_figure
 
 SCEPI_BACKEND_ID = "scepi.default.matrix_handoff_mvp"
 SCEPI_WARNING = "beta matrix、scBS-seq、CUT&Tag、CUT&RUN、scATAC 不能混用同一统计套路；region-level 结果是矩阵级 QC/summary，不等同于 full modality-specific backend。"
+SCEPI_FEATURE_ID_COLUMNS = ("feature_id", "region_id", "peak_id", "probe_id", "locus_id")
+
+SCEPI_BACKEND_METADATA: dict[str, Any] = {
+    "module": "scepi",
+    "backend_id": SCEPI_BACKEND_ID,
+    "backend_status": "fully_automatic_validated_entrypoint",
+    "backend_entrypoint": "ultimate.scepi_backend.run_scepi_backend",
+    "supported_input_types": ("region_matrix", "beta_matrix", "accessibility_matrix", "h5ad"),
+    "required_tables": (
+        "feature_qc.tsv",
+        "sample_qc.tsv",
+        "missing_value_summary.tsv",
+        "differential_region_handoff.tsv",
+        "promoter_summary.tsv",
+        "enhancer_summary.tsv",
+        "annotation_summary.tsv",
+    ),
+    "required_figures": ("pca.png", "sample_correlation_heatmap.png", "region_heatmap.png"),
+    "object_contract": ("scepi_mvp_object.json", "scepi_mvp_object.rds"),
+    "warning": SCEPI_WARNING,
+}
 
 
 def has_scepi_backend_config(config: dict[str, Any]) -> bool:
@@ -46,6 +67,69 @@ def has_scepi_backend_config(config: dict[str, Any]) -> bool:
         "matrix_path",
     }
     return any(module_cfg.get(key) for key in keys) or any(raw_cfg.get(key) for key in keys)
+
+
+def inspect_scepi_input_contract(config: dict[str, Any], samples: pd.DataFrame | None = None) -> dict[str, Any]:
+    """Inspect SCEPI matrix-level input readiness without running the backend."""
+
+    module_cfg = _module_cfg(config)
+    path = _primary_input_ref(config)
+    result: dict[str, Any] = {
+        "module": "scepi",
+        "backend_id": SCEPI_BACKEND_ID,
+        "input_path": str(path or ""),
+        "input_exists": bool(path and path.exists()),
+        "input_type": _input_modality(config),
+        "supported_feature_id_columns": list(SCEPI_FEATURE_ID_COLUMNS),
+        "numeric_column_count": 0,
+        "feature_column": "",
+        "n_features": 0,
+        "n_samples": 0,
+        "differential_preview_ready": False,
+        "warnings": [SCEPI_WARNING],
+        "errors": [],
+    }
+    if path is None:
+        result["errors"].append("missing_scepi_matrix")
+        result["status"] = "partial:missing_scepi_matrix"
+        return result
+    if not path.exists():
+        result["errors"].append(f"missing_scepi_matrix:{path}")
+        result["status"] = "partial:missing_scepi_matrix"
+        return result
+    if path.suffix.lower() == ".h5ad":
+        result.update({"feature_column": "h5ad.var_names", "numeric_column_count": 1, "status": "ready"})
+        return result
+    try:
+        frame = pd.read_csv(path, sep=None, engine="python", nrows=int(module_cfg.get("preflight_rows", 200)))
+    except Exception as exc:
+        result["errors"].append(f"matrix_read_failed:{type(exc).__name__}:{exc}")
+        result["status"] = "partial:matrix_read_failed"
+        return result
+    if frame.empty:
+        result["errors"].append("empty_scepi_matrix")
+    feature_col = _feature_column(frame)
+    if feature_col not in SCEPI_FEATURE_ID_COLUMNS:
+        result["warnings"].append(f"unrecognized_feature_id_column:{feature_col}; first column will be treated as feature_id")
+    numeric = frame.drop(columns=[feature_col], errors="ignore").apply(pd.to_numeric, errors="coerce")
+    numeric = numeric.loc[:, numeric.notna().any(axis=0)]
+    result.update(
+        {
+            "feature_column": feature_col,
+            "numeric_column_count": int(numeric.shape[1]),
+            "n_features": int(frame.shape[0]),
+            "n_samples": int(numeric.shape[1]),
+        }
+    )
+    if numeric.shape[1] < 2:
+        result["errors"].append("numeric_sample_columns_lt_2")
+    groups = _sample_groups(samples if samples is not None else pd.DataFrame(), list(numeric.columns.astype(str)))
+    group_counts = pd.Series([groups.get(sample, "unknown") for sample in numeric.columns.astype(str)]).value_counts()
+    ready_groups = [group for group, count in group_counts.items() if group != "unknown" and count >= 2]
+    result["group_counts"] = {str(group): int(count) for group, count in group_counts.items()}
+    result["differential_preview_ready"] = len(ready_groups) >= 2
+    result["status"] = "ready" if not result["errors"] else "partial:input_contract_failed"
+    return result
 
 
 def run_scepi_backend(*, config: dict[str, Any], output_dir: Path, samples: pd.DataFrame) -> dict[str, Any]:
@@ -279,7 +363,7 @@ def _load_h5ad(path: Path) -> dict[str, Any]:
 
 
 def _feature_column(frame: pd.DataFrame) -> str:
-    for candidate in ("feature_id", "region_id", "peak_id", "probe_id", "locus_id"):
+    for candidate in SCEPI_FEATURE_ID_COLUMNS:
         if candidate in frame.columns:
             return candidate
     return str(frame.columns[0])
@@ -546,7 +630,8 @@ def _write_scepi_figures(*, tables_dir: Path, figures_dir: Path) -> dict[str, st
 
 
 def _write_scepi_object(*, objects_dir: Path, data: dict[str, Any], max_features: int) -> dict[str, str]:
-    object_path = objects_dir / "scepi_mvp_object.rds"
+    object_path = objects_dir / "scepi_mvp_object.json"
+    rds_compat_path = objects_dir / "scepi_mvp_object.rds"
     matrix = np.asarray(data["matrix"], dtype=float)
     variances = np.nanvar(matrix, axis=1)
     selected = np.argsort(variances)[::-1][: min(max_features, len(variances))]
@@ -562,9 +647,17 @@ def _write_scepi_object(*, objects_dir: Path, data: dict[str, Any], max_features
         "warning": SCEPI_WARNING,
     }
     object_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    rds_compat_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     manifest_path = objects_dir / "scepi_mvp_object_manifest.json"
-    manifest_path.write_text(json.dumps({"object": str(object_path), "status": "json_fallback_not_rds", "max_features": int(max_features)}, indent=2, ensure_ascii=False), encoding="utf-8")
-    return {"mvp_object": str(object_path), "object_manifest": str(manifest_path)}
+    manifest_path.write_text(
+        json.dumps(
+            {"object": str(object_path), "rds_compat_object": str(rds_compat_path), "status": "json_fallback_with_rds_compat_copy", "max_features": int(max_features)},
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return {"mvp_object": str(object_path), "rds_compat_object": str(rds_compat_path), "object_manifest": str(manifest_path)}
 
 
 def _write_skip_outputs(*, tables_dir: Path, figures_dir: Path, objects_dir: Path, analysis_fields: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -612,9 +705,11 @@ def _write_skip_outputs(*, tables_dir: Path, figures_dir: Path, objects_dir: Pat
     ):
         table_paths[filename.replace(".tsv", "")] = _write_tsv(pd.DataFrame([row]), tables_dir / filename)
     figure_paths = _write_placeholder_figures(figures_dir)
-    object_path = objects_dir / "scepi_mvp_object.rds"
+    object_path = objects_dir / "scepi_mvp_object.json"
+    rds_compat_path = objects_dir / "scepi_mvp_object.rds"
     object_path.write_text(json.dumps({"status": "skipped_missing_input"}, indent=2), encoding="utf-8")
-    return {"tables": table_paths, "figures": figure_paths, "objects": {"mvp_object": str(object_path)}}
+    rds_compat_path.write_text(json.dumps({"status": "skipped_missing_input"}, indent=2), encoding="utf-8")
+    return {"tables": table_paths, "figures": figure_paths, "objects": {"mvp_object": str(object_path), "rds_compat_object": str(rds_compat_path)}}
 
 
 def _write_placeholder_figures(figures_dir: Path) -> dict[str, str]:

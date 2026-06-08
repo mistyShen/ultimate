@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from ultimate.modules.common import validation_plan
+from ultimate.modules.backend_entrypoints import validate as _validate
 
 MODULE_NAME = "rnaseq"
 
 
 def validate():
-    return validation_plan(MODULE_NAME)
+    return _validate(MODULE_NAME)

@@ -16,6 +16,7 @@ from ultimate.backend_registry import build_backend_plan
 from ultimate.bulk import BULK_MODULES, bulk_requirement_checks
 from ultimate.constants import MODULE_SPECS
 from ultimate.raw_qc import PATH_COLUMNS, RAW_CONTRACTS
+from ultimate.scepi_backend import inspect_scepi_input_contract
 
 
 def run_preflight(config: dict[str, Any], *, write: bool = True) -> dict[str, Any]:
@@ -75,6 +76,8 @@ def _check_module(config: dict[str, Any], samples: pd.DataFrame, module_name: st
     raw_report = _raw_preflight(module_cfg, samples, module_name)
     checks["raw"] = raw_report
     checks["backend_plan"] = backend_plan
+    if module_name == "scepi":
+        checks["scepi_matrix_contract"] = inspect_scepi_input_contract(config, samples=samples)
     warnings = []
     if checks["required_sample_columns"]:
         warnings.append("missing_required_sample_columns")
@@ -90,6 +93,12 @@ def _check_module(config: dict[str, Any], samples: pd.DataFrame, module_name: st
         warnings.append("raw_missing_required_columns:" + ",".join(raw_report["missing_required_columns"]))
     if raw_report["raw_enabled"] and raw_report["input_type"] not in raw_report["supported_input_types"]:
         warnings.append("raw_unsupported_input_type:" + raw_report["input_type"])
+    if module_name == "scepi":
+        scepi_status = str(checks["scepi_matrix_contract"].get("status", ""))
+        if scepi_status.startswith("partial"):
+            warnings.append("scepi_matrix_contract:" + scepi_status)
+        if not checks["scepi_matrix_contract"].get("differential_preview_ready"):
+            warnings.append("scepi_differential_preview_handoff_only")
     missing_raw_paths = raw_report.get("missing_input_paths") or []
     if strict and raw_report["raw_enabled"] and missing_raw_paths:
         warnings.append("raw_input_paths_missing:" + ",".join(missing_raw_paths[:5]))

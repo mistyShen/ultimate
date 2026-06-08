@@ -17,7 +17,7 @@ from ultimate.plot_style import generate_style_review, set_active_style_from_con
 from ultimate.preflight import run_preflight
 from ultimate.raw_qc import run_raw_qc
 from ultimate.report import build_report
-from ultimate.reproducibility import export_reproducible_package
+from ultimate.reproducibility import export_reproducible_package, refresh_job_level_delivery_mirrors
 
 
 def run_pipeline_from_config(config_path: Path, *, production_approval_path: Path | None = None) -> dict[str, Any]:
@@ -153,9 +153,12 @@ def finalize_run_outputs(out_dir: Path, manifest_path: Path, manifest: dict[str,
     report_manifest = build_report(out_dir)
     manifest["report"] = report_manifest
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    repro_manifest = export_reproducible_package(out_dir)
-    manifest["reproducible_package"] = repro_manifest
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    job_level_delivery = refresh_job_level_delivery_mirrors(out_dir)
+    if job_level_delivery:
+        reproducible_package = manifest.get("reproducible_package")
+        if isinstance(reproducible_package, dict):
+            reproducible_package["job_level_delivery"] = job_level_delivery
+        manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     _mirror_final_run_manifest(out_dir, manifest_path)
     return manifest
 

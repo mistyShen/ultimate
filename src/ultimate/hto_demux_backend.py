@@ -22,6 +22,7 @@ from ultimate.modules.common import (
     write_module_qc_manifest,
     write_module_report_bundle,
     write_tool_coverage_table,
+    _coerce_mvp_table_schema,
 )
 from ultimate.plot_style import apply_clinical_journal_style, save_figure
 
@@ -519,5 +520,37 @@ def _base_fields(analysis_fields: dict[str, Any], input_artifact: str, source_da
 
 def _write_tsv(frame: pd.DataFrame, path: Path) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
+    frame = _coerce_mvp_table_schema(
+        "hto_demux",
+        path.name,
+        frame,
+        matrix=None,
+        samples=None,
+        analysis_fields=_analysis_fields_from_frame(frame),
+        run_id=_first_frame_value(frame, "run_id"),
+        source_dataset=_first_frame_value(frame, "source_dataset"),
+        input_artifact=_first_frame_value(frame, "input_artifact"),
+        input_modality=_first_frame_value(frame, "input_modality") or "hto_demux",
+    )
     frame.to_csv(path, sep="\t", index=False)
     return str(path)
+
+
+def _analysis_fields_from_frame(frame: pd.DataFrame) -> dict[str, Any]:
+    return {
+        "analysis_level": _first_frame_value(frame, "analysis_level") or "not_recorded",
+        "delivery_allowed": _first_frame_bool(frame, "delivery_allowed"),
+        "validation_evidence_allowed": _first_frame_bool(frame, "validation_evidence_allowed"),
+    }
+
+
+def _first_frame_value(frame: pd.DataFrame, column: str) -> str:
+    if column not in frame.columns or frame.empty:
+        return ""
+    value = frame[column].iloc[0]
+    return "" if pd.isna(value) else str(value)
+
+
+def _first_frame_bool(frame: pd.DataFrame, column: str) -> bool:
+    value = _first_frame_value(frame, column).strip().lower()
+    return value in {"true", "1", "yes"}
