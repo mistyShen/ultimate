@@ -141,6 +141,45 @@ pytest, Slurm validation, and report warnings before they are treated as
 current evidence. Licensed tools such as Cell Ranger and Space Ranger remain
 user-provided path backends.
 
+### V3.1 Advanced Presets
+
+Advanced presets now resolve to explicit backend groups instead of requiring a
+manual notebook edit. For example:
+
+```yaml
+modules:
+  scrna:
+    enabled: true
+    preset: communication
+    backends:
+      annotation: celltypist
+      communication: liana,cellchat
+  scatac:
+    enabled: true
+    preset: publication
+    backends:
+      motif: chromvar
+```
+
+The resolver records `preset_selected_backends`, `active_backends`,
+`skipped_optional_backends`, and interpretation warnings in backend manifests.
+`CellChat` and `chromVAR/Signac` are guarded optional backends: they run only
+when the required labels, mappings, packages, and input contracts are present;
+otherwise they write explicit skip/blocked rows in
+`backend_execution_manifest.json` or module backend status tables. Skip rows are
+not delivery evidence.
+
+Slurm validation entrypoints:
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/scrna_cellchat_validation.sbatch
+hpc-sbatch /shared/shen/2026/ultimate/slurm/scatac_chromvar_validation.sbatch
+```
+
+CellChat results are ligand-receptor candidates, not direct mechanism proof.
+chromVAR/Signac motif deviation and gene activity outputs are
+accessibility-derived inferences, not TF activity assays or gene expression.
+
 ## SCEPI Matrix Backend
 
 The SCEPI module is a matrix-level single-cell epigenomics MVP, not a full

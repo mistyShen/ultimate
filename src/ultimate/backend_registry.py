@@ -254,6 +254,25 @@ BACKEND_REGISTRY: tuple[BackendSpec, ...] = (
         interpretation_warning="通信结果只能作为候选互作，不写成确定机制。",
     ),
     _backend(
+        "scrna.communication.cellchat_optional",
+        "scrna",
+        "optional_backend",
+        "communication",
+        "CellChat ligand-receptor communication",
+        "CellChat",
+        ("h5ad_with_reviewed_labels", "count_matrix_with_reviewed_labels"),
+        "ultimate-scrna-r",
+        "slurm/scrna_cellchat_validation.sbatch",
+        ("cellchat_interactions.tsv", "cellchat_pathway_summary.tsv", "cellchat_backend_status.tsv", "cellchat_network.png"),
+        "PBMC/NSCLC small validation when R CellChat and reviewed labels are available",
+        ("CellChat 依赖 reviewed cell labels 和 R 包；通讯结果是表达推断，不是机制证明。",),
+        production_allowed=True,
+        backend_status="fully_automatic_mvp",
+        skip_reason="Runs automatically when Rscript, CellChat, reviewed labels, and sufficient groups are present; otherwise writes explicit skip evidence.",
+        resource_profile="medium_r",
+        interpretation_warning="CellChat 结果是候选配体-受体通讯推断，不能写成确定细胞互作机制。",
+    ),
+    _backend(
         "scrna.tumor.copykat",
         "scrna",
         "optional_backend",
@@ -325,6 +344,25 @@ BACKEND_REGISTRY: tuple[BackendSpec, ...] = (
         backend_status="fully_automatic_validated_entrypoint",
         skip_reason="",
         resource_profile="large_chromatin",
+    ),
+    _backend(
+        "scatac.motif.chromvar_signac",
+        "scatac",
+        "optional_backend",
+        "publication",
+        "chromVAR/Signac motif and gene-activity backend",
+        "chromVAR + Signac-compatible matrix runner",
+        ("peak_matrix", "fragments", "motif_peak_table", "gene_peak_table"),
+        "ultimate-scatac-multiome",
+        "slurm/scatac_chromvar_validation.sbatch",
+        ("motif_deviation.tsv", "motif_enrichment_handoff.tsv", "gene_activity.tsv", "chromvar_signac_backend_status.tsv", "motif_deviation_heatmap.png", "gene_activity_heatmap.png"),
+        "10x PBMC scATAC public peak matrix with lightweight motif/gene mapping fixture",
+        ("motif deviation 和 gene activity 是可及性推断；缺 motifs/fragments/annotation 时必须跳过或只写 handoff。",),
+        production_allowed=True,
+        backend_status="fully_automatic_mvp",
+        skip_reason="Runs automatically for peak matrix plus motif/gene mapping; formal chromVAR/Signac R execution remains dependency-gated.",
+        resource_profile="large_chromatin",
+        interpretation_warning="motif enrichment/gene activity 是染色质可及性推断，不等于 TF 活性实验证明或基因表达。",
     ),
     _backend(
         "multiome.default.muon_mvp",
@@ -716,8 +754,9 @@ def build_backend_plan(module_name: str, config: dict[str, Any] | None = None) -
     requested = module_cfg.get("backends") if isinstance(module_cfg.get("backends"), dict) else {}
     specs = backends_for_module(module_name)
     selected = _select_default_backend(specs, preset)
+    preset_matches = _preset_matches(module_name, specs, preset)
     requested_matches, unknown_requested = _requested_matches(module_name, specs, requested)
-    active = _dedupe_specs([selected] + requested_matches if selected else requested_matches)
+    active = _dedupe_specs(([selected] if selected else []) + preset_matches + requested_matches)
     skipped_optional = [spec.backend_id for spec in specs if spec.backend_role == "optional_backend" and spec not in active]
     licensed = [_licensed_status(spec, config) for spec in specs if spec.requires_license or spec.backend_role == "licensed_backend"]
     warnings = [spec.interpretation_warning for spec in active if spec.interpretation_warning]
@@ -744,6 +783,7 @@ def build_backend_plan(module_name: str, config: dict[str, Any] | None = None) -
         "backend_resource_profile": selected.resource_profile if selected else "not_recorded",
         "backend_slurm_job_id": "",
         "active_backends": [_row(spec) for spec in active],
+        "preset_selected_backends": [_row(spec) for spec in preset_matches],
         "requested_backends": {str(k): str(v) for k, v in requested.items()},
         "unknown_requested_backends": {str(k): str(v) for k, v in unknown_requested.items()},
         "skipped_optional_backends": skipped_optional,
@@ -868,23 +908,120 @@ def _requested_matches(module_name: str, specs: list[BackendSpec], requested: di
     unknown: dict[str, Any] = {}
     by_suffix = {spec.backend_id.split(".")[-1]: spec for spec in specs}
     by_id = {spec.backend_id: spec for spec in specs}
+    by_alias = _backend_aliases(specs)
     for key, value in requested.items():
         if value in {None, False, ""}:
             continue
-        value_str = str(value)
-        candidates = [
-            by_id.get(str(key)),
-            by_id.get(f"{module_name}.{key}"),
-            by_id.get(value_str),
-            by_id.get(f"{module_name}.{key}.{value_str}"),
-            by_suffix.get(value_str),
-        ]
-        matched = next((candidate for candidate in candidates if candidate is not None), None)
-        if matched is None:
+        values = _requested_values(value)
+        key_matched = False
+        for value_str in values:
+            normalized = _normalize_backend_token(value_str)
+            candidates = [
+                by_id.get(str(key)),
+                by_id.get(f"{module_name}.{key}"),
+                by_id.get(value_str),
+                by_id.get(f"{module_name}.{key}.{value_str}"),
+                by_suffix.get(value_str),
+                by_alias.get(normalized),
+                by_alias.get(_normalize_backend_token(str(key))),
+                by_alias.get(_normalize_backend_token(f"{key}.{value_str}")),
+            ]
+            matched = next((candidate for candidate in candidates if candidate is not None), None)
+            if matched is None:
+                continue
+            key_matched = True
+            matches.append(matched)
+        if not key_matched:
             unknown[str(key)] = value
-            continue
-        matches.append(matched)
     return matches, unknown
+
+
+PRESET_BACKEND_DEFAULTS: dict[tuple[str, str], tuple[str, ...]] = {
+    ("scrna", "standard"): (
+        "scrna.qc.scrublet",
+        "scrna.annotation.celltypist",
+        "scrna.functional.decoupler_gseapy",
+    ),
+    ("scrna", "tumor"): (
+        "scrna.qc.scrublet",
+        "scrna.annotation.celltypist",
+        "scrna.functional.decoupler_gseapy",
+        "scrna.tumor.copykat",
+    ),
+    ("scrna", "communication"): (
+        "scrna.qc.scrublet",
+        "scrna.annotation.celltypist",
+        "scrna.functional.decoupler_gseapy",
+        "scrna.communication.liana",
+        "scrna.communication.cellchat_optional",
+    ),
+    ("scrna", "trajectory"): (
+        "scrna.qc.scrublet",
+        "scrna.annotation.celltypist",
+        "scrna.functional.decoupler_gseapy",
+        "scrna.velocity.scvelo",
+    ),
+    ("scrna", "publication"): (
+        "scrna.qc.scrublet",
+        "scrna.annotation.celltypist",
+        "scrna.functional.decoupler_gseapy",
+        "scrna.pseudobulk.deseq2_edger",
+    ),
+    ("scatac", "publication"): ("scatac.motif.chromvar_signac",),
+    ("cite_seq", "publication"): ("cite_seq.optional.dsb",),
+}
+
+
+def _preset_matches(module_name: str, specs: list[BackendSpec], preset: str) -> list[BackendSpec]:
+    by_id = {spec.backend_id: spec for spec in specs}
+    ids = PRESET_BACKEND_DEFAULTS.get((module_name, preset), ())
+    return [by_id[backend_id] for backend_id in ids if backend_id in by_id]
+
+
+def _requested_values(value: Any) -> list[str]:
+    if isinstance(value, (list, tuple, set)):
+        raw_values = [str(item) for item in value]
+    else:
+        raw_values = str(value).split(",")
+    return [item.strip() for item in raw_values if item and item.strip()]
+
+
+def _backend_aliases(specs: list[BackendSpec]) -> dict[str, BackendSpec]:
+    aliases: dict[str, BackendSpec] = {}
+    for spec in specs:
+        tokens = {
+            spec.backend_id,
+            spec.backend_id.split(".")[-1],
+            spec.tool,
+            spec.label,
+        }
+        if spec.backend_id == "scrna.communication.cellchat_optional":
+            tokens.update({"cellchat", "communication.cellchat"})
+        elif spec.backend_id == "scrna.communication.liana":
+            tokens.update({"liana", "communication.liana"})
+        elif spec.backend_id == "scrna.annotation.celltypist":
+            tokens.update({"celltypist", "annotation.celltypist"})
+        elif spec.backend_id == "scrna.qc.scrublet":
+            tokens.update({"scrublet", "qc.scrublet"})
+        elif spec.backend_id == "scrna.functional.decoupler_gseapy":
+            tokens.update({"decoupler", "gseapy", "decoupler_gseapy", "functional.decoupler"})
+        elif spec.backend_id == "scrna.tumor.copykat":
+            tokens.update({"copykat", "tumor.copykat", "cnv.copykat"})
+        elif spec.backend_id == "scrna.velocity.scvelo":
+            tokens.update({"scvelo", "velocity.scvelo"})
+        elif spec.backend_id == "scrna.pseudobulk.deseq2_edger":
+            tokens.update({"pseudobulk_de", "deseq2", "edger", "pseudobulk.deseq2_edger"})
+        elif spec.backend_id == "scatac.motif.chromvar_signac":
+            tokens.update({"chromvar", "signac", "chromvar_signac", "motif.chromvar", "motif.signac"})
+        elif spec.backend_id == "cite_seq.optional.dsb":
+            tokens.update({"dsb", "optional.dsb"})
+        for token in tokens:
+            aliases[_normalize_backend_token(str(token))] = spec
+    return aliases
+
+
+def _normalize_backend_token(value: str) -> str:
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
 def _dedupe_specs(specs: list[BackendSpec]) -> list[BackendSpec]:

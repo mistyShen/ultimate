@@ -207,6 +207,14 @@ def run_scrna_validation(
     )
     backend_rows.append(liana_status)
     backend_artifacts.update(liana_artifacts)
+    cellchat_status, cellchat_artifacts = _run_cellchat_backend(
+        adata=adata,
+        tables=tables,
+        figures=figures,
+        analysis_level=level.analysis_level,
+    )
+    backend_rows.append(cellchat_status)
+    backend_artifacts.update(cellchat_artifacts)
     backend_execution_manifest = _write_backend_execution_manifest(
         tables=tables,
         backend_rows=backend_rows,
@@ -769,6 +777,74 @@ def _run_liana_backend(
         return _backend_row(backend_id, "failed", analysis_level, reason), artifacts
 
 
+def _run_cellchat_backend(
+    *,
+    adata,
+    tables: Path,
+    figures: Path,
+    analysis_level: str,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    backend_id = "scrna.communication.cellchat_optional"
+    interactions_path = tables / "cellchat_interactions.tsv"
+    pathway_path = tables / "cellchat_pathway_summary.tsv"
+    network_path = tables / "cellchat_network_summary.tsv"
+    status_path = tables / "cellchat_backend_status.tsv"
+    manifest_path = tables / "cellchat_backend_manifest.json"
+    script_path = tables / "cellchat_run.R"
+    expr_path = tables / "cellchat_input_expression.tsv"
+    meta_path = tables / "cellchat_input_metadata.tsv"
+    figure_path = figures / "cellchat_network.png"
+    artifacts = {
+        "cellchat_interactions": str(interactions_path),
+        "cellchat_pathway_summary": str(pathway_path),
+        "cellchat_network_summary": str(network_path),
+        "cellchat_backend_status": str(status_path),
+        "cellchat_backend_manifest": str(manifest_path),
+        "cellchat_run_script": str(script_path),
+        "cellchat_network": str(figure_path),
+    }
+    rscript = shutil.which("Rscript")
+    if not rscript:
+        reason = "dependency_missing:Rscript"
+        _write_cellchat_skip_outputs(interactions_path, pathway_path, network_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+        return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+    packages = _available_r_packages(rscript, ("CellChat",))
+    if not packages.get("CellChat"):
+        reason = "dependency_missing:CellChat"
+        _write_cellchat_skip_outputs(interactions_path, pathway_path, network_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+        return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+    groupby, reason = _communication_groupby(adata)
+    if reason:
+        _write_cellchat_skip_outputs(interactions_path, pathway_path, network_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+        return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+    try:
+        _write_cellchat_inputs(adata, groupby, expr_path, meta_path)
+        _write_cellchat_r_script(script_path, expr_path, meta_path, interactions_path, pathway_path, network_path, status_path, analysis_level)
+        completed = subprocess.run([rscript, str(script_path)], check=False, text=True, capture_output=True, timeout=900)
+        (tables / "cellchat_stdout.log").write_text(completed.stdout, encoding="utf-8")
+        (tables / "cellchat_stderr.log").write_text(completed.stderr, encoding="utf-8")
+        if completed.returncode != 0:
+            reason = f"backend_failed:CellChat_returncode_{completed.returncode}"
+            _write_cellchat_skip_outputs(interactions_path, pathway_path, network_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+            return _backend_row(backend_id, "failed", analysis_level, reason), artifacts
+        if not interactions_path.exists() or interactions_path.stat().st_size == 0:
+            reason = "empty_result:cellchat_interactions"
+            _write_cellchat_skip_outputs(interactions_path, pathway_path, network_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+            return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+        interactions = pd.read_csv(interactions_path, sep="\t")
+        if interactions.empty:
+            reason = "empty_result:cellchat_interactions"
+            _write_cellchat_skip_outputs(interactions_path, pathway_path, network_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+            return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+        _write_cellchat_network_figure(network_path, figure_path)
+        _write_cellchat_manifest(manifest_path, backend_id, "ready", analysis_level, "", artifacts, groupby=groupby)
+        return _backend_row(backend_id, "ready", analysis_level, ""), artifacts
+    except Exception as exc:
+        reason = f"backend_failed:{type(exc).__name__}:{exc}"
+        _write_cellchat_skip_outputs(interactions_path, pathway_path, network_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+        return _backend_row(backend_id, "failed", analysis_level, reason), artifacts
+
+
 def _run_pseudobulk_de_backend(*, tables: Path, analysis_level: str) -> tuple[dict[str, Any], dict[str, str]]:
     backend_id = "scrna.pseudobulk.deseq2_edger"
     status_path = tables / "pseudobulk_de_backend_status.tsv"
@@ -1280,6 +1356,186 @@ def _write_liana_dotplot(interactions: pd.DataFrame, path: Path) -> None:
     ax.invert_yaxis()
     fig.tight_layout()
     save_figure(path)
+
+
+def _write_cellchat_inputs(adata, groupby: str, expr_path: Path, meta_path: Path) -> None:
+    from scipy import sparse
+
+    source = adata.raw.to_adata() if adata.raw is not None else adata
+    matrix = source.X
+    values = matrix.toarray() if sparse.issparse(matrix) else np.asarray(matrix)
+    values = np.asarray(values, dtype=float)
+    cell_names = source.obs_names.astype(str).to_numpy()
+    gene_names = source.var_names.astype(str).to_numpy()
+    groups = adata.obs.loc[source.obs_names, groupby].astype(str).to_numpy()
+    valid = pd.Series(groups).isin(pd.Series(groups).value_counts()[lambda s: s >= 10].index).to_numpy()
+    values = values[valid]
+    cell_names = cell_names[valid]
+    groups = groups[valid]
+    if values.shape[0] > 2000:
+        rng = np.random.default_rng(49)
+        selected = np.sort(rng.choice(values.shape[0], size=2000, replace=False))
+        values = values[selected]
+        cell_names = cell_names[selected]
+        groups = groups[selected]
+    gene_score = values.mean(axis=0)
+    selected_genes = np.argsort(gene_score)[::-1][: min(2500, values.shape[1])]
+    expr = pd.DataFrame(values[:, selected_genes].T, index=gene_names[selected_genes], columns=cell_names)
+    meta = pd.DataFrame({"cell": cell_names, "cell_group": groups})
+    expr.index.name = "gene"
+    expr.to_csv(expr_path, sep="\t")
+    meta.to_csv(meta_path, sep="\t", index=False)
+
+
+def _write_cellchat_r_script(
+    script_path: Path,
+    expr_path: Path,
+    meta_path: Path,
+    interactions_path: Path,
+    pathway_path: Path,
+    network_path: Path,
+    status_path: Path,
+    analysis_level: str,
+) -> None:
+    script_path.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env Rscript",
+                "suppressPackageStartupMessages(library(CellChat))",
+                f"expr_path <- {json.dumps(str(expr_path))}",
+                f"meta_path <- {json.dumps(str(meta_path))}",
+                f"interactions_path <- {json.dumps(str(interactions_path))}",
+                f"pathway_path <- {json.dumps(str(pathway_path))}",
+                f"network_path <- {json.dumps(str(network_path))}",
+                f"status_path <- {json.dumps(str(status_path))}",
+                f"analysis_level <- {json.dumps(analysis_level)}",
+                "expr <- read.delim(expr_path, row.names = 1, check.names = FALSE)",
+                "meta <- read.delim(meta_path, check.names = FALSE)",
+                "rownames(meta) <- meta$cell",
+                "cellchat <- createCellChat(object = as.matrix(expr), meta = meta, group.by = 'cell_group')",
+                "db <- tryCatch(CellChatDB.human, error = function(e) NULL)",
+                "if (is.null(db)) db <- tryCatch(CellChatDB.mouse, error = function(e) NULL)",
+                "if (is.null(db)) stop('CellChatDB.human_or_mouse_missing')",
+                "cellchat@DB <- db",
+                "cellchat <- subsetData(cellchat)",
+                "cellchat <- identifyOverExpressedGenes(cellchat)",
+                "cellchat <- identifyOverExpressedInteractions(cellchat)",
+                "cellchat <- computeCommunProb(cellchat, raw.use = FALSE)",
+                "cellchat <- filterCommunication(cellchat, min.cells = 10)",
+                "cellchat <- computeCommunProbPathway(cellchat)",
+                "df.net <- subsetCommunication(cellchat)",
+                "if (is.null(df.net) || nrow(df.net) == 0) {",
+                "  df.net <- data.frame(source=character(), target=character(), ligand=character(), receptor=character(), prob=numeric())",
+                "}",
+                "df.net$backend_id <- 'scrna.communication.cellchat_optional'",
+                "df.net$analysis_level <- analysis_level",
+                "df.net$warning <- 'CellChat ligand-receptor results are expression-derived candidates, not direct mechanism proof.'",
+                "write.table(df.net, interactions_path, sep = '\\t', quote = FALSE, row.names = FALSE)",
+                "pathways <- tryCatch(cellchat@netP$pathways, error = function(e) character())",
+                "pathway <- data.frame(pathway = pathways, backend_id = 'scrna.communication.cellchat_optional', analysis_level = analysis_level, warning = 'Pathway activity is CellChat-inferred and requires review.')",
+                "write.table(pathway, pathway_path, sep = '\\t', quote = FALSE, row.names = FALSE)",
+                "if (nrow(df.net) > 0 && all(c('source', 'target') %in% colnames(df.net))) {",
+                "  network <- aggregate(rep(1, nrow(df.net)), list(source=df.net$source, target=df.net$target), sum)",
+                "  colnames(network)[3] <- 'n_interactions'",
+                "} else {",
+                "  network <- data.frame(source=character(), target=character(), n_interactions=integer())",
+                "}",
+                "network$backend_id <- 'scrna.communication.cellchat_optional'",
+                "network$analysis_level <- analysis_level",
+                "network$warning <- 'Aggregated CellChat communication candidates; not causal proof.'",
+                "write.table(network, network_path, sep = '\\t', quote = FALSE, row.names = FALSE)",
+                "status <- data.frame(backend_id='scrna.communication.cellchat_optional', status='ready', reason='', analysis_level=analysis_level, n_interactions=nrow(df.net), n_groups=length(unique(meta$cell_group)), warning='CellChat requires reviewed labels and biological interpretation.')",
+                "write.table(status, status_path, sep = '\\t', quote = FALSE, row.names = FALSE)",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_cellchat_skip_outputs(
+    interactions_path: Path,
+    pathway_path: Path,
+    network_path: Path,
+    status_path: Path,
+    manifest_path: Path,
+    figure_path: Path,
+    backend_id: str,
+    analysis_level: str,
+    reason: str,
+    artifacts: dict[str, str],
+) -> None:
+    for path in (interactions_path, pathway_path, network_path):
+        _write_skip_table(path, backend_id, analysis_level, reason)
+    _write_cellchat_status(status_path, backend_id, analysis_level, "skipped", reason)
+    _write_cellchat_manifest(manifest_path, backend_id, "skipped", analysis_level, reason, artifacts)
+    _write_status_figure(figure_path, title="CellChat skipped", message=reason)
+
+
+def _write_cellchat_status(path: Path, backend_id: str, analysis_level: str, status: str, reason: str) -> None:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "reason": reason,
+                "analysis_level": analysis_level,
+                "warning": "CellChat ligand-receptor results require reviewed cell labels and are not direct mechanism proof.",
+            }
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_cellchat_manifest(
+    path: Path,
+    backend_id: str,
+    status: str,
+    analysis_level: str,
+    reason: str,
+    artifacts: dict[str, str],
+    *,
+    groupby: str = "",
+) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "analysis_level": analysis_level,
+                "delivery_allowed": False,
+                "validation_evidence_allowed": analysis_level == "validated_backend" and status == "ready",
+                "skip_reason": reason,
+                "groupby": groupby,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "artifacts": artifacts,
+                "interpretation_warning": "CellChat communication is an expression-derived ligand-receptor inference and must not be reported as mechanism proof.",
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_cellchat_network_figure(network_path: Path, figure_path: Path) -> None:
+    import matplotlib.pyplot as plt
+
+    apply_clinical_journal_style()
+    try:
+        network = pd.read_csv(network_path, sep="\t")
+    except Exception:
+        network = pd.DataFrame()
+    if network.empty or "n_interactions" not in network:
+        _write_status_figure(figure_path, title="CellChat network", message="No interactions retained")
+        return
+    top = network.sort_values("n_interactions", ascending=False).head(20).copy()
+    labels = top["source"].astype(str) + " -> " + top["target"].astype(str)
+    fig, ax = plt.subplots(figsize=(7.5, max(3.0, 0.28 * len(top))))
+    ax.barh(labels[::-1], top["n_interactions"].astype(float)[::-1], color="#4777A5")
+    ax.set_xlabel("Candidate interactions")
+    ax.set_title("CellChat communication network summary")
+    fig.tight_layout()
+    save_figure(figure_path)
 
 
 def _write_status_figure(path: Path, *, title: str, message: str) -> None:

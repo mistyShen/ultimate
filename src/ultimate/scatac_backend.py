@@ -81,6 +81,8 @@ def run_scatac_backend(*, config: dict[str, Any], output_dir: Path, samples: pd.
 
     artifacts: dict[str, dict[str, str]] = {"tables": {}, "figures": {}, "objects": {}, "reports": {}}
     warnings = [SCATAC_WARNING]
+    backend_plan_base = build_backend_plan(module_name, config)
+    active_backend_ids = {str(row.get("backend_id")) for row in backend_plan_base.get("active_backends", []) if isinstance(row, dict)}
     n_cells = 0
     n_peaks = 0
     if missing_inputs:
@@ -111,6 +113,19 @@ def run_scatac_backend(*, config: dict[str, Any], output_dir: Path, samples: pd.
                 )
             )
             artifacts["figures"].update(_write_scatac_figures(tables_dir=tables_dir, figures_dir=figures_dir))
+            if "scatac.motif.chromvar_signac" in active_backend_ids:
+                chromvar_artifacts = _run_chromvar_signac_backend(
+                    config=config,
+                    tables_dir=tables_dir,
+                    figures_dir=figures_dir,
+                    data=data,
+                    analysis_fields=level_fields,
+                    input_artifact=str(input_ref or ""),
+                    source_dataset=_source_dataset(config),
+                )
+                artifacts["tables"].update(chromvar_artifacts["tables"])
+                artifacts["figures"].update(chromvar_artifacts["figures"])
+                artifacts["objects"].update(chromvar_artifacts["objects"])
             artifacts["objects"].update(
                 _write_scatac_object(
                     objects_dir=objects_dir,
@@ -124,7 +139,7 @@ def run_scatac_backend(*, config: dict[str, Any], output_dir: Path, samples: pd.
     artifacts["tables"]["backend_plan"] = str(write_backend_plan_table(module_name, config, tables_dir))
     artifacts["reports"]["methods_fragment"] = write_module_methods_fragment(module_name, reports_dir)
     backend_plan = enrich_backend_plan_for_run(
-        build_backend_plan(module_name, config),
+        backend_plan_base,
         analysis_level=str(level_fields.get("analysis_level") or "smoke_backend"),
         delivery_allowed=bool(level_fields.get("delivery_allowed") is True),
         validation_evidence_allowed=bool(level_fields.get("validation_evidence_allowed") is True),
@@ -556,6 +571,296 @@ def _write_scatac_figures(*, tables_dir: Path, figures_dir: Path) -> dict[str, s
     plt.tight_layout()
     save_figure(heatmap_path, style=tokens)
     return {"lsi_umap": str(umap_path), "fragment_qc": str(fragment_path), "peak_accessibility_heatmap": str(heatmap_path)}
+
+
+def _run_chromvar_signac_backend(
+    *,
+    config: dict[str, Any],
+    tables_dir: Path,
+    figures_dir: Path,
+    data: dict[str, Any],
+    analysis_fields: dict[str, Any],
+    input_artifact: str,
+    source_dataset: str,
+) -> dict[str, dict[str, str]]:
+    backend_id = "scatac.motif.chromvar_signac"
+    motif_path = tables_dir / "motif_deviation.tsv"
+    motif_handoff_path = tables_dir / "motif_enrichment_handoff.tsv"
+    gene_activity_path = tables_dir / "gene_activity.tsv"
+    status_path = tables_dir / "chromvar_signac_backend_status.tsv"
+    manifest_path = tables_dir / "chromvar_signac_backend_manifest.json"
+    motif_figure = figures_dir / "motif_deviation_heatmap.png"
+    gene_figure = figures_dir / "gene_activity_heatmap.png"
+    artifacts = {
+        "tables": {
+            "motif_deviation": str(motif_path),
+            "motif_enrichment_handoff": str(motif_handoff_path),
+            "gene_activity": str(gene_activity_path),
+            "chromvar_signac_backend_status": str(status_path),
+            "chromvar_signac_backend_manifest": str(manifest_path),
+        },
+        "figures": {
+            "motif_deviation_heatmap": str(motif_figure),
+            "gene_activity_heatmap": str(gene_figure),
+        },
+        "objects": {},
+    }
+    motif_table = _optional_mapping_path(config, ("motif_peak_table", "motif_database", "motif_mapping"))
+    gene_table = _optional_mapping_path(config, ("gene_peak_table", "gene_activity_mapping", "annotation_table"))
+    if motif_table is None or not motif_table.exists():
+        reason = "missing_motif_peak_table:provide motif_peak_table for chromVAR/Signac-compatible backend"
+        _write_chromvar_skip_outputs(motif_path, motif_handoff_path, gene_activity_path, status_path, manifest_path, motif_figure, gene_figure, backend_id, analysis_fields, reason, artifacts)
+        return artifacts
+    motif_mapping = _load_peak_mapping(motif_table, value_column_candidates=("motif_id", "motif", "tf", "tf_name"))
+    motif_scores, motif_status = _aggregate_peak_sets(data, motif_mapping, value_name="motif_id")
+    if motif_scores.empty:
+        reason = f"empty_motif_mapping_after_peak_overlap:{motif_table}"
+        _write_chromvar_skip_outputs(motif_path, motif_handoff_path, gene_activity_path, status_path, manifest_path, motif_figure, gene_figure, backend_id, analysis_fields, reason, artifacts)
+        return artifacts
+    motif_deviation = _cluster_deviation_table(motif_scores, np.asarray(data["clusters"]).astype(str), backend_id, analysis_fields, source_dataset, input_artifact)
+    motif_deviation.to_csv(motif_path, sep="\t", index=False)
+    _motif_enrichment_handoff(motif_deviation, motif_status, analysis_fields, source_dataset, input_artifact).to_csv(motif_handoff_path, sep="\t", index=False)
+    gene_status = "skipped:missing_gene_peak_table"
+    if gene_table is not None and gene_table.exists():
+        gene_mapping = _load_peak_mapping(gene_table, value_column_candidates=("gene_id", "gene_symbol", "gene", "target_gene"))
+        gene_scores, gene_status = _aggregate_peak_sets(data, gene_mapping, value_name="gene_id")
+        if not gene_scores.empty:
+            gene_activity = _cluster_activity_table(gene_scores, np.asarray(data["clusters"]).astype(str), backend_id, analysis_fields, source_dataset, input_artifact)
+            gene_activity.to_csv(gene_activity_path, sep="\t", index=False)
+        else:
+            _chromvar_skip_table(gene_activity_path, backend_id, analysis_fields, "empty_gene_mapping_after_peak_overlap")
+    else:
+        _chromvar_skip_table(gene_activity_path, backend_id, analysis_fields, gene_status)
+    _plot_long_heatmap(motif_deviation, motif_figure, index_col="motif_id", value_col="deviation_score", title="Motif deviation score")
+    if Path(gene_activity_path).exists():
+        try:
+            gene_activity_frame = pd.read_csv(gene_activity_path, sep="\t")
+        except Exception:
+            gene_activity_frame = pd.DataFrame()
+    else:
+        gene_activity_frame = pd.DataFrame()
+    _plot_long_heatmap(gene_activity_frame, gene_figure, index_col="gene_id", value_col="activity_score", title="Gene activity score")
+    status = "ready" if not motif_deviation.empty else "skipped"
+    reason = "" if status == "ready" else "empty_motif_deviation"
+    _write_chromvar_status(status_path, backend_id, analysis_fields, status, reason, motif_table, gene_table, motif_status, gene_status)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "analysis_level": analysis_fields.get("analysis_level"),
+                "delivery_allowed": False,
+                "validation_evidence_allowed": bool(analysis_fields.get("analysis_level") == "validated_backend" and status == "ready"),
+                "skip_reason": reason,
+                "motif_peak_table": str(motif_table),
+                "gene_peak_table": str(gene_table or ""),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "artifacts": artifacts,
+                "interpretation_warning": "Motif deviation and gene activity are accessibility-derived inferences; they are not TF activity assay results or gene expression.",
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return artifacts
+
+
+def _optional_mapping_path(config: dict[str, Any], keys: tuple[str, ...]) -> Path | None:
+    module_cfg = _module_cfg(config)
+    raw_cfg = module_cfg.get("raw") if isinstance(module_cfg.get("raw"), dict) else {}
+    base = Path(str(config.get("_config_path") or ".")).resolve().parent
+    for key in keys:
+        value = module_cfg.get(key) or raw_cfg.get(key)
+        if value:
+            return _resolve_path(base, value)
+    return None
+
+
+def _load_peak_mapping(path: Path, *, value_column_candidates: tuple[str, ...]) -> pd.DataFrame:
+    frame = pd.read_csv(path, sep=None, engine="python")
+    peak_col = next((column for column in ("peak_id", "feature_id", "region_id", "peak", "locus_id") if column in frame.columns), frame.columns[0])
+    value_col = next((column for column in value_column_candidates if column in frame.columns), frame.columns[1] if len(frame.columns) > 1 else frame.columns[0])
+    result = frame[[peak_col, value_col]].copy()
+    result.columns = ["peak_id", "set_id"]
+    result["peak_id"] = result["peak_id"].astype(str)
+    result["set_id"] = result["set_id"].astype(str)
+    return result[result["set_id"].str.len() > 0]
+
+
+def _aggregate_peak_sets(data: dict[str, Any], mapping: pd.DataFrame, *, value_name: str) -> tuple[pd.DataFrame, str]:
+    peak_index = {str(peak): idx for idx, peak in enumerate(data["peaks"])}
+    rows = []
+    matrix = data["matrix"]
+    for set_id, frame in mapping.groupby("set_id", observed=False):
+        idx = [peak_index[str(peak)] for peak in frame["peak_id"] if str(peak) in peak_index]
+        if not idx:
+            continue
+        values = _to_dense(matrix[:, idx]).mean(axis=1)
+        rows.append(pd.Series(values, name=str(set_id)))
+    if not rows:
+        return pd.DataFrame(), f"no_{value_name}_peak_overlap"
+    scores = pd.concat(rows, axis=1)
+    scores.index = pd.Index(data["barcodes"], name="cell_id")
+    return scores, "ready"
+
+
+def _cluster_deviation_table(scores: pd.DataFrame, clusters: np.ndarray, backend_id: str, analysis_fields: dict[str, Any], source_dataset: str, input_artifact: str) -> pd.DataFrame:
+    cluster_means = scores.groupby(pd.Series(clusters, index=scores.index, name="cluster"), observed=False).mean()
+    global_mean = scores.mean(axis=0)
+    global_sd = scores.std(axis=0).replace(0, np.nan).fillna(1.0)
+    deviations = (cluster_means - global_mean) / global_sd
+    long = deviations.reset_index().melt(id_vars="cluster", var_name="motif_id", value_name="deviation_score")
+    long["backend_id"] = backend_id
+    long["module"] = "scatac"
+    long["source_dataset"] = source_dataset
+    long["input_artifact"] = input_artifact
+    long["analysis_level"] = analysis_fields.get("analysis_level")
+    long["method"] = "chromVAR_Signac_compatible_peak_set_deviation_mvp"
+    long["warning"] = "Accessibility-derived motif deviation; not a direct TF activity assay."
+    return long.sort_values("deviation_score", ascending=False)
+
+
+def _cluster_activity_table(scores: pd.DataFrame, clusters: np.ndarray, backend_id: str, analysis_fields: dict[str, Any], source_dataset: str, input_artifact: str) -> pd.DataFrame:
+    cluster_means = scores.groupby(pd.Series(clusters, index=scores.index, name="cluster"), observed=False).mean()
+    long = cluster_means.reset_index().melt(id_vars="cluster", var_name="gene_id", value_name="activity_score")
+    long["backend_id"] = backend_id
+    long["module"] = "scatac"
+    long["source_dataset"] = source_dataset
+    long["input_artifact"] = input_artifact
+    long["analysis_level"] = analysis_fields.get("analysis_level")
+    long["method"] = "Signac_compatible_gene_activity_peak_mapping_mvp"
+    long["warning"] = "Gene activity is inferred from accessibility mapping and is not gene expression."
+    return long.sort_values("activity_score", ascending=False)
+
+
+def _motif_enrichment_handoff(motif_deviation: pd.DataFrame, motif_status: str, analysis_fields: dict[str, Any], source_dataset: str, input_artifact: str) -> pd.DataFrame:
+    if motif_deviation.empty:
+        return pd.DataFrame(
+            [
+                {
+                    **_base_fields(analysis_fields, input_artifact, source_dataset),
+                    "backend_id": "scatac.motif.chromvar_signac",
+                    "status": "skipped",
+                    "reason": motif_status,
+                }
+            ]
+        )
+    summary = motif_deviation.groupby("motif_id", observed=False)["deviation_score"].agg(["max", "min", "mean"]).reset_index()
+    summary["backend_id"] = "scatac.motif.chromvar_signac"
+    summary["status"] = "design_ready_motif_deviation"
+    summary["analysis_level"] = analysis_fields.get("analysis_level")
+    summary["warning"] = "Motif enrichment/deviation is a candidate regulatory signal; formal interpretation requires motif database review."
+    return summary
+
+
+def _write_chromvar_skip_outputs(
+    motif_path: Path,
+    motif_handoff_path: Path,
+    gene_activity_path: Path,
+    status_path: Path,
+    manifest_path: Path,
+    motif_figure: Path,
+    gene_figure: Path,
+    backend_id: str,
+    analysis_fields: dict[str, Any],
+    reason: str,
+    artifacts: dict[str, dict[str, str]],
+) -> None:
+    for path in (motif_path, motif_handoff_path, gene_activity_path):
+        _chromvar_skip_table(path, backend_id, analysis_fields, reason)
+    _write_chromvar_status(status_path, backend_id, analysis_fields, "skipped", reason, None, None, "skipped", "skipped")
+    _write_status_figure(motif_figure, "chromVAR/Signac skipped", reason)
+    _write_status_figure(gene_figure, "Gene activity skipped", reason)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "backend_id": backend_id,
+                "status": "skipped",
+                "analysis_level": analysis_fields.get("analysis_level"),
+                "delivery_allowed": False,
+                "validation_evidence_allowed": False,
+                "skip_reason": reason,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "artifacts": artifacts,
+                "interpretation_warning": "Missing motif/gene mapping prevented motif or gene-activity inference.",
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _chromvar_skip_table(path: Path, backend_id: str, analysis_fields: dict[str, Any], reason: str) -> None:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": "skipped",
+                "reason": reason,
+                "analysis_level": analysis_fields.get("analysis_level"),
+                "delivery_allowed": False,
+                "warning": "chromVAR/Signac backend did not run; do not interpret this placeholder as motif or gene activity result.",
+            }
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_chromvar_status(
+    path: Path,
+    backend_id: str,
+    analysis_fields: dict[str, Any],
+    status: str,
+    reason: str,
+    motif_table: Path | None,
+    gene_table: Path | None,
+    motif_status: str,
+    gene_status: str,
+) -> None:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "reason": reason,
+                "motif_peak_table": str(motif_table or ""),
+                "gene_peak_table": str(gene_table or ""),
+                "motif_status": motif_status,
+                "gene_activity_status": gene_status,
+                "analysis_level": analysis_fields.get("analysis_level"),
+                "delivery_allowed": False,
+                "validation_evidence_allowed": bool(analysis_fields.get("analysis_level") == "validated_backend" and status == "ready"),
+                "warning": "Motif deviation and gene activity are accessibility-derived inferences; not TF activity assay or gene expression.",
+            }
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _plot_long_heatmap(frame: pd.DataFrame, path: Path, *, index_col: str, value_col: str, title: str) -> None:
+    if frame.empty or index_col not in frame or value_col not in frame or "cluster" not in frame:
+        _write_status_figure(path, title, "No ready backend result")
+        return
+    top_terms = frame.groupby(index_col, observed=False)[value_col].apply(lambda values: float(np.nanmax(np.abs(pd.to_numeric(values, errors="coerce"))))).sort_values(ascending=False).head(30).index
+    plot_frame = frame[frame[index_col].isin(top_terms)].pivot_table(index=index_col, columns="cluster", values=value_col, fill_value=0.0)
+    tokens = apply_clinical_journal_style()
+    plt.figure(figsize=(7.2, max(3.5, 0.22 * len(plot_frame))))
+    sns.heatmap(plot_frame, cmap="vlag", center=0 if value_col == "deviation_score" else None, cbar_kws={"label": value_col})
+    plt.xlabel("Cluster")
+    plt.ylabel(index_col)
+    plt.title(title)
+    plt.tight_layout()
+    save_figure(path, style=tokens)
+
+
+def _write_status_figure(path: Path, title: str, message: str) -> None:
+    tokens = apply_clinical_journal_style()
+    plt.figure(figsize=(5.8, 2.7))
+    plt.text(0.04, 0.68, title, fontsize=13, fontweight="bold", color=tokens["primary"])
+    plt.text(0.04, 0.38, message[:180], fontsize=9, color=tokens["muted"], wrap=True)
+    plt.axis("off")
+    plt.tight_layout()
+    save_figure(path, style=tokens)
 
 
 def _write_scatac_object(*, objects_dir: Path, data: dict[str, Any], max_cells: int, max_peaks: int) -> dict[str, str]:

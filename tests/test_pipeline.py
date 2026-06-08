@@ -62,6 +62,8 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
     html_report = (run_dir / "reports" / "report.html").read_text(encoding="utf-8")
     assert "复现信息" in methods_report
     assert "交付门控" in methods_report
+    assert "Advanced Backend Execution" in methods_report
+    assert "Advanced Backend Execution" in html_report
     assert "交付门控" in html_report
     assert "analysis_level" in methods_report
     assert "analysis_level" in html_report
@@ -69,6 +71,10 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
         assert token in methods_report
         assert token in html_report
     assert len(run_manifest["modules"]) == len(MODULE_ORDER)
+    advanced = run_manifest["advanced_backend_execution"]
+    assert advanced["backend_count"] >= len(MODULE_ORDER)
+    assert Path(advanced["table"]).exists()
+    assert Path(advanced["manifest_path"]).exists()
     for module in run_manifest["modules"]:
         assert module["analysis_level"] in {"demo_result", "smoke_backend", "validated_backend", "production_backend"}
         assert module["delivery_allowed"] is False

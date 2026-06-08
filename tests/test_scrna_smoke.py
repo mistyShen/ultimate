@@ -10,6 +10,8 @@ from click.testing import CliRunner
 
 import ultimate.scrna_smoke as scrna_smoke
 from ultimate.cli import main
+from ultimate.config import dump_yaml
+from ultimate.pipeline import run_pipeline_from_config
 from ultimate.scrna_smoke import create_demo_inputs, run_scrna_validation
 
 
@@ -127,6 +129,53 @@ def test_validate_scrna_cli_rejects_missing_input_path(tmp_path: Path) -> None:
     assert "does not exist" in result.output
 
 
+def test_unified_run_scrna_preset_uses_scrna_mvp_backend(tmp_path: Path) -> None:
+    _require_scrna_runtime()
+    demo = create_demo_inputs(tmp_path / "demo", n_cells=36, n_genes=45, seed=9)
+    if not demo.get("h5ad"):
+        pytest.skip("anndata is required to create h5ad demo input")
+    config_path = tmp_path / "project.yaml"
+    dump_yaml(
+        {
+            "project": {
+                "name": "scrna_communication_unified",
+                "organism": "human",
+                "output_dir": str(tmp_path / "run"),
+                "server_root": str(tmp_path),
+                "run_mode": "interactive",
+            },
+            "samples": {"items": [{"sample_id": "S1", "condition": "control", "input_path": demo["h5ad"]}]},
+            "modules": {
+                "scrna": {
+                    "enabled": True,
+                    "preset": "communication",
+                    "input_h5ad": demo["h5ad"],
+                    "samplesheet": demo["samplesheet"],
+                    "max_cells": 30,
+                    "backends": {"communication": "liana,cellchat"},
+                }
+            },
+        },
+        config_path,
+    )
+
+    manifest = run_pipeline_from_config(config_path)
+    run_dir = Path(manifest["output_dir"])
+    scrna = manifest["modules"][0]
+    active_ids = {row["backend_id"] for row in scrna["backend_plan"]["active_backends"]}
+
+    assert scrna["module"] == "scrna"
+    assert scrna["backend_id"] == "scrna.mvp.validate_scrna"
+    assert "scrna.communication.cellchat_optional" in active_ids
+    assert "scrna.communication.liana" in active_ids
+    assert (run_dir / "objects" / "scrna_mvp.h5ad").exists()
+    assert (run_dir / "results" / "tables" / "backend_execution_manifest.json").exists()
+    assert (run_dir / "results" / "tables" / "advanced_backend_execution_manifest.json").exists()
+    methods = (run_dir / "reports" / "methods.md").read_text(encoding="utf-8")
+    assert "Advanced Backend Execution" in methods
+    assert "scrna.communication.cellchat_optional" in methods
+
+
 def test_scrna_mvp_slurm_uses_explicit_celltypist_reference_cache() -> None:
     script = (Path(__file__).parents[1] / "slurm" / "scrna_mvp_validation.sbatch").read_text(encoding="utf-8")
 
@@ -241,6 +290,7 @@ def _assert_mvp_outputs(manifest: dict) -> None:
         "scrna.annotation.celltypist",
         "scrna.functional.decoupler_gseapy",
         "scrna.communication.liana",
+        "scrna.communication.cellchat_optional",
         "scrna.pseudobulk.deseq2_edger",
     }.issubset(backend_ids)
     assert Path(manifest["raw_qc_manifest"]).exists()
@@ -268,6 +318,10 @@ def _assert_mvp_outputs(manifest: dict) -> None:
         "results/tables/liana_interactions.tsv",
         "results/tables/communication_network.tsv",
         "results/tables/communication_backend_status.tsv",
+        "results/tables/cellchat_interactions.tsv",
+        "results/tables/cellchat_pathway_summary.tsv",
+        "results/tables/cellchat_backend_status.tsv",
+        "results/tables/cellchat_backend_manifest.json",
         "results/tables/pseudobulk_de_backend_status.tsv",
         "results/tables/pseudobulk_de_results.tsv",
         "results/tables/pseudobulk_deseq2_edgeR_handoff.R",
@@ -275,6 +329,7 @@ def _assert_mvp_outputs(manifest: dict) -> None:
         "results/figures/pca_condition.png",
         "results/figures/umap_cluster_condition.png",
         "results/figures/communication_dotplot.png",
+        "results/figures/cellchat_network.png",
         "reports/report.md",
         "reports/report.html",
         "run_manifest.json",

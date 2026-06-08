@@ -66,6 +66,17 @@ def _write_config(tmp_path: Path, *, peak_matrix: Path, output_name: str = "run"
     return config_path
 
 
+def _write_mapping(path: Path, value_column: str) -> Path:
+    rows = [
+        {"peak_id": "chr1:100-200", value_column: "SET_A"},
+        {"peak_id": "chr1:300-420", value_column: "SET_B"},
+        {"peak_id": "chr2:50-150", value_column: "SET_A"},
+        {"peak_id": "chr3:200-260", value_column: "SET_C"},
+    ]
+    pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
+    return path
+
+
 def test_scatac_backend_generates_mvp_outputs(tmp_path: Path) -> None:
     peak_matrix = _write_scatac_fixture(tmp_path)
     config_path = _write_config(tmp_path, peak_matrix=peak_matrix)
@@ -113,3 +124,56 @@ def test_scatac_backend_missing_inputs_remains_non_deliverable(tmp_path: Path) -
     qc_manifest = json.loads((run_dir / "results" / "tables" / "scatac" / "module_qc_manifest.json").read_text(encoding="utf-8"))
     assert qc_manifest["delivery_allowed"] is False
     assert qc_manifest["skip_reasons"]
+
+
+def test_scatac_publication_preset_runs_chromvar_signac_outputs(tmp_path: Path) -> None:
+    peak_matrix = _write_scatac_fixture(tmp_path)
+    motif_mapping = _write_mapping(tmp_path / "motif_peak_table.tsv", "motif_id")
+    gene_mapping = _write_mapping(tmp_path / "gene_peak_table.tsv", "gene_id")
+    config_path = tmp_path / "publication.yaml"
+    dump_yaml(
+        {
+            "project": {
+                "name": "scatac_publication",
+                "organism": "human",
+                "output_dir": str(tmp_path / "publication"),
+                "server_root": str(tmp_path),
+                "run_mode": "interactive",
+            },
+            "samples": {"items": [{"sample_id": "A1", "condition": "control", "input_path": str(peak_matrix)}]},
+            "modules": {
+                "scatac": {
+                    "enabled": True,
+                    "preset": "publication",
+                    "peak_matrix": str(peak_matrix),
+                    "motif_peak_table": str(motif_mapping),
+                    "gene_peak_table": str(gene_mapping),
+                    "backends": {"motif": "chromvar"},
+                    "raw": {"enabled": False, "input_type": "peak_matrix"},
+                }
+            },
+        },
+        config_path,
+    )
+
+    manifest = run_pipeline_from_config(config_path)
+    run_dir = Path(manifest["output_dir"])
+    scatac = manifest["modules"][0]
+    active_ids = {row["backend_id"] for row in scatac["backend_plan"]["active_backends"]}
+
+    assert "scatac.motif.chromvar_signac" in active_ids
+    for relative in [
+        "results/tables/scatac/motif_deviation.tsv",
+        "results/tables/scatac/motif_enrichment_handoff.tsv",
+        "results/tables/scatac/gene_activity.tsv",
+        "results/tables/scatac/chromvar_signac_backend_status.tsv",
+        "results/tables/scatac/chromvar_signac_backend_manifest.json",
+        "results/figures/scatac/motif_deviation_heatmap.png",
+        "results/figures/scatac/gene_activity_heatmap.png",
+    ]:
+        path = run_dir / relative
+        assert path.exists() and path.stat().st_size > 0
+    status = pd.read_csv(run_dir / "results/tables/scatac/chromvar_signac_backend_status.tsv", sep="\t")
+    assert status.loc[0, "status"] == "ready"
+    motif = pd.read_csv(run_dir / "results/tables/scatac/motif_deviation.tsv", sep="\t")
+    assert {"motif_id", "cluster", "deviation_score", "warning"}.issubset(motif.columns)

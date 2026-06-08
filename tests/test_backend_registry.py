@@ -35,7 +35,7 @@ def test_backend_plan_records_requested_and_skipped_backends() -> None:
                 "preset": "tumor",
                 "backends": {
                     "annotation": "celltypist",
-                    "communication": "liana",
+                    "communication": "liana,cellchat",
                     "unknown": "not_a_backend",
                 },
             }
@@ -48,11 +48,31 @@ def test_backend_plan_records_requested_and_skipped_backends() -> None:
     active_ids = {row["backend_id"] for row in plan["active_backends"]}
     assert "scrna.annotation.celltypist" in active_ids
     assert "scrna.communication.liana" in active_ids
+    assert "scrna.communication.cellchat_optional" in active_ids
     skipped_ids = set(plan["skipped_optional_backends"])
     assert "scrna.pseudobulk.deseq2_edger" in skipped_ids
     assert plan["unknown_requested_backends"] == {"unknown": "not_a_backend"}
     assert not any("backend_not_fully_automatic:scrna.communication.liana" in warning for warning in plan["interpretation_warnings"])
     assert any("候选互作" in warning for warning in plan["interpretation_warnings"])
+
+
+def test_backend_plan_preset_resolver_selects_advanced_defaults() -> None:
+    communication_plan = build_backend_plan("scrna", {"modules": {"scrna": {"preset": "communication"}}})
+    communication_ids = {row["backend_id"] for row in communication_plan["active_backends"]}
+    assert {
+        "scrna.qc.scrublet",
+        "scrna.annotation.celltypist",
+        "scrna.functional.decoupler_gseapy",
+        "scrna.communication.liana",
+        "scrna.communication.cellchat_optional",
+    }.issubset(communication_ids)
+    assert {row["backend_id"] for row in communication_plan["preset_selected_backends"]} <= communication_ids
+
+    scatac_plan = build_backend_plan("scatac", {"modules": {"scatac": {"preset": "publication", "backends": {"motif": "chromvar"}}}})
+    scatac_ids = {row["backend_id"] for row in scatac_plan["active_backends"]}
+    assert "scatac.matrix.signac_or_snapatac2_mvp" in scatac_ids
+    assert "scatac.motif.chromvar_signac" in scatac_ids
+    assert not scatac_plan["unknown_requested_backends"]
 
 
 def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
@@ -70,6 +90,7 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "scrna.annotation.celltypist": "slurm/scrna_mvp_validation.sbatch",
         "scrna.functional.decoupler_gseapy": "slurm/scrna_mvp_validation.sbatch",
         "scrna.communication.liana": "slurm/scrna_mvp_validation.sbatch",
+        "scrna.communication.cellchat_optional": "slurm/scrna_cellchat_validation.sbatch",
         "scrna.pseudobulk.deseq2_edger": "slurm/scrna_pseudobulk_de.sbatch",
         "scrna.tumor.copykat": "slurm/tumor_sc_copykat_small_validation.sbatch",
         "scrna.velocity.scvelo": "slurm/scrna_velocity.sbatch",
@@ -83,11 +104,12 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "scdna.default.matrix_ready_handoff": "slurm/scdna_backend_validation.sbatch",
         "scepi.default.matrix_handoff_mvp": "slurm/scepi_backend_validation.sbatch",
         "cite_seq.optional.dsb": "slurm/cite_seq_dsb_validation.sbatch",
+        "scatac.motif.chromvar_signac": "slurm/scatac_chromvar_validation.sbatch",
     }
 
     for backend_id, slurm_profile in expected.items():
         backend = by_id[backend_id]
-        assert backend.backend_status == "fully_automatic_validated_entrypoint"
+        assert backend.backend_status in {"fully_automatic_validated_entrypoint", "fully_automatic_mvp"}
         assert backend.slurm_profile == slurm_profile
         assert backend.production_allowed is True
 

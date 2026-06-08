@@ -63,6 +63,28 @@
     </tbody>
   </table>
 
+  <h2>Advanced Backend Execution</h2>
+  {% set advanced = manifest.get("advanced_backend_execution") or {} %}
+  <p>高级 backend 执行表：<code>{{ advanced.get("table", "not_recorded") }}</code>；manifest：<code>{{ advanced.get("manifest_path", "not_recorded") }}</code></p>
+  <table>
+    <thead><tr><th>模块</th><th>backend</th><th>角色</th><th>注册状态</th><th>执行状态</th><th>analysis_level</th><th>跳过/阻断原因</th><th>限制警示</th></tr></thead>
+    <tbody>
+    {% for row in advanced.get("rows") or [] %}
+      <tr>
+        <td>{{ row.get("module", "") }}</td>
+        <td><code>{{ row.get("backend_id", "") }}</code></td>
+        <td><code>{{ row.get("backend_role", "") }}</code></td>
+        <td><code>{{ row.get("backend_registry_status", "") }}</code></td>
+        <td><code>{{ row.get("execution_status", "") }}</code></td>
+        <td><code>{{ row.get("analysis_level", "") }}</code></td>
+        <td><code>{{ row.get("skip_reason", "") or "none" }}</code></td>
+        <td>{{ row.get("interpretation_warning", "") or "none" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="warn">高级算法结果必须按上述执行状态和限制警示解释；skip/blocked backend 不得写成已完成分析。</p>
+
   <h2>复现信息</h2>
   {% set repro = manifest.get("reproducible_package") or {} %}
   {% set slurm = manifest.get("slurm") or {} %}

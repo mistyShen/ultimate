@@ -28,6 +28,18 @@
 
 若正式交付许可不是 `True`，本次结果只能作为 demo、smoke、验证证据或内部检查，不能作为客户正式结论。
 
+## Advanced Backend Execution
+
+{% set advanced = manifest.get("advanced_backend_execution") or {} %}
+- 执行表：`{{ advanced.get("table", "not_recorded") }}`
+- 执行 manifest：`{{ advanced.get("manifest_path", "not_recorded") }}`
+- backend 数量：`{{ advanced.get("backend_count", 0) }}`
+- 解释边界：`{{ advanced.get("warning", "skipped/blocked backend rows are not formal results") }}`
+
+{% for row in advanced.get("rows") or [] %}
+- `{{ row.get("module", "") }}` / `{{ row.get("backend_id", "") }}`：execution_status=`{{ row.get("execution_status", "") }}`；registry_status=`{{ row.get("backend_registry_status", "") }}`；analysis_level=`{{ row.get("analysis_level", "") }}`；skip_reason=`{{ row.get("skip_reason", "") or "none" }}`；warning=`{{ row.get("interpretation_warning", "") or "none" }}`
+{% endfor %}
+
 ## 复现信息
 
 {% set repro = manifest.get("reproducible_package") or {} %}

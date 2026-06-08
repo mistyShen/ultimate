@@ -40,6 +40,7 @@ from ultimate.modules.common import (
 from ultimate.plot_style import apply_clinical_journal_style, continuous_cmap, save_figure
 from ultimate.scatac_backend import has_scatac_backend_config, run_scatac_backend
 from ultimate.scepi_backend import has_scepi_backend_config, run_scepi_backend
+from ultimate.scrna_smoke import run_scrna_validation
 from ultimate.scrna_velocity_backend import has_scrna_velocity_backend_config, run_scrna_velocity_backend
 from ultimate.spatial_backend import has_spatial_backend_config, run_spatial_backend
 from ultimate.tumor_sc_backend import has_tumor_sc_backend_config, run_tumor_sc_backend
@@ -81,6 +82,8 @@ def run_module(
         return run_tumor_sc_backend(config=config, output_dir=output_dir, samples=samples)
     if module_name == "scrna" and has_scrna_velocity_backend_config(config):
         return run_scrna_velocity_backend(config=config, output_dir=output_dir, samples=samples)
+    if module_name == "scrna" and has_scrna_mvp_backend_config(config):
+        return run_scrna_mvp_module_backend(config=config, output_dir=output_dir, samples=samples)
     if module_name == "method_tools" and has_method_tools_backend_config(config):
         return run_method_tools_backend(config=config, output_dir=output_dir, samples=samples)
 
@@ -207,6 +210,131 @@ def run_module(
     manifest_path.write_text(json.dumps(module_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     write_module_report_bundle(module_manifest, reports_dir)
     return module_manifest
+
+
+def has_scrna_mvp_backend_config(config: dict[str, Any]) -> bool:
+    module_cfg = _module_cfg(config, "scrna")
+    raw_cfg = module_cfg.get("raw") if isinstance(module_cfg.get("raw"), dict) else {}
+    return any(
+        module_cfg.get(key) or raw_cfg.get(key)
+        for key in (
+            "input_path",
+            "input_h5ad",
+            "input_h5",
+            "tenx_h5",
+            "tenx_mtx",
+            "input_10x_h5",
+            "input_10x_mtx",
+            "matrix_dir",
+        )
+    )
+
+
+def run_scrna_mvp_module_backend(*, config: dict[str, Any], output_dir: Path, samples: pd.DataFrame) -> dict[str, Any]:
+    module_cfg = _module_cfg(config, "scrna")
+    input_path, input_type = _scrna_input(config)
+    if input_path is None or input_type is None:
+        raise ValueError("scrna MVP backend selected without a supported input path/type")
+    samplesheet = module_cfg.get("samplesheet")
+    raw_cfg = module_cfg.get("raw") if isinstance(module_cfg.get("raw"), dict) else {}
+    if not samplesheet:
+        samplesheet = raw_cfg.get("samplesheet")
+    celltypist_model = module_cfg.get("celltypist_model") or (config.get("resources") or {}).get("celltypist_model")
+    manifest = run_scrna_validation(
+        input_path=Path(str(input_path)),
+        input_type=str(input_type),
+        output_dir=output_dir,
+        samplesheet=Path(str(samplesheet)) if samplesheet else None,
+        max_cells=int(module_cfg.get("max_cells", module_cfg.get("max_cells_object", 3000))),
+        random_seed=int(module_cfg.get("random_seed", 7)),
+        analysis_level=module_cfg.get("analysis_level"),
+        public_dataset=bool(module_cfg.get("public_dataset") or module_cfg.get("validated_backend")),
+        dataset_label=str(module_cfg.get("dataset_label") or module_cfg.get("validation_dataset") or ""),
+        production_approval=None,
+        celltypist_model=Path(str(celltypist_model)) if celltypist_model else None,
+    )
+    backend_plan = enrich_backend_plan_for_run(
+        build_backend_plan("scrna", config),
+        analysis_level=str(manifest.get("analysis_level") or "smoke_backend"),
+        delivery_allowed=bool(manifest.get("delivery_allowed") is True),
+        validation_evidence_allowed=bool(manifest.get("validation_evidence_allowed") is True),
+    )
+    artifacts = {
+        "tables": {Path(path).stem: str(path) for path in sorted((output_dir / "results" / "tables").glob("*.tsv"))},
+        "figures": {Path(path).stem: str(path) for path in sorted((output_dir / "results" / "figures").glob("*.png"))},
+        "objects": manifest.get("objects", {}),
+        "reports": {
+            "report_html": str(output_dir / "reports" / "report.html"),
+            "methods_md": str(output_dir / "reports" / "report.md"),
+            "run_manifest": str(output_dir / "run_manifest.json"),
+        },
+    }
+    manifest.update(
+        {
+            "module": "scrna",
+            "title_cn": MODULE_SPECS["scrna"].title_cn,
+            "artifacts": artifacts,
+            "backend": {
+                "primary": "scrna_mvp_validate_scrna",
+                "selected_backend_id": backend_plan["selected_backend_id"],
+                "selected_backend_status": backend_plan["selected_backend_status"],
+                "backend_role": backend_plan["selected_backend_role"],
+                "resource_profile": backend_plan["backend_resource_profile"],
+            },
+            "backend_plan": backend_plan,
+            "backend_id": backend_plan["selected_backend_id"],
+            "backend_status": backend_plan["selected_backend_status"],
+            "backend_analysis_level": backend_plan["backend_analysis_level"],
+            "backend_delivery_allowed": backend_plan["backend_delivery_allowed"],
+            "backend_validation_evidence_allowed": backend_plan["backend_validation_evidence_allowed"],
+            "backend_skip_reason": backend_plan["backend_skip_reason"],
+            "backend_resource_profile": backend_plan["backend_resource_profile"],
+            "backend_slurm_job_id": backend_plan["backend_slurm_job_id"],
+            "limitations": list(known_limitations("scrna")),
+            "handoff": handoff_plan("scrna"),
+            "skip_reasons": [],
+            "formal_backend": {
+                "python_entrypoint": "ultimate.scrna_smoke.run_scrna_validation",
+                "status": "fully_automatic_validated_entrypoint",
+            },
+        }
+    )
+    if "n_features" not in manifest:
+        manifest["n_features"] = int(manifest.get("n_genes", 0))
+    if "n_samples" not in manifest:
+        manifest["n_samples"] = int(samples["sample_id"].nunique()) if "sample_id" in samples else "NA"
+    artifacts["tables"]["backend_plan"] = str(write_backend_plan_table("scrna", config, output_dir / "results" / "tables"))
+    return manifest
+
+
+def _scrna_input(config: dict[str, Any]) -> tuple[Path | None, str | None]:
+    module_cfg = _module_cfg(config, "scrna")
+    raw_cfg = module_cfg.get("raw") if isinstance(module_cfg.get("raw"), dict) else {}
+    candidates = [
+        ("h5ad", module_cfg.get("input_h5ad") or raw_cfg.get("input_h5ad")),
+        ("10x_h5", module_cfg.get("input_h5") or module_cfg.get("tenx_h5") or module_cfg.get("input_10x_h5") or raw_cfg.get("input_h5") or raw_cfg.get("tenx_h5")),
+        ("10x_mtx", module_cfg.get("tenx_mtx") or module_cfg.get("input_10x_mtx") or module_cfg.get("matrix_dir") or raw_cfg.get("tenx_mtx") or raw_cfg.get("matrix_dir")),
+    ]
+    configured_type = str(module_cfg.get("input_type") or raw_cfg.get("input_type") or "").lower()
+    generic = module_cfg.get("input_path") or raw_cfg.get("input_path")
+    if generic:
+        if configured_type in {"h5ad", "10x_h5", "10x_mtx"}:
+            return Path(str(generic)), configured_type
+        path = Path(str(generic))
+        if path.suffix.lower() == ".h5ad":
+            return path, "h5ad"
+        if path.suffix.lower() in {".h5", ".hdf5"}:
+            return path, "10x_h5"
+        if path.is_dir():
+            return path, "10x_mtx"
+    for input_type, value in candidates:
+        if value:
+            return Path(str(value)), input_type
+    return None, None
+
+
+def _module_cfg(config: dict[str, Any], module_name: str) -> dict[str, Any]:
+    return ((config.get("modules") or {}).get(module_name) or {}) if isinstance(config.get("modules"), dict) else {}
 
 
 def _validated_run_dir(module_cfg: dict[str, Any]) -> Path | None:

@@ -92,6 +92,7 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
         production_approval=approval_summary,
         run_status=run_summary["status"],
     )
+    advanced_backend_execution = _write_advanced_backend_execution(out_dir, module_manifests)
     run_level_fields = _aggregate_run_level_fields(module_manifests, delivery_gate)
     manifest = {
         "run_id": run_id,
@@ -116,6 +117,7 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
         "style_review": style_review,
         "production_approval": approval_summary,
         "delivery_gate": delivery_gate,
+        "advanced_backend_execution": advanced_backend_execution,
         "modules": module_manifests,
         "module_status": run_summary["module_status"],
         "summary": run_summary,
@@ -135,6 +137,96 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
     manifest["run_manifest_path"] = str(manifest_path)
     manifest["logs"]["run_context"] = str(_write_run_context_log(out_dir, manifest))
     return finalize_run_outputs(out_dir, manifest_path, manifest)
+
+
+def _write_advanced_backend_execution(run_dir: Path, module_manifests: list[dict[str, Any]]) -> dict[str, Any]:
+    tables_dir = run_dir / "results" / "tables"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for module in module_manifests:
+        if not isinstance(module, dict):
+            continue
+        module_name = str(module.get("module") or "")
+        backend_rows = module.get("backend_status") if isinstance(module.get("backend_status"), list) else []
+        for row in backend_rows:
+            if not isinstance(row, dict):
+                continue
+            backend_id = str(row.get("backend_id") or "")
+            if not backend_id:
+                continue
+            seen.add((module_name, backend_id))
+            rows.append(
+                {
+                    "module": module_name,
+                    "backend_id": backend_id,
+                    "backend_role": "executed_backend",
+                    "backend_registry_status": "",
+                    "execution_status": str(row.get("status") or "not_recorded"),
+                    "analysis_level": str(row.get("analysis_level") or module.get("analysis_level") or "not_recorded"),
+                    "delivery_allowed": str(bool(row.get("delivery_allowed") is True)).lower(),
+                    "validation_evidence_allowed": str(bool(row.get("validation_evidence_allowed") is True)).lower(),
+                    "skip_reason": str(row.get("reason") or ""),
+                    "slurm_job_id": str(row.get("backend_slurm_job_id") or module.get("backend_slurm_job_id") or ""),
+                    "interpretation_warning": "",
+                }
+            )
+        plan = module.get("backend_plan") if isinstance(module.get("backend_plan"), dict) else {}
+        active = plan.get("active_backends") if isinstance(plan.get("active_backends"), list) else []
+        warnings = plan.get("interpretation_warnings") if isinstance(plan.get("interpretation_warnings"), list) else []
+        warning_text = "; ".join(map(str, warnings))
+        for backend in active:
+            if not isinstance(backend, dict):
+                continue
+            backend_id = str(backend.get("backend_id") or "")
+            if not backend_id or (module_name, backend_id) in seen:
+                continue
+            seen.add((module_name, backend_id))
+            rows.append(
+                {
+                    "module": module_name,
+                    "backend_id": backend_id,
+                    "backend_role": str(backend.get("backend_role") or ""),
+                    "backend_registry_status": str(backend.get("backend_status") or ""),
+                    "execution_status": "registered_active",
+                    "analysis_level": str(module.get("analysis_level") or "not_recorded"),
+                    "delivery_allowed": str(bool(module.get("delivery_allowed") is True)).lower(),
+                    "validation_evidence_allowed": str(bool(module.get("validation_evidence_allowed") is True)).lower(),
+                    "skip_reason": str(backend.get("skip_reason") or module.get("backend_skip_reason") or ""),
+                    "slurm_job_id": str(module.get("backend_slurm_job_id") or ""),
+                    "interpretation_warning": str(backend.get("interpretation_warning") or warning_text),
+                }
+            )
+    columns = [
+        "module",
+        "backend_id",
+        "backend_role",
+        "backend_registry_status",
+        "execution_status",
+        "analysis_level",
+        "delivery_allowed",
+        "validation_evidence_allowed",
+        "skip_reason",
+        "slurm_job_id",
+        "interpretation_warning",
+    ]
+    table_path = tables_dir / "advanced_backend_execution.tsv"
+    with table_path.open("w", encoding="utf-8") as handle:
+        handle.write("\t".join(columns) + "\n")
+        for row in rows:
+            handle.write("\t".join(str(row.get(column, "")).replace("\t", " ").replace("\n", " ") for column in columns) + "\n")
+    manifest = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": "ready",
+        "backend_count": len(rows),
+        "table": str(table_path),
+        "rows": rows,
+        "warning": "Advanced backend rows record execution, skip, and interpretation boundaries; skipped rows are not formal results.",
+    }
+    manifest_path = tables_dir / "advanced_backend_execution_manifest.json"
+    manifest["manifest_path"] = str(manifest_path)
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    return manifest
 
 
 def finalize_run_outputs(out_dir: Path, manifest_path: Path, manifest: dict[str, Any]) -> dict[str, Any]:
