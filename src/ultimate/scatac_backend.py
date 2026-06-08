@@ -146,6 +146,13 @@ def run_scatac_backend(*, config: dict[str, Any], output_dir: Path, samples: pd.
         delivery_allowed=bool(level_fields.get("delivery_allowed") is True),
         validation_evidence_allowed=bool(level_fields.get("validation_evidence_allowed") is True),
     )
+    backend_execution_rows = _backend_execution_rows(
+        tables_dir=tables_dir,
+        active_backend_ids=active_backend_ids,
+        status=status,
+        analysis_fields=level_fields,
+        backend_plan=backend_plan,
+    )
     artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
         module_name=module_name,
         tables_dir=tables_dir,
@@ -181,6 +188,7 @@ def run_scatac_backend(*, config: dict[str, Any], output_dir: Path, samples: pd.
             "accessibility_warning": SCATAC_WARNING,
         },
         "backend_plan": backend_plan,
+        "backend_execution_rows": backend_execution_rows,
         "backend_id": backend_plan["selected_backend_id"],
         "backend_status": backend_plan["selected_backend_status"],
         "backend_analysis_level": backend_plan["backend_analysis_level"],
@@ -201,6 +209,62 @@ def run_scatac_backend(*, config: dict[str, Any], output_dir: Path, samples: pd.
     manifest_path.write_text(json.dumps(module_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     write_module_report_bundle(module_manifest, reports_dir)
     return module_manifest
+
+
+def _backend_execution_rows(
+    *,
+    tables_dir: Path,
+    active_backend_ids: set[str],
+    status: str,
+    analysis_fields: dict[str, Any],
+    backend_plan: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rows = [
+        {
+            "backend_id": SCATAC_BACKEND_ID,
+            "status": "ready" if not status.startswith("partial") else "skipped",
+            "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+            "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and not status.startswith("partial")),
+            "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and not status.startswith("partial")),
+            "reason": "" if not status.startswith("partial") else status,
+            "backend_slurm_job_id": str(backend_plan.get("backend_slurm_job_id") or ""),
+        }
+    ]
+    if "scatac.motif.chromvar_signac" in active_backend_ids:
+        rows.append(
+            _chromvar_execution_row(
+                status_path=tables_dir / "chromvar_signac_backend_status.tsv",
+                analysis_fields=analysis_fields,
+                backend_plan=backend_plan,
+            )
+        )
+    return rows
+
+
+def _chromvar_execution_row(*, status_path: Path, analysis_fields: dict[str, Any], backend_plan: dict[str, Any]) -> dict[str, Any]:
+    status = "skipped"
+    reason = "missing_chromvar_signac_backend_status"
+    if status_path.exists() and status_path.stat().st_size > 0:
+        try:
+            frame = pd.read_csv(status_path, sep="\t")
+        except Exception as exc:
+            reason = f"chromvar_status_read_failed:{type(exc).__name__}"
+        else:
+            if not frame.empty:
+                first = frame.iloc[0]
+                status = str(first.get("status") or "skipped")
+                reason_value = first.get("reason")
+                reason = "" if pd.isna(reason_value) else str(reason_value)
+    ready = status == "ready"
+    return {
+        "backend_id": "scatac.motif.chromvar_signac",
+        "status": "ready" if ready else "skipped",
+        "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+        "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and ready),
+        "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and ready),
+        "reason": reason or ("" if ready else status),
+        "backend_slurm_job_id": str(backend_plan.get("backend_slurm_job_id") or ""),
+    }
 
 
 def _module_cfg(config: dict[str, Any]) -> dict[str, Any]:

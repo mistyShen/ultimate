@@ -378,7 +378,7 @@ def _write_delivery_index(path: Path, run_dir: Path) -> Path:
         if not directory.exists():
             continue
         for item in sorted(directory.rglob("*")):
-            if item.is_file():
+            if item.is_file() and item.stat().st_size > 0:
                 rows.append(_delivery_index_row(category, item, run_dir))
                 indexed_paths.add(str(item.expanduser().resolve()))
     for row in _declared_external_artifact_rows(run_dir, indexed_paths):
@@ -420,6 +420,8 @@ def _declared_external_artifact_rows(run_dir: Path, indexed_paths: set[str]) -> 
             for key, value in pairs:
                 item = Path(str(value)).expanduser()
                 if not item.is_file():
+                    continue
+                if item.stat().st_size <= 0:
                     continue
                 resolved = str(item.resolve())
                 if resolved in indexed_paths:

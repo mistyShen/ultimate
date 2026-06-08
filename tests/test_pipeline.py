@@ -10,6 +10,7 @@ from ultimate.job import prepare_job
 from ultimate.modules.common import GLOBAL_MVP_TABLE_COLUMNS, MODULE_MVP_FIGURES, MODULE_MVP_OBJECTS, MODULE_MVP_TABLES
 from ultimate.pipeline import _write_advanced_backend_execution, _write_module_log, finalize_run_outputs, run_pipeline_from_config
 from ultimate.preflight import run_preflight
+from ultimate.reproducibility import _write_delivery_index
 
 
 BULK_MODULES = {"rnaseq", "methylation", "proteomics", "publicdb", "wgcna", "single_gene", "clinical_assoc"}
@@ -204,6 +205,20 @@ def test_advanced_backend_execution_prefers_actual_backend_rows(tmp_path: Path) 
     assert rows[0]["execution_status"] == "skipped"
     assert rows[0]["validation_evidence_allowed"] == "false"
     assert rows[0]["skip_reason"] == "dependency_missing:Rscript"
+
+
+def test_delivery_index_skips_zero_byte_artifacts(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    tables_dir = run_dir / "results" / "tables" / "scatac"
+    tables_dir.mkdir(parents=True)
+    (tables_dir / "empty_backend_stdout.log").write_text("", encoding="utf-8")
+    (tables_dir / "ready_table.tsv").write_text("col\nvalue\n", encoding="utf-8")
+
+    index_path = _write_delivery_index(run_dir / "delivery_index.tsv", run_dir)
+    text = index_path.read_text(encoding="utf-8")
+
+    assert "ready_table.tsv" in text
+    assert "empty_backend_stdout.log" not in text
 
 
 def test_all_modules_emit_declared_mvp_artifacts(tmp_path: Path) -> None:

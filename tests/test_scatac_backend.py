@@ -162,6 +162,10 @@ def test_scatac_publication_preset_runs_chromvar_signac_outputs(tmp_path: Path) 
     active_ids = {row["backend_id"] for row in scatac["backend_plan"]["active_backends"]}
 
     assert "scatac.motif.chromvar_signac" in active_ids
+    execution_rows = {row["backend_id"]: row for row in scatac["backend_execution_rows"]}
+    assert execution_rows["scatac.matrix.signac_or_snapatac2_mvp"]["status"] == "ready"
+    assert execution_rows["scatac.motif.chromvar_signac"]["status"] == "ready"
+    assert execution_rows["scatac.motif.chromvar_signac"]["reason"] == ""
     for relative in [
         "results/tables/scatac/motif_deviation.tsv",
         "results/tables/scatac/motif_enrichment_handoff.tsv",
