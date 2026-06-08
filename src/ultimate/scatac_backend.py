@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -589,6 +591,10 @@ def _run_chromvar_signac_backend(
     gene_activity_path = tables_dir / "gene_activity.tsv"
     status_path = tables_dir / "chromvar_signac_backend_status.tsv"
     manifest_path = tables_dir / "chromvar_signac_backend_manifest.json"
+    versions_path = tables_dir / "chromvar_signac_backend_versions.tsv"
+    chromvar_cell_path = tables_dir / "chromvar_cell_deviations.tsv"
+    chromvar_script_path = tables_dir / "chromvar_run.R"
+    chromvar_object_path = tables_dir.parent.parent / "objects" / "scatac" / "chromvar_deviations.rds"
     motif_figure = figures_dir / "motif_deviation_heatmap.png"
     gene_figure = figures_dir / "gene_activity_heatmap.png"
     artifacts = {
@@ -598,12 +604,15 @@ def _run_chromvar_signac_backend(
             "gene_activity": str(gene_activity_path),
             "chromvar_signac_backend_status": str(status_path),
             "chromvar_signac_backend_manifest": str(manifest_path),
+            "chromvar_signac_backend_versions": str(versions_path),
+            "chromvar_cell_deviations": str(chromvar_cell_path),
+            "chromvar_run_script": str(chromvar_script_path),
         },
         "figures": {
             "motif_deviation_heatmap": str(motif_figure),
             "gene_activity_heatmap": str(gene_figure),
         },
-        "objects": {},
+        "objects": {"chromvar_deviations": str(chromvar_object_path)},
     }
     motif_table = _optional_mapping_path(config, ("motif_peak_table", "motif_database", "motif_mapping"))
     gene_table = _optional_mapping_path(config, ("gene_peak_table", "gene_activity_mapping", "annotation_table"))
@@ -617,7 +626,26 @@ def _run_chromvar_signac_backend(
         reason = f"empty_motif_mapping_after_peak_overlap:{motif_table}"
         _write_chromvar_skip_outputs(motif_path, motif_handoff_path, gene_activity_path, status_path, manifest_path, motif_figure, gene_figure, backend_id, analysis_fields, reason, artifacts)
         return artifacts
-    motif_deviation = _cluster_deviation_table(motif_scores, np.asarray(data["clusters"]).astype(str), backend_id, analysis_fields, source_dataset, input_artifact)
+    formal_result = _run_formal_chromvar_backend(
+        data=data,
+        motif_mapping=motif_mapping,
+        backend_id=backend_id,
+        analysis_fields=analysis_fields,
+        source_dataset=source_dataset,
+        input_artifact=input_artifact,
+        tables_dir=tables_dir,
+        motif_path=motif_path,
+        cell_path=chromvar_cell_path,
+        versions_path=versions_path,
+        script_path=chromvar_script_path,
+        object_path=chromvar_object_path,
+    )
+    motif_deviation = formal_result.get("motif_deviation")
+    if motif_deviation is None or motif_deviation.empty:
+        motif_deviation = _cluster_deviation_table(motif_scores, np.asarray(data["clusters"]).astype(str), backend_id, analysis_fields, source_dataset, input_artifact)
+        formal_status = formal_result.get("status", "fallback:formal_chromvar_not_available")
+    else:
+        formal_status = "ready:chromVAR_computeDeviations_R"
     motif_deviation.to_csv(motif_path, sep="\t", index=False)
     _motif_enrichment_handoff(motif_deviation, motif_status, analysis_fields, source_dataset, input_artifact).to_csv(motif_handoff_path, sep="\t", index=False)
     gene_status = "skipped:missing_gene_peak_table"
@@ -642,7 +670,7 @@ def _run_chromvar_signac_backend(
     _plot_long_heatmap(gene_activity_frame, gene_figure, index_col="gene_id", value_col="activity_score", title="Gene activity score")
     status = "ready" if not motif_deviation.empty else "skipped"
     reason = "" if status == "ready" else "empty_motif_deviation"
-    _write_chromvar_status(status_path, backend_id, analysis_fields, status, reason, motif_table, gene_table, motif_status, gene_status)
+    _write_chromvar_status(status_path, backend_id, analysis_fields, status, reason, motif_table, gene_table, motif_status, gene_status, formal_status=formal_status)
     manifest_path.write_text(
         json.dumps(
             {
@@ -654,6 +682,7 @@ def _run_chromvar_signac_backend(
                 "skip_reason": reason,
                 "motif_peak_table": str(motif_table),
                 "gene_peak_table": str(gene_table or ""),
+                "formal_chromvar_status": formal_status,
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "artifacts": artifacts,
                 "interpretation_warning": "Motif deviation and gene activity are accessibility-derived inferences; they are not TF activity assay results or gene expression.",
@@ -686,6 +715,187 @@ def _load_peak_mapping(path: Path, *, value_column_candidates: tuple[str, ...]) 
     result["peak_id"] = result["peak_id"].astype(str)
     result["set_id"] = result["set_id"].astype(str)
     return result[result["set_id"].str.len() > 0]
+
+
+def _run_formal_chromvar_backend(
+    *,
+    data: dict[str, Any],
+    motif_mapping: pd.DataFrame,
+    backend_id: str,
+    analysis_fields: dict[str, Any],
+    source_dataset: str,
+    input_artifact: str,
+    tables_dir: Path,
+    motif_path: Path,
+    cell_path: Path,
+    versions_path: Path,
+    script_path: Path,
+    object_path: Path,
+) -> dict[str, Any]:
+    rscript = shutil.which("Rscript")
+    if not rscript:
+        _write_chromvar_versions(versions_path, "skipped", "missing_Rscript")
+        return {"status": "skipped:missing_Rscript", "motif_deviation": pd.DataFrame()}
+    if not _r_packages_available(rscript, ("chromVAR", "SummarizedExperiment", "Matrix", "S4Vectors")):
+        _write_chromvar_versions(versions_path, "skipped", "missing_R_packages:chromVAR/SummarizedExperiment/Matrix/S4Vectors")
+        return {"status": "skipped:missing_R_packages", "motif_deviation": pd.DataFrame()}
+    try:
+        r_input_dir = tables_dir / "chromvar_inputs"
+        counts_path, motif_matrix_path, cluster_path = _write_chromvar_r_inputs(data, motif_mapping, r_input_dir)
+        _write_chromvar_r_script(
+            script_path=script_path,
+            counts_path=counts_path,
+            motif_matrix_path=motif_matrix_path,
+            cluster_path=cluster_path,
+            cluster_output_path=motif_path,
+            cell_output_path=cell_path,
+            versions_path=versions_path,
+            object_path=object_path,
+            backend_id=backend_id,
+            analysis_fields=analysis_fields,
+            source_dataset=source_dataset,
+            input_artifact=input_artifact,
+        )
+        completed = subprocess.run([rscript, str(script_path)], text=True, capture_output=True, timeout=900, check=False)
+        (tables_dir / "chromvar_stdout.log").write_text(completed.stdout, encoding="utf-8")
+        (tables_dir / "chromvar_stderr.log").write_text(completed.stderr, encoding="utf-8")
+        if completed.returncode != 0:
+            _write_chromvar_versions(versions_path, "skipped", f"Rscript_failed:{completed.returncode}")
+            return {"status": f"skipped:Rscript_failed:{completed.returncode}", "motif_deviation": pd.DataFrame()}
+        if not motif_path.exists() or motif_path.stat().st_size == 0:
+            _write_chromvar_versions(versions_path, "skipped", "empty_R_output")
+            return {"status": "skipped:empty_R_output", "motif_deviation": pd.DataFrame()}
+        frame = pd.read_csv(motif_path, sep="\t")
+        if frame.empty:
+            return {"status": "skipped:empty_R_output", "motif_deviation": pd.DataFrame()}
+        return {"status": "ready:chromVAR_computeDeviations_R", "motif_deviation": frame}
+    except Exception as exc:
+        _write_chromvar_versions(versions_path, "skipped", f"formal_chromvar_failed:{type(exc).__name__}:{exc}")
+        return {"status": f"skipped:formal_chromvar_failed:{type(exc).__name__}", "motif_deviation": pd.DataFrame()}
+
+
+def _r_packages_available(rscript: str, packages: tuple[str, ...]) -> bool:
+    expr = " && ".join(f"requireNamespace('{pkg}', quietly=TRUE)" for pkg in packages)
+    completed = subprocess.run([rscript, "-e", f"quit(status=ifelse({expr}, 0, 1))"], text=True, capture_output=True, timeout=120, check=False)
+    return completed.returncode == 0
+
+
+def _write_chromvar_r_inputs(data: dict[str, Any], motif_mapping: pd.DataFrame, r_input_dir: Path, *, max_cells: int = 800, max_peaks: int = 600) -> tuple[Path, Path, Path]:
+    r_input_dir.mkdir(parents=True, exist_ok=True)
+    peak_index = {str(peak): idx for idx, peak in enumerate(data["peaks"])}
+    overlap = motif_mapping[motif_mapping["peak_id"].astype(str).isin(peak_index)].copy()
+    if overlap.empty:
+        raise ValueError("motif mapping has no overlap with peak matrix")
+    peak_ids = overlap["peak_id"].astype(str).drop_duplicates().head(max_peaks).tolist()
+    peak_idx = np.asarray([peak_index[peak] for peak in peak_ids], dtype=int)
+    cells = np.arange(len(data["barcodes"]))
+    if len(cells) > max_cells:
+        counts = _feature_sums(data["matrix"][:, peak_idx] if hasattr(data["matrix"], "__getitem__") else np.asarray(data["matrix"])[:, peak_idx])
+        _ = counts  # keep deterministic feature selection above; cell selection is random but seeded.
+        rng = np.random.default_rng(73)
+        cells = np.sort(rng.choice(cells, size=max_cells, replace=False))
+    counts_arr = _to_dense(data["matrix"][cells, :][:, peak_idx]).T
+    cell_ids = np.asarray(data["barcodes"]).astype(str)[cells]
+    counts_df = pd.DataFrame(counts_arr, index=peak_ids, columns=cell_ids)
+    counts_df.index.name = "peak_id"
+    counts_path = r_input_dir / "chromvar_counts.tsv"
+    counts_df.to_csv(counts_path, sep="\t")
+
+    selected = overlap[overlap["peak_id"].astype(str).isin(peak_ids)].copy()
+    motif_matrix = pd.crosstab(selected["peak_id"].astype(str), selected["set_id"].astype(str))
+    motif_matrix = motif_matrix.reindex(index=peak_ids, fill_value=0)
+    motif_matrix = (motif_matrix > 0).astype(int)
+    motif_matrix.index.name = "peak_id"
+    motif_matrix_path = r_input_dir / "chromvar_motif_matrix.tsv"
+    motif_matrix.to_csv(motif_matrix_path, sep="\t")
+
+    clusters = np.asarray(data["clusters"]).astype(str)[cells] if "clusters" in data else np.array(["0"] * len(cell_ids))
+    cluster_path = r_input_dir / "chromvar_cell_clusters.tsv"
+    pd.DataFrame({"cell_id": cell_ids, "cluster": clusters}).to_csv(cluster_path, sep="\t", index=False)
+    return counts_path, motif_matrix_path, cluster_path
+
+
+def _write_chromvar_r_script(
+    *,
+    script_path: Path,
+    counts_path: Path,
+    motif_matrix_path: Path,
+    cluster_path: Path,
+    cluster_output_path: Path,
+    cell_output_path: Path,
+    versions_path: Path,
+    object_path: Path,
+    backend_id: str,
+    analysis_fields: dict[str, Any],
+    source_dataset: str,
+    input_artifact: str,
+) -> None:
+    object_path.parent.mkdir(parents=True, exist_ok=True)
+    script_path.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env Rscript",
+                "suppressPackageStartupMessages(library(chromVAR))",
+                "suppressPackageStartupMessages(library(SummarizedExperiment))",
+                "suppressPackageStartupMessages(library(Matrix))",
+                "suppressPackageStartupMessages(library(S4Vectors))",
+                f"counts_path <- {json.dumps(str(counts_path))}",
+                f"motif_path <- {json.dumps(str(motif_matrix_path))}",
+                f"cluster_path <- {json.dumps(str(cluster_path))}",
+                f"cluster_output_path <- {json.dumps(str(cluster_output_path))}",
+                f"cell_output_path <- {json.dumps(str(cell_output_path))}",
+                f"versions_path <- {json.dumps(str(versions_path))}",
+                f"object_path <- {json.dumps(str(object_path))}",
+                f"backend_id <- {json.dumps(backend_id)}",
+                f"analysis_level <- {json.dumps(str(analysis_fields.get('analysis_level') or 'smoke_backend'))}",
+                f"source_dataset <- {json.dumps(source_dataset)}",
+                f"input_artifact <- {json.dumps(input_artifact)}",
+                "counts <- read.delim(counts_path, row.names = 1, check.names = FALSE)",
+                "motifs <- read.delim(motif_path, row.names = 1, check.names = FALSE)",
+                "clusters <- read.delim(cluster_path, check.names = FALSE)",
+                "counts <- as.matrix(counts)",
+                "motifs <- as.matrix(motifs)",
+                "motifs <- motifs[rownames(counts), , drop = FALSE]",
+                "bias <- seq(0.1, 0.9, length.out = nrow(counts))",
+                "se <- SummarizedExperiment(assays = list(counts = counts), rowData = S4Vectors::DataFrame(bias = bias))",
+                "annotation <- Matrix(motifs, sparse = TRUE)",
+                "set.seed(11)",
+                "bg <- getBackgroundPeaks(se, niterations = 10, w = 0.1)",
+                "dev <- computeDeviations(object = se, annotations = annotation, background_peaks = bg)",
+                "z <- as.matrix(deviationScores(dev))",
+                "cell_long <- data.frame(cell_id = rep(colnames(z), each = nrow(z)), motif_id = rep(rownames(z), times = ncol(z)), deviation_score = as.vector(z), check.names = FALSE)",
+                "cell_long <- merge(cell_long, clusters, by = 'cell_id', all.x = TRUE)",
+                "cell_long$backend_id <- backend_id",
+                "cell_long$analysis_level <- analysis_level",
+                "cell_long$method <- 'chromVAR_computeDeviations_R'",
+                "cell_long$warning <- 'chromVAR deviation is accessibility-derived motif activity inference, not direct TF activity proof.'",
+                "write.table(cell_long, cell_output_path, sep = '\\t', quote = FALSE, row.names = FALSE)",
+                "cluster_long <- aggregate(deviation_score ~ cluster + motif_id, data = cell_long, FUN = mean)",
+                "cluster_long$backend_id <- backend_id",
+                "cluster_long$module <- 'scatac'",
+                "cluster_long$source_dataset <- source_dataset",
+                "cluster_long$input_artifact <- input_artifact",
+                "cluster_long$analysis_level <- analysis_level",
+                "cluster_long$method <- 'chromVAR_computeDeviations_R'",
+                "cluster_long$warning <- 'chromVAR deviation is accessibility-derived motif activity inference, not direct TF activity proof.'",
+                "write.table(cluster_long, cluster_output_path, sep = '\\t', quote = FALSE, row.names = FALSE)",
+                "saveRDS(dev, object_path)",
+                "versions <- data.frame(tool = c('R', 'chromVAR', 'SummarizedExperiment', 'Matrix'), version = c(as.character(getRversion()), as.character(packageVersion('chromVAR')), as.character(packageVersion('SummarizedExperiment')), as.character(packageVersion('Matrix'))), status = 'ready', reason = '')",
+                "write.table(versions, versions_path, sep = '\\t', quote = FALSE, row.names = FALSE)",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_chromvar_versions(path: Path, status: str, reason: str) -> None:
+    pd.DataFrame(
+        [
+            {"tool": "chromVAR", "version": "", "status": status, "reason": reason},
+            {"tool": "Rscript", "version": "", "status": status, "reason": reason},
+        ]
+    ).to_csv(path, sep="\t", index=False)
 
 
 def _aggregate_peak_sets(data: dict[str, Any], mapping: pd.DataFrame, *, value_name: str) -> tuple[pd.DataFrame, str]:
@@ -817,6 +1027,8 @@ def _write_chromvar_status(
     gene_table: Path | None,
     motif_status: str,
     gene_status: str,
+    *,
+    formal_status: str = "",
 ) -> None:
     pd.DataFrame(
         [
@@ -828,6 +1040,7 @@ def _write_chromvar_status(
                 "gene_peak_table": str(gene_table or ""),
                 "motif_status": motif_status,
                 "gene_activity_status": gene_status,
+                "formal_chromvar_status": formal_status,
                 "analysis_level": analysis_fields.get("analysis_level"),
                 "delivery_allowed": False,
                 "validation_evidence_allowed": bool(analysis_fields.get("analysis_level") == "validated_backend" and status == "ready"),

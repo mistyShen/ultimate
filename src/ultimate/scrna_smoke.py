@@ -97,6 +97,7 @@ def run_scrna_validation(
     dataset_label: str | None = None,
     production_approval: dict[str, Any] | None = None,
     celltypist_model: Path | None = None,
+    nichenet_resource: Path | None = None,
 ) -> dict[str, Any]:
     if analysis_level == "production_backend" and production_approval is None:
         raise ValueError("production_backend requires --production-approval with an approved JSON gate file")
@@ -215,6 +216,15 @@ def run_scrna_validation(
     )
     backend_rows.append(cellchat_status)
     backend_artifacts.update(cellchat_artifacts)
+    nichenet_status, nichenet_artifacts = _run_nichenet_backend(
+        adata=adata,
+        tables=tables,
+        figures=figures,
+        analysis_level=level.analysis_level,
+        resource_path=nichenet_resource,
+    )
+    backend_rows.append(nichenet_status)
+    backend_artifacts.update(nichenet_artifacts)
     backend_execution_manifest = _write_backend_execution_manifest(
         tables=tables,
         backend_rows=backend_rows,
@@ -246,6 +256,7 @@ def run_scrna_validation(
         dataset_label=dataset_label,
         production_approval=production_approval,
         celltypist_model=celltypist_model,
+        nichenet_resource=nichenet_resource,
     )
 
     manifest = {
@@ -845,6 +856,67 @@ def _run_cellchat_backend(
         return _backend_row(backend_id, "failed", analysis_level, reason), artifacts
 
 
+def _run_nichenet_backend(
+    *,
+    adata,
+    tables: Path,
+    figures: Path,
+    analysis_level: str,
+    resource_path: Path | None,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    backend_id = "scrna.communication.nichenet_optional"
+    activity_path = tables / "nichenet_ligand_activity.tsv"
+    links_path = tables / "nichenet_ligand_target_links.tsv"
+    status_path = tables / "nichenet_backend_status.tsv"
+    manifest_path = tables / "nichenet_backend_manifest.json"
+    figure_path = figures / "nichenet_activity.png"
+    artifacts = {
+        "nichenet_ligand_activity": str(activity_path),
+        "nichenet_ligand_target_links": str(links_path),
+        "nichenet_backend_status": str(status_path),
+        "nichenet_backend_manifest": str(manifest_path),
+        "nichenet_activity": str(figure_path),
+    }
+    groupby, reason = _communication_groupby(adata)
+    if reason:
+        _write_nichenet_skip_outputs(activity_path, links_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+        return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+    if resource_path is None:
+        reason = "missing_ligand_target_resource:provide nichenet_resource or resources.nichenet_ligand_target_matrix"
+        _write_nichenet_skip_outputs(activity_path, links_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+        return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+    if not resource_path.exists():
+        reason = f"missing_ligand_target_resource:{resource_path}"
+        _write_nichenet_skip_outputs(activity_path, links_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+        return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+    try:
+        resource = _read_nichenet_resource(resource_path)
+        if resource.empty:
+            reason = f"empty_ligand_target_resource:{resource_path}"
+            _write_nichenet_skip_outputs(activity_path, links_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+            return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+        targets = _nichenet_target_genes(tables / "de_condition.tsv")
+        if not targets:
+            reason = "missing_target_gene_set:condition_de_or_target_gene_table_required"
+            _write_nichenet_skip_outputs(activity_path, links_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+            return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+        activity, links = _score_nichenet_resource(resource, targets, backend_id, analysis_level, groupby, str(resource_path))
+        if activity.empty or links.empty:
+            reason = "empty_result:no_ligand_target_overlap"
+            _write_nichenet_skip_outputs(activity_path, links_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+            return _backend_row(backend_id, "skipped", analysis_level, reason), artifacts
+        activity.to_csv(activity_path, sep="\t", index=False)
+        links.to_csv(links_path, sep="\t", index=False)
+        _write_nichenet_status(status_path, backend_id, analysis_level, "ready", "", resource_path, int(activity.shape[0]), int(links.shape[0]))
+        _write_nichenet_manifest(manifest_path, backend_id, "ready", analysis_level, "", artifacts, resource_path=resource_path, groupby=groupby)
+        _write_nichenet_activity_figure(activity, figure_path)
+        return _backend_row(backend_id, "ready", analysis_level, ""), artifacts
+    except Exception as exc:
+        reason = f"backend_failed:{type(exc).__name__}:{exc}"
+        _write_nichenet_skip_outputs(activity_path, links_path, status_path, manifest_path, figure_path, backend_id, analysis_level, reason, artifacts)
+        return _backend_row(backend_id, "failed", analysis_level, reason), artifacts
+
+
 def _run_pseudobulk_de_backend(*, tables: Path, analysis_level: str) -> tuple[dict[str, Any], dict[str, str]]:
     backend_id = "scrna.pseudobulk.deseq2_edger"
     status_path = tables / "pseudobulk_de_backend_status.tsv"
@@ -1239,7 +1311,7 @@ def _write_functional_status(
 
 
 def _communication_groupby(adata) -> tuple[str, str]:
-    candidates = ("cell_type", "manual_cell_type", "celltypist_label", "majority_voting")
+    candidates = ("reviewed_cell_type", "cell_type", "manual_cell_type", "celltypist_label", "majority_voting")
     for column in candidates:
         if column not in adata.obs:
             continue
@@ -1538,6 +1610,203 @@ def _write_cellchat_network_figure(network_path: Path, figure_path: Path) -> Non
     save_figure(figure_path)
 
 
+def _write_nichenet_skip_outputs(
+    activity_path: Path,
+    links_path: Path,
+    status_path: Path,
+    manifest_path: Path,
+    figure_path: Path,
+    backend_id: str,
+    analysis_level: str,
+    reason: str,
+    artifacts: dict[str, str],
+) -> None:
+    _write_nichenet_empty_table(activity_path, backend_id, analysis_level, reason, table_type="ligand_activity")
+    _write_nichenet_empty_table(links_path, backend_id, analysis_level, reason, table_type="ligand_target_links")
+    _write_nichenet_status(status_path, backend_id, analysis_level, "skipped", reason, None, 0, 0)
+    _write_nichenet_manifest(manifest_path, backend_id, "skipped", analysis_level, reason, artifacts, resource_path=None, groupby="")
+    _write_status_figure(figure_path, title="NicheNet skipped", message=reason)
+
+
+def _write_nichenet_empty_table(path: Path, backend_id: str, analysis_level: str, reason: str, *, table_type: str) -> None:
+    common = {
+        "backend_id": backend_id,
+        "status": "skipped",
+        "reason": reason,
+        "analysis_level": analysis_level,
+        "warning": "NicheNet-style ligand-target scoring is a mechanism-hypothesis screen, not mechanism proof.",
+    }
+    if table_type == "ligand_activity":
+        rows = [{"ligand": "", "activity_score": np.nan, "n_target_overlap": 0, **common}]
+    else:
+        rows = [{"ligand": "", "target": "", "weight": np.nan, "target_in_de": False, **common}]
+    pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
+
+
+def _read_nichenet_resource(path: Path) -> pd.DataFrame:
+    sep = "\t" if path.suffix.lower() in {".tsv", ".txt"} else ","
+    frame = pd.read_csv(path, sep=sep)
+    lower = {column.lower(): column for column in frame.columns}
+    ligand_col = next((lower[name] for name in ("ligand", "source", "ligand_symbol", "from") if name in lower), None)
+    target_col = next((lower[name] for name in ("target", "target_gene", "gene", "target_symbol", "to") if name in lower), None)
+    weight_col = next((lower[name] for name in ("weight", "score", "regulatory_potential", "prior") if name in lower), None)
+    if ligand_col is None or target_col is None:
+        raise ValueError("nichenet resource must contain ligand/source and target/gene columns")
+    out = pd.DataFrame(
+        {
+            "ligand": frame[ligand_col].astype(str).str.strip(),
+            "target": frame[target_col].astype(str).str.strip(),
+            "weight": pd.to_numeric(frame[weight_col], errors="coerce") if weight_col else 1.0,
+        }
+    )
+    out["weight"] = pd.to_numeric(out["weight"], errors="coerce").fillna(1.0)
+    out = out[(out["ligand"] != "") & (out["target"] != "")]
+    return out.drop_duplicates(["ligand", "target"]).reset_index(drop=True)
+
+
+def _nichenet_target_genes(de_path: Path, *, max_targets: int = 250) -> set[str]:
+    if not de_path.exists() or de_path.stat().st_size == 0:
+        return set()
+    frame = pd.read_csv(de_path, sep="\t")
+    gene_col = next((column for column in ("names", "gene", "gene_symbol", "feature_id") if column in frame.columns), None)
+    if gene_col is None:
+        return set()
+    ranked = frame.copy()
+    if "pvals_adj" in ranked.columns:
+        ranked["_rank_p"] = pd.to_numeric(ranked["pvals_adj"], errors="coerce").fillna(1.0)
+        ranked = ranked.sort_values("_rank_p", ascending=True)
+    elif "pvals" in ranked.columns:
+        ranked["_rank_p"] = pd.to_numeric(ranked["pvals"], errors="coerce").fillna(1.0)
+        ranked = ranked.sort_values("_rank_p", ascending=True)
+    elif "logfoldchanges" in ranked.columns:
+        ranked["_rank_lfc"] = pd.to_numeric(ranked["logfoldchanges"], errors="coerce").abs().fillna(0.0)
+        ranked = ranked.sort_values("_rank_lfc", ascending=False)
+    genes = ranked[gene_col].astype(str).str.strip()
+    genes = genes[(genes != "") & (~genes.isin({"nan", "None"}))]
+    return set(genes.head(max_targets).str.upper())
+
+
+def _score_nichenet_resource(
+    resource: pd.DataFrame,
+    targets: set[str],
+    backend_id: str,
+    analysis_level: str,
+    groupby: str,
+    resource_path: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    frame = resource.copy()
+    frame["target_upper"] = frame["target"].astype(str).str.upper()
+    frame["target_in_de"] = frame["target_upper"].isin(targets)
+    links = frame[frame["target_in_de"]].copy()
+    if links.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    links["weight"] = pd.to_numeric(links["weight"], errors="coerce").fillna(1.0)
+    activity = (
+        links.groupby("ligand", observed=False)
+        .agg(activity_score=("weight", "sum"), n_target_overlap=("target", "nunique"), max_weight=("weight", "max"))
+        .reset_index()
+        .sort_values(["activity_score", "n_target_overlap"], ascending=False)
+    )
+    activity["rank"] = np.arange(1, len(activity) + 1)
+    for table in (activity, links):
+        table["backend_id"] = backend_id
+        table["status"] = "ready"
+        table["analysis_level"] = analysis_level
+        table["groupby"] = groupby
+        table["resource_path"] = resource_path
+        table["method"] = "nichenet_style_ligand_target_overlap_score"
+        table["warning"] = "Ligand-target activity is hypothesis generation from expression and prior resources; it is not mechanism proof."
+    keep = [
+        "ligand",
+        "target",
+        "weight",
+        "target_in_de",
+        "backend_id",
+        "status",
+        "analysis_level",
+        "groupby",
+        "resource_path",
+        "method",
+        "warning",
+    ]
+    return activity, links.sort_values(["ligand", "weight"], ascending=[True, False])[keep].head(500)
+
+
+def _write_nichenet_status(
+    path: Path,
+    backend_id: str,
+    analysis_level: str,
+    status: str,
+    reason: str,
+    resource_path: Path | None,
+    n_ligands: int,
+    n_links: int,
+) -> None:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "reason": reason,
+                "resource_path": str(resource_path or ""),
+                "n_ligands": n_ligands,
+                "n_ligand_target_links": n_links,
+                "analysis_level": analysis_level,
+                "warning": "NicheNet-style ligand-target analysis is a mechanism-hypothesis screen and requires reviewed sender/receiver labels and target genes.",
+            }
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_nichenet_manifest(
+    path: Path,
+    backend_id: str,
+    status: str,
+    analysis_level: str,
+    reason: str,
+    artifacts: dict[str, str],
+    *,
+    resource_path: Path | None,
+    groupby: str,
+) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "analysis_level": analysis_level,
+                "delivery_allowed": False,
+                "validation_evidence_allowed": analysis_level == "validated_backend" and status == "ready",
+                "skip_reason": reason,
+                "resource_path": str(resource_path or ""),
+                "groupby": groupby,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "artifacts": artifacts,
+                "interpretation_warning": "NicheNet-style ligand-target results generate hypotheses and must not be reported as validated mechanisms.",
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_nichenet_activity_figure(activity: pd.DataFrame, figure_path: Path) -> None:
+    import matplotlib.pyplot as plt
+
+    apply_clinical_journal_style()
+    if activity.empty:
+        _write_status_figure(figure_path, title="NicheNet ligand activity", message="No ligand-target overlap")
+        return
+    top = activity.sort_values("activity_score", ascending=False).head(20).copy()
+    fig, ax = plt.subplots(figsize=(7.0, max(3.0, 0.28 * len(top))))
+    ax.barh(top["ligand"].astype(str)[::-1], top["activity_score"].astype(float)[::-1], color="#537FA6")
+    ax.set_xlabel("Ligand-target overlap score")
+    ax.set_title("NicheNet-style ligand activity candidates")
+    fig.tight_layout()
+    save_figure(figure_path)
+
+
 def _write_status_figure(path: Path, *, title: str, message: str) -> None:
     import matplotlib.pyplot as plt
 
@@ -1711,6 +1980,7 @@ def _reproducible_command(
     dataset_label: str | None,
     production_approval: dict[str, Any] | None,
     celltypist_model: Path | None = None,
+    nichenet_resource: Path | None = None,
 ) -> str:
     pieces = [
         "ultimate",
@@ -1739,6 +2009,8 @@ def _reproducible_command(
         pieces.extend(["--production-approval", str(approval_path)])
     if celltypist_model is not None:
         pieces.extend(["--celltypist-model", str(celltypist_model)])
+    if nichenet_resource is not None:
+        pieces.extend(["--nichenet-resource", str(nichenet_resource)])
     return " ".join(pieces)
 
 

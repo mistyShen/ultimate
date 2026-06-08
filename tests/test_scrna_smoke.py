@@ -153,7 +153,7 @@ def test_unified_run_scrna_preset_uses_scrna_mvp_backend(tmp_path: Path) -> None
                     "input_h5ad": demo["h5ad"],
                     "samplesheet": demo["samplesheet"],
                     "max_cells": 30,
-                    "backends": {"communication": "liana,cellchat"},
+                    "backends": {"communication": "liana,cellchat,nichenet"},
                 }
             },
         },
@@ -169,16 +169,57 @@ def test_unified_run_scrna_preset_uses_scrna_mvp_backend(tmp_path: Path) -> None
     assert scrna["backend_id"] == "scrna.mvp.validate_scrna"
     assert "scrna.communication.cellchat_optional" in active_ids
     assert "scrna.communication.liana" in active_ids
+    assert "scrna.communication.nichenet_optional" in active_ids
     assert any(row["backend_id"] == "scrna.communication.cellchat_optional" for row in scrna["backend_execution_rows"])
+    assert any(row["backend_id"] == "scrna.communication.nichenet_optional" for row in scrna["backend_execution_rows"])
     assert (run_dir / "objects" / "scrna_mvp.h5ad").exists()
     assert (run_dir / "results" / "tables" / "backend_execution_manifest.json").exists()
     assert (run_dir / "results" / "tables" / "advanced_backend_execution_manifest.json").exists()
     advanced = json.loads((run_dir / "results" / "tables" / "advanced_backend_execution_manifest.json").read_text(encoding="utf-8"))
     cellchat_rows = [row for row in advanced["rows"] if row["backend_id"] == "scrna.communication.cellchat_optional"]
     assert cellchat_rows and cellchat_rows[0]["execution_status"] != "registered_active"
+    nichenet_rows = [row for row in advanced["rows"] if row["backend_id"] == "scrna.communication.nichenet_optional"]
+    assert nichenet_rows and nichenet_rows[0]["execution_status"] != "registered_active"
     methods = (run_dir / "reports" / "methods.md").read_text(encoding="utf-8")
     assert "Advanced Backend Execution" in methods
     assert "scrna.communication.cellchat_optional" in methods
+    assert "scrna.communication.nichenet_optional" in methods
+
+
+def test_scrna_nichenet_backend_runs_with_reviewed_labels_and_resource(tmp_path: Path) -> None:
+    _require_scrna_runtime()
+    demo = create_demo_inputs(tmp_path / "demo_nichenet", n_cells=60, n_genes=70, seed=22)
+    samples = pd.read_csv(demo["samplesheet"], sep="\t")
+    labels = ["reviewed_T_like", "reviewed_B_like", "reviewed_myeloid_like"]
+    samples["reviewed_cell_type"] = [labels[idx % len(labels)] for idx in range(len(samples))]
+    samplesheet = tmp_path / "reviewed_labels.tsv"
+    samples.to_csv(samplesheet, sep="\t", index=False)
+    resource = tmp_path / "nichenet_resource.tsv"
+    pd.DataFrame(
+        [
+            {"ligand": "IL6", "target": "MKI67", "weight": 0.9},
+            {"ligand": "IL6", "target": "TOP2A", "weight": 0.8},
+            {"ligand": "VEGFA", "target": "LDHA", "weight": 0.7},
+            {"ligand": "VEGFA", "target": "VIM", "weight": 0.6},
+        ]
+    ).to_csv(resource, sep="\t", index=False)
+
+    manifest = run_scrna_validation(
+        input_path=Path(demo["tenx_mtx"]),
+        input_type="10x_mtx",
+        output_dir=tmp_path / "run_nichenet",
+        samplesheet=samplesheet,
+        max_cells=60,
+        nichenet_resource=resource,
+    )
+
+    row = next(row for row in manifest["backend_status"] if row["backend_id"] == "scrna.communication.nichenet_optional")
+    assert row["status"] == "ready"
+    activity = pd.read_csv(tmp_path / "run_nichenet" / "results" / "tables" / "nichenet_ligand_activity.tsv", sep="\t")
+    assert {"ligand", "activity_score", "warning"}.issubset(activity.columns)
+    assert not activity.empty
+    backend_manifest = json.loads((tmp_path / "run_nichenet" / "results" / "tables" / "nichenet_backend_manifest.json").read_text(encoding="utf-8"))
+    assert backend_manifest["delivery_allowed"] is False
 
 
 def test_scrna_communication_input_does_not_auto_select_velocity() -> None:
@@ -326,6 +367,7 @@ def _assert_mvp_outputs(manifest: dict) -> None:
         "scrna.functional.decoupler_gseapy",
         "scrna.communication.liana",
         "scrna.communication.cellchat_optional",
+        "scrna.communication.nichenet_optional",
         "scrna.pseudobulk.deseq2_edger",
     }.issubset(backend_ids)
     assert Path(manifest["raw_qc_manifest"]).exists()
@@ -357,6 +399,10 @@ def _assert_mvp_outputs(manifest: dict) -> None:
         "results/tables/cellchat_pathway_summary.tsv",
         "results/tables/cellchat_backend_status.tsv",
         "results/tables/cellchat_backend_manifest.json",
+        "results/tables/nichenet_ligand_activity.tsv",
+        "results/tables/nichenet_ligand_target_links.tsv",
+        "results/tables/nichenet_backend_status.tsv",
+        "results/tables/nichenet_backend_manifest.json",
         "results/tables/pseudobulk_de_backend_status.tsv",
         "results/tables/pseudobulk_de_results.tsv",
         "results/tables/pseudobulk_deseq2_edgeR_handoff.R",
@@ -365,6 +411,7 @@ def _assert_mvp_outputs(manifest: dict) -> None:
         "results/figures/umap_cluster_condition.png",
         "results/figures/communication_dotplot.png",
         "results/figures/cellchat_network.png",
+        "results/figures/nichenet_activity.png",
         "reports/report.md",
         "reports/report.html",
         "run_manifest.json",

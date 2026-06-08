@@ -154,6 +154,40 @@ def test_validate_scrna_accepts_valid_production_approval(tmp_path: Path, monkey
     assert payload["production_approval"]["approval_path"] == str(approval_path.resolve())
 
 
+def test_validate_scrna_passes_optional_nichenet_resource(tmp_path: Path, monkeypatch) -> None:
+    input_path = tmp_path / "input.h5ad"
+    output_dir = tmp_path / "out"
+    resource_path = tmp_path / "ligand_target.tsv"
+    input_path.write_text("placeholder", encoding="utf-8")
+    resource_path.write_text("ligand\ttarget\tweight\nTGFB1\tCOL1A1\t1.0\n", encoding="utf-8")
+
+    def fake_run_scrna_validation(**kwargs):
+        return {
+            "status": "ready",
+            "analysis_level": kwargs["analysis_level"],
+            "nichenet_resource": str(kwargs["nichenet_resource"]) if kwargs["nichenet_resource"] else "",
+        }
+
+    monkeypatch.setattr(scrna_smoke, "run_scrna_validation", fake_run_scrna_validation)
+    result = CliRunner().invoke(
+        main,
+        [
+            "validate-scrna",
+            "--input-path",
+            str(input_path),
+            "--input-type",
+            "h5ad",
+            "--output-dir",
+            str(output_dir),
+            "--nichenet-resource",
+            str(resource_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["nichenet_resource"] == str(resource_path)
+
+
 def test_scrna_mvp_skip_manifest_is_not_validated_backend() -> None:
     root = _ultimate_root()
     script = (root / "slurm/scrna_mvp_validation.sbatch").read_text(encoding="utf-8")

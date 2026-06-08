@@ -35,7 +35,7 @@ def test_backend_plan_records_requested_and_skipped_backends() -> None:
                 "preset": "tumor",
                 "backends": {
                     "annotation": "celltypist",
-                    "communication": "liana,cellchat",
+                    "communication": "liana,cellchat,nichenet",
                     "unknown": "not_a_backend",
                 },
             }
@@ -49,6 +49,7 @@ def test_backend_plan_records_requested_and_skipped_backends() -> None:
     assert "scrna.annotation.celltypist" in active_ids
     assert "scrna.communication.liana" in active_ids
     assert "scrna.communication.cellchat_optional" in active_ids
+    assert "scrna.communication.nichenet_optional" in active_ids
     skipped_ids = set(plan["skipped_optional_backends"])
     assert "scrna.pseudobulk.deseq2_edger" in skipped_ids
     assert plan["unknown_requested_backends"] == {"unknown": "not_a_backend"}
@@ -65,6 +66,7 @@ def test_backend_plan_preset_resolver_selects_advanced_defaults() -> None:
         "scrna.functional.decoupler_gseapy",
         "scrna.communication.liana",
         "scrna.communication.cellchat_optional",
+        "scrna.communication.nichenet_optional",
     }.issubset(communication_ids)
     assert {row["backend_id"] for row in communication_plan["preset_selected_backends"]} <= communication_ids
 
@@ -91,6 +93,7 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "scrna.functional.decoupler_gseapy": "slurm/scrna_mvp_validation.sbatch",
         "scrna.communication.liana": "slurm/scrna_mvp_validation.sbatch",
         "scrna.communication.cellchat_optional": "slurm/scrna_cellchat_validation.sbatch",
+        "scrna.communication.nichenet_optional": "slurm/scrna_nichenet_validation.sbatch",
         "scrna.pseudobulk.deseq2_edger": "slurm/scrna_pseudobulk_de.sbatch",
         "scrna.tumor.copykat": "slurm/tumor_sc_copykat_small_validation.sbatch",
         "scrna.velocity.scvelo": "slurm/scrna_velocity.sbatch",

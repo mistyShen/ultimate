@@ -26,6 +26,7 @@ VALIDATION_SCRIPTS = (
     "validate_scatac_chromvar.py",
     "validate_scdna_0518.py",
     "validate_scrna_cellchat.py",
+    "validate_scrna_nichenet.py",
     "validate_scrna_nsclc.py",
     "validate_spatial_public.py",
     "validate_vdj_public.py",

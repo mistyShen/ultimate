@@ -239,7 +239,14 @@ def run_scrna_mvp_module_backend(*, config: dict[str, Any], output_dir: Path, sa
     raw_cfg = module_cfg.get("raw") if isinstance(module_cfg.get("raw"), dict) else {}
     if not samplesheet:
         samplesheet = raw_cfg.get("samplesheet")
-    celltypist_model = module_cfg.get("celltypist_model") or (config.get("resources") or {}).get("celltypist_model")
+    resources = config.get("resources") or {}
+    celltypist_model = module_cfg.get("celltypist_model") or resources.get("celltypist_model")
+    nichenet_resource = (
+        module_cfg.get("nichenet_resource")
+        or module_cfg.get("nichenet_ligand_target_matrix")
+        or resources.get("nichenet_resource")
+        or resources.get("nichenet_ligand_target_matrix")
+    )
     manifest = run_scrna_validation(
         input_path=Path(str(input_path)),
         input_type=str(input_type),
@@ -252,6 +259,7 @@ def run_scrna_mvp_module_backend(*, config: dict[str, Any], output_dir: Path, sa
         dataset_label=str(module_cfg.get("dataset_label") or module_cfg.get("validation_dataset") or ""),
         production_approval=None,
         celltypist_model=Path(str(celltypist_model)) if celltypist_model else None,
+        nichenet_resource=Path(str(nichenet_resource)) if nichenet_resource else None,
     )
     backend_execution_rows = list(manifest.get("backend_status") or []) if isinstance(manifest.get("backend_status"), list) else []
     backend_plan = enrich_backend_plan_for_run(

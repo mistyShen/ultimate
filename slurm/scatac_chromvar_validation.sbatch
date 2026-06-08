@@ -11,6 +11,7 @@ set -euo pipefail
 PROJECT_ROOT="${ULTIMATE_ROOT:-/shared/shen/2026/ultimate}"
 CORE_ENV="${ULTIMATE_CORE_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-core}"
 SCATAC_ENV="${ULTIMATE_SCATAC_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-scatac-multiome}"
+SCATAC_R_ENV="${ULTIMATE_SCATAC_R_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-scatac-r}"
 SCRNA_FALLBACK_ENV="${ULTIMATE_SCRNA_FALLBACK_ENV:-$PROJECT_ROOT/.conda/envs/ultimate-scrna}"
 CONDA_SH="${CONDA_SH:-/share/home/nshen/miniconda3/etc/profile.d/conda.sh}"
 INPUT_H5="${ULTIMATE_SCATAC_INPUT:-$PROJECT_ROOT/public_data/scatac/10k_pbmc_ATACv2_nextgem_Chromium_Controller_filtered_peak_bc_matrix.h5}"
@@ -111,6 +112,9 @@ if ! PYTHON_BIN="$(select_python)"; then
 fi
 
 export PYTHONPATH="$PROJECT_ROOT/src:$PROJECT_ROOT/01_tools:${PYTHONPATH:-}"
+if [[ -x "$SCATAC_R_ENV/bin/Rscript" ]]; then
+  export PATH="$SCATAC_R_ENV/bin:$PATH"
+fi
 "$PYTHON_BIN" "$PROJECT_ROOT/01_tools/validate_scatac_chromvar.py" \
   --input-h5 "$INPUT_H5" \
   --output-dir "$OUT_DIR" \

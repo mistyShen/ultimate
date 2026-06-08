@@ -153,7 +153,7 @@ modules:
     preset: communication
     backends:
       annotation: celltypist
-      communication: liana,cellchat
+      communication: liana,cellchat,nichenet
   scatac:
     enabled: true
     preset: publication
@@ -163,9 +163,9 @@ modules:
 
 The resolver records `preset_selected_backends`, `active_backends`,
 `skipped_optional_backends`, and interpretation warnings in backend manifests.
-`CellChat` and `chromVAR/Signac` are guarded optional backends: they run only
-when the required labels, mappings, packages, and input contracts are present;
-otherwise they write explicit skip/blocked rows in
+`CellChat`, `NicheNet`, and `chromVAR/Signac` are guarded optional backends:
+they run only when the required labels, mappings, packages, resources, and
+input contracts are present; otherwise they write explicit skip/blocked rows in
 `backend_execution_manifest.json` or module backend status tables. Skip rows are
 not delivery evidence.
 
@@ -173,10 +173,13 @@ Slurm validation entrypoints:
 
 ```bash
 hpc-sbatch /shared/shen/2026/ultimate/slurm/scrna_cellchat_validation.sbatch
+hpc-sbatch /shared/shen/2026/ultimate/slurm/scrna_nichenet_validation.sbatch
 hpc-sbatch /shared/shen/2026/ultimate/slurm/scatac_chromvar_validation.sbatch
 ```
 
 CellChat results are ligand-receptor candidates, not direct mechanism proof.
+NicheNet-style ligand-target scoring is a mechanism-hypothesis screen and
+requires reviewed labels plus a compatible ligand-target resource.
 chromVAR/Signac motif deviation and gene activity outputs are
 accessibility-derived inferences, not TF activity assays or gene expression.
 

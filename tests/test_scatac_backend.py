@@ -168,6 +168,7 @@ def test_scatac_publication_preset_runs_chromvar_signac_outputs(tmp_path: Path) 
         "results/tables/scatac/gene_activity.tsv",
         "results/tables/scatac/chromvar_signac_backend_status.tsv",
         "results/tables/scatac/chromvar_signac_backend_manifest.json",
+        "results/tables/scatac/chromvar_signac_backend_versions.tsv",
         "results/figures/scatac/motif_deviation_heatmap.png",
         "results/figures/scatac/gene_activity_heatmap.png",
     ]:
@@ -175,5 +176,9 @@ def test_scatac_publication_preset_runs_chromvar_signac_outputs(tmp_path: Path) 
         assert path.exists() and path.stat().st_size > 0
     status = pd.read_csv(run_dir / "results/tables/scatac/chromvar_signac_backend_status.tsv", sep="\t")
     assert status.loc[0, "status"] == "ready"
+    assert "formal_chromvar_status" in status.columns
+    assert str(status.loc[0, "formal_chromvar_status"]).strip() != ""
+    backend_manifest = json.loads((run_dir / "results/tables/scatac/chromvar_signac_backend_manifest.json").read_text(encoding="utf-8"))
+    assert backend_manifest["formal_chromvar_status"]
     motif = pd.read_csv(run_dir / "results/tables/scatac/motif_deviation.tsv", sep="\t")
-    assert {"motif_id", "cluster", "deviation_score", "warning"}.issubset(motif.columns)
+    assert {"motif_id", "cluster", "deviation_score", "method", "warning"}.issubset(motif.columns)

@@ -383,6 +383,7 @@ def create_scrna_demo_inputs_command(output_dir: Path, n_cells: int, n_genes: in
 @click.option("--dataset-label", default=None, help="Optional dataset label recorded in the manifest.")
 @click.option("--production-approval", type=click.Path(path_type=Path, exists=True, dir_okay=False), default=None, help="Approved JSON gate file required for production_backend.")
 @click.option("--celltypist-model", type=click.Path(path_type=Path, exists=True, dir_okay=False), default=None, help="Optional local CellTypist model. If omitted, CellTypist is skipped without downloading.")
+@click.option("--nichenet-resource", type=click.Path(path_type=Path, exists=True, dir_okay=False), default=None, help="Optional ligand-target TSV/CSV resource for NicheNet-style communication backend.")
 def validate_scrna_command(
     input_path: Path,
     input_type: str,
@@ -395,6 +396,7 @@ def validate_scrna_command(
     dataset_label: str | None,
     production_approval: Path | None,
     celltypist_model: Path | None,
+    nichenet_resource: Path | None,
 ) -> None:
     """Run the scRNA MVP validation path on h5ad, 10x H5, or 10x MTX input."""
     from ultimate.scrna_smoke import run_scrna_validation
@@ -418,6 +420,7 @@ def validate_scrna_command(
             dataset_label=dataset_label,
             production_approval=approval,
             celltypist_model=celltypist_model,
+            nichenet_resource=nichenet_resource,
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
