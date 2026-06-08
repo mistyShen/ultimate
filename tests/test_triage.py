@@ -107,6 +107,63 @@ def test_triage_markdown_request_parses_basic_hints(tmp_path: Path) -> None:
     assert manifest["analysis_level"] == "smoke_backend"
 
 
+def test_triage_scrna_h5ad_yaml_ready_to_run(tmp_path: Path) -> None:
+    samplesheet = tmp_path / "samples.tsv"
+    h5ad = tmp_path / "pbmc.h5ad"
+    samplesheet.write_text(f"sample_id\tcondition\tinput_path\nS1\tcontrol\t{h5ad}\n", encoding="utf-8")
+    h5ad.write_text("mock", encoding="utf-8")
+    request = _write_request(
+        tmp_path / "scrna.yaml",
+        {"request_id": "SCRNA_H5AD", "modules": ["scrna"], "samplesheet": str(samplesheet), "h5ad": str(h5ad), "presets": ["standard"]},
+    )
+
+    manifest = run_triage(request, tmp_path / "triage" / "SCRNA_H5AD")
+
+    assert manifest["status"] == "ready_to_run"
+    assert manifest["input_summary"]["standard_input_types"] == ["h5ad"]
+    assert manifest["input_summary"]["handoff_required"] is False
+
+
+def test_triage_unknown_module_and_unknown_organism_are_not_supported(tmp_path: Path) -> None:
+    samplesheet = tmp_path / "samples.tsv"
+    matrix = tmp_path / "counts.tsv"
+    samplesheet.write_text(f"sample_id\tcondition\tmatrix_path\nS1\tcontrol\t{matrix}\n", encoding="utf-8")
+    matrix.write_text("gene\tS1\nG1\t1\n", encoding="utf-8")
+    request = _write_request(
+        tmp_path / "bad.yaml",
+        {"request_id": "BAD001", "modules": ["not_a_module"], "organism": "zebrafish", "samplesheet": str(samplesheet), "matrix_path": str(matrix)},
+    )
+
+    manifest = run_triage(request, tmp_path / "triage" / "BAD001")
+
+    assert manifest["status"] == "not_supported"
+    missing = Path(manifest["missing_requirements"]).read_text(encoding="utf-8")
+    assert "not_a_module" in missing
+    assert "zebrafish" in missing
+
+
+def test_triage_missing_required_command_needs_dependency(tmp_path: Path) -> None:
+    samplesheet = tmp_path / "samples.tsv"
+    matrix = tmp_path / "counts.tsv"
+    samplesheet.write_text(f"sample_id\tcondition\tmatrix_path\nS1\tcontrol\t{matrix}\n", encoding="utf-8")
+    matrix.write_text("gene\tS1\nG1\t1\n", encoding="utf-8")
+    request = _write_request(
+        tmp_path / "deps.yaml",
+        {
+            "request_id": "DEP001",
+            "modules": ["rnaseq"],
+            "samplesheet": str(samplesheet),
+            "matrix_path": str(matrix),
+            "required_commands": ["definitely_missing_ultimate_command"],
+        },
+    )
+
+    manifest = run_triage(request, tmp_path / "triage" / "DEP001")
+
+    assert manifest["status"] == "needs_dependency"
+    assert "definitely_missing_ultimate_command" in Path(manifest["missing_requirements"]).read_text(encoding="utf-8")
+
+
 def test_triage_authorized_tool_request_needs_license(tmp_path: Path) -> None:
     samplesheet = tmp_path / "samples.tsv"
     samplesheet.write_text("sample_id\tcondition\nS1\tcontrol\n", encoding="utf-8")

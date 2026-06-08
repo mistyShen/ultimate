@@ -32,6 +32,10 @@ def test_prepare_job_creates_shared_layout_and_command_plan(tmp_path: Path) -> N
     assert manifest["approval_gate"]["status"] == "template_pending_approval"
     assert manifest["samplesheet_status"]["status"] == "copied"
     assert manifest["analysis_request_status"]["status"] == "copied"
+    raw_manifest = job_dir / "raw_links" / "input_paths_manifest.tsv"
+    assert manifest["raw_input_manifest"] == str(raw_manifest)
+    assert raw_manifest.exists()
+    assert "read_only_reference" in raw_manifest.read_text(encoding="utf-8")
     assert manifest["slurm_adapter"]["status"] == "missing"
     assert manifest["slurm_adapter"]["path"] == str(root / "slurm" / "ultimate_run.sbatch")
     command_plan = (job_dir / "config" / "command_plan.md").read_text(encoding="utf-8")

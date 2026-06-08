@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import shutil
 import stat
+import csv
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from ultimate.config import dump_yaml, load_config, resolve_path
+from ultimate.raw_qc import PATH_COLUMNS
 
 
 JOB_SUBDIRS = ("raw_links", "config", "samples", "runs", "logs", "deliverables", "reproducible_code", "work")
@@ -38,6 +40,7 @@ def prepare_job(
     selected_request = analysis_request or _configured_analysis_request(config, loaded.base_dir)
     copied_samplesheet = _copy_optional(selected_samplesheet, job_dir / "samples")
     copied_request = _copy_optional(selected_request, job_dir / "config")
+    raw_input_manifest = _write_raw_input_manifest(job_dir / "raw_links" / "input_paths_manifest.tsv", config, copied_samplesheet)
 
     config.setdefault("project", {})
     config["project"]["job_id"] = clean_job_id
@@ -86,6 +89,7 @@ def prepare_job(
         "samplesheet_status": _input_copy_status(selected_samplesheet, copied_samplesheet),
         "analysis_request": str(copied_request) if copied_request else "",
         "analysis_request_status": _input_copy_status(selected_request, copied_request),
+        "raw_input_manifest": str(raw_input_manifest),
         "approval_template": str(approval_template),
         "job_slurm_script": str(job_slurm_script),
         "command_plan": str(command_plan),
@@ -145,6 +149,55 @@ def _input_copy_status(source: Path | None, copied: Path | None) -> dict[str, st
     if copied is None:
         return {"status": "missing_or_not_copied", "source": str(source), "copied_to": ""}
     return {"status": "copied", "source": str(source), "copied_to": str(copied)}
+
+
+def _write_raw_input_manifest(path: Path, config: dict[str, Any], copied_samplesheet: Path | None) -> Path:
+    rows: list[dict[str, str]] = []
+
+    def add(source: str, key: str, value: Any) -> None:
+        if value in (None, ""):
+            return
+        if isinstance(value, dict):
+            for nested_key, nested_value in value.items():
+                add(source, f"{key}.{nested_key}", nested_value)
+            return
+        if isinstance(value, (list, tuple)):
+            for index, item in enumerate(value):
+                add(source, f"{key}[{index}]", item)
+            return
+        if isinstance(value, str) and (key.split(".")[-1] in PATH_COLUMNS or any(token in key.lower() for token in ("path", "fastq", "matrix", "bam", "vcf", "fragments"))):
+            candidate = Path(value).expanduser()
+            rows.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "path": value,
+                    "exists": str(candidate.exists()).lower(),
+                    "policy": "read_only_reference; not copied; not modified",
+                }
+            )
+
+    add("config", "config", config)
+    if copied_samplesheet and copied_samplesheet.exists():
+        try:
+            with copied_samplesheet.open("r", encoding="utf-8", newline="") as handle:
+                sample = handle.read(4096)
+                handle.seek(0)
+                dialect = csv.Sniffer().sniff(sample, delimiters="\t,")
+                reader = csv.DictReader(handle, dialect=dialect)
+                for row_index, row in enumerate(reader, start=1):
+                    for key, value in row.items():
+                        if key in PATH_COLUMNS:
+                            add("samplesheet", f"row{row_index}.{key}", value)
+        except Exception as exc:
+            rows.append({"source": "samplesheet", "key": "read_error", "path": str(copied_samplesheet), "exists": "true", "policy": f"not_parsed:{type(exc).__name__}"})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    columns = ("source", "key", "path", "exists", "policy")
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, delimiter="\t", fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
 
 
 def _write_raw_links_readme(path: Path) -> None:
