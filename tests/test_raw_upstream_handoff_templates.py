@@ -108,6 +108,39 @@ def test_v3_3_rehearsal_slurm_script_runs_delivery_check() -> None:
     assert "write_v3_3_order_ready_report.py" in text
 
 
+def test_v3_4_order_ready_rehearsal_slurm_script_covers_next_modules() -> None:
+    script = Path(__file__).resolve().parents[1] / "slurm" / "v3_4_order_ready_rehearsal.sbatch"
+    text = script.read_text(encoding="utf-8")
+
+    assert "set -euo pipefail" in text
+    assert "v3_4_cite_seq_standard_rehearsal" in text
+    assert "v3_4_vdj_standard_rehearsal" in text
+    assert "v3_4_spatial_standard_rehearsal" in text
+    assert "v3_4_functional_state_standard_rehearsal" in text
+    assert "production_approval.json" in text
+    assert "delivery_scope: internal_rehearsal" in text
+    assert "delivery-check --run-dir" in text
+    assert "validation-index" in text
+    assert "audit-production" in text
+    assert "audit-backends" in text
+
+
+def test_dev_entrypoint_check_script_has_local_and_remote_modes() -> None:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "check_dev_entrypoint.sh"
+    text = script.read_text(encoding="utf-8")
+
+    assert "set -euo pipefail" in text
+    assert "--mode local|remote" in text
+    assert "hpc-run" in text
+    assert "pytest -q \\" in text
+    assert "tests/test_cli.py::test_cli_prepare_intake" in text
+    assert "pip install -e ." in text
+    assert "ultimate --help" in text
+    assert "handoff-check" in text
+    assert "prepare-intake" in text
+    assert "PYTHONPATH=" not in text
+
+
 def _csv_header(path: Path) -> list[str]:
     with path.open(newline="", encoding="utf-8") as handle:
         return next(csv.reader(handle))

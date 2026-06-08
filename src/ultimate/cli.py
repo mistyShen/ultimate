@@ -10,6 +10,7 @@ from ultimate.config import load_config
 from ultimate.constants import PROJECT_TYPES
 from ultimate.demo import init_project
 from ultimate.delivery_check import run_delivery_check
+from ultimate.handoff_check import run_handoff_check
 from ultimate.job import prepare_job
 from ultimate.pipeline import run_pipeline_from_config
 from ultimate.plot_style import available_styles, generate_style_review, set_active_style
@@ -145,6 +146,28 @@ def delivery_check_command(run_dir: Path) -> None:
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
     if manifest.get("status") != "ready":
         raise click.ClickException("delivery-check blocked: " + ",".join(manifest.get("blockers") or []))
+
+
+@main.command("handoff-check")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    default=Path("."),
+    show_default=True,
+    help="Ultimate project root used for audit output defaults.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Where handoff QA artifacts should be written. Defaults to <root>/audits/handoff_latest.",
+)
+def handoff_check_command(root: Path, output_dir: Path | None) -> None:
+    """Check nf-core raw upstream handoff templates without executing upstream workflows."""
+    manifest = run_handoff_check(root=root, output_dir=output_dir)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+    if manifest.get("status") != "ready":
+        raise click.ClickException("handoff-check blocked: " + ",".join(manifest.get("blockers") or []))
 
 
 @main.command("audit-singlecell")

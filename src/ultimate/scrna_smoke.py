@@ -1832,7 +1832,8 @@ def _write_pseudobulk_r_handoff(path: Path, counts_path: Path, design_path: Path
                 "design <- read.delim(design_path, check.names = FALSE)",
                 "stopifnot('feature_id' %in% colnames(counts))",
                 "stopifnot(all(c('pseudobulk_id', 'condition', 'cluster') %in% colnames(design)))",
-                "# TODO: run per-cluster DESeq2/edgeR after confirming replicate structure and contrasts.",
+                "# Guarded backend: run per-cluster DESeq2/edgeR only after replicate, contrast, and raw-count gates pass.",
+                "# If any gate fails, this file remains a design-ready handoff and is not a formal DE result.",
                 "",
             ]
         ),

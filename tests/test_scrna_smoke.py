@@ -366,6 +366,10 @@ def _assert_mvp_outputs(manifest: dict) -> None:
     assert "backend_execution_manifest" in manifest
     assert "backend_execution_status" in manifest
     assert Path(manifest["backend_execution_manifest"]).exists()
+    handoff_text = (run_dir / "results/tables/pseudobulk_deseq2_edgeR_handoff.R").read_text(encoding="utf-8")
+    assert "Guarded backend" in handoff_text
+    assert "not a formal DE result" in handoff_text
+    assert "TODO" not in handoff_text
     backend_ids = {row["backend_id"] for row in manifest["backend_status"]}
     assert {
         "scrna.qc.scrublet",

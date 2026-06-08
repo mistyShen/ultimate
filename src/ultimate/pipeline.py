@@ -248,9 +248,6 @@ def finalize_run_outputs(out_dir: Path, manifest_path: Path, manifest: dict[str,
     report_manifest = build_report(out_dir)
     manifest["report"] = report_manifest
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    report_manifest = build_report(out_dir)
-    manifest["report"] = report_manifest
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     job_level_delivery = refresh_job_level_delivery_mirrors(out_dir)
     if job_level_delivery:
         reproducible_package = manifest.get("reproducible_package")

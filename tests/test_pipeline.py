@@ -158,10 +158,10 @@ def test_finalize_run_outputs_does_not_repeat_final_repro_export(tmp_path: Path,
 
     result = finalize_run_outputs(tmp_path, manifest_path, manifest)
 
-    assert calls == ["export", "report", "report"]
+    assert calls == ["export", "report"]
     written = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert written["reproducible_package"]["call_index"] == 1
-    assert written["report"]["call_index"] == 2
+    assert written["report"]["call_index"] == 1
     assert result["reproducible_package"] == written["reproducible_package"]
     assert result["report"] == written["report"]
 

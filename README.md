@@ -92,6 +92,7 @@ ultimate preflight --config example_projects/demo_all/config/project.yaml
 ultimate run --config example_projects/demo_all/config/project.yaml
 ultimate report --run-dir example_projects/demo_all/runs/demo_all
 ultimate delivery-check --run-dir /shared/shen/2026/ultimate/jobs/<job_id>
+ultimate handoff-check --root /shared/shen/2026/ultimate
 ultimate styles --style soft_color --output-dir example_projects/style_review
 ultimate audit-production --root /shared/shen/2026/ultimate
 ultimate audit-backends --root /shared/shen/2026/ultimate
@@ -258,6 +259,62 @@ $PY $ROOT/01_tools/write_v3_3_order_ready_report.py \
 `reports/v3_3_order_ready_report.md` separates order-ready presets from
 validated-only evidence, handoff-required presets, license-required presets,
 and presets that still require manual review.
+
+The raw upstream handoff QA gate is:
+
+```bash
+ultimate handoff-check --root /shared/shen/2026/ultimate
+```
+
+It writes `audits/handoff_latest/handoff_check_manifest.json` and
+`audits/handoff_latest/handoff_check.tsv` and only checks the packaged
+nf-core-style handoff templates. It does not execute upstream Nextflow
+workflows and does not convert FASTQ directly inside Ultimate.
+
+### V3.4 Order-Ready Rehearsal Expansion
+
+The V3.4 rehearsal suite extends the production-style rehearsal path to the
+next order-ready modules:
+
+- `cite_seq` `standard`
+- `vdj` `standard`
+- `spatial` `standard`
+- `functional_state` `standard`
+
+Submit the rehearsal suite with:
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/v3_4_order_ready_rehearsal.sbatch
+```
+
+Each rehearsal job writes its own
+`jobs/<job_id>/{config,samples,runs,logs,deliverables,reproducible_code,raw_links}/`
+tree, stamps `delivery_scope=internal_rehearsal`, generates a
+`production_approval.json`, and runs `ultimate delivery-check --run-dir
+/shared/shen/2026/ultimate/jobs/<job_id>`.
+
+After the suite, refresh the server-side metadata views with:
+
+```bash
+ROOT=/shared/shen/2026/ultimate
+PY=$ROOT/.conda/envs/ultimate-core/bin/python
+
+$PY -m ultimate.cli validation-index --root $ROOT \
+  --output-dir $ROOT/reports/validation_index
+$PY -m ultimate.cli audit-production --root $ROOT \
+  --output-dir $ROOT/audits/production_latest
+$PY -m ultimate.cli audit-backends --root $ROOT \
+  --output-dir $ROOT/audits/backends_latest
+```
+
+For a lightweight developer sanity check before syncing local changes, run:
+
+```bash
+bash /shared/shen/2026/ultimate/scripts/check_dev_entrypoint.sh --mode local
+```
+
+Use `--mode remote` only for short shared-root checks through `hpc-run`; full
+validation and rehearsal execution still belong on Slurm.
 
 ## SCEPI Matrix Backend
 
