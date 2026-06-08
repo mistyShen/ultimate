@@ -222,6 +222,12 @@ def test_scrna_nichenet_backend_runs_with_reviewed_labels_and_resource(tmp_path:
     assert backend_manifest["delivery_allowed"] is False
 
 
+def test_cellchat_r_script_uses_raw_expression_for_small_validation_sets() -> None:
+    source = (Path(__file__).parents[1] / "src" / "ultimate" / "scrna_smoke.py").read_text(encoding="utf-8")
+
+    assert "computeCommunProb(cellchat, raw.use = TRUE, population.size = TRUE)" in source
+
+
 def test_scrna_communication_input_does_not_auto_select_velocity() -> None:
     config = {
         "modules": {

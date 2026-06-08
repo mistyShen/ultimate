@@ -1492,7 +1492,7 @@ def _write_cellchat_r_script(
                 "cellchat <- subsetData(cellchat)",
                 "cellchat <- identifyOverExpressedGenes(cellchat)",
                 "cellchat <- identifyOverExpressedInteractions(cellchat)",
-                "cellchat <- computeCommunProb(cellchat, raw.use = FALSE)",
+                "cellchat <- computeCommunProb(cellchat, raw.use = TRUE, population.size = TRUE)",
                 "cellchat <- filterCommunication(cellchat, min.cells = 10)",
                 "cellchat <- computeCommunProbPathway(cellchat)",
                 "df.net <- subsetCommunication(cellchat)",
