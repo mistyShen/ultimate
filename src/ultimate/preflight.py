@@ -15,7 +15,8 @@ from ultimate.config import enabled_modules, load_analysis_request, load_samples
 from ultimate.backend_registry import build_backend_plan
 from ultimate.bulk import BULK_MODULES, bulk_requirement_checks
 from ultimate.constants import MODULE_SPECS
-from ultimate.raw_qc import PATH_COLUMNS, RAW_CONTRACTS
+from ultimate.handoff_check import run_handoff_check
+from ultimate.raw_qc import MATRIX_LIKE_INPUT_TYPES, PATH_COLUMNS, RAW_CONTRACTS
 from ultimate.scepi_backend import inspect_scepi_input_contract
 
 
@@ -30,6 +31,7 @@ def run_preflight(config: dict[str, Any], *, write: bool = True) -> dict[str, An
     module_reports = []
     for module_name in enabled_modules(config):
         module_reports.append(_check_module(config, samples, module_name, strict=strict))
+    handoff_check = _preflight_handoff_check(config, out_dir, write=write)
 
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -42,6 +44,7 @@ def run_preflight(config: dict[str, Any], *, write: bool = True) -> dict[str, An
         "output_safety": output_check,
         "job_layout": job_layout,
         "licensed_tool_checks": _licensed_tool_checks(config),
+        "handoff_check": handoff_check,
         "samples": {
             "n_rows": int(samples.shape[0]),
             "columns": list(samples.columns),
@@ -50,12 +53,12 @@ def run_preflight(config: dict[str, Any], *, write: bool = True) -> dict[str, An
         "modules": module_reports,
         "tool_checks": _global_tool_checks(),
     }
-    manifest["status"] = _overall_status(module_reports, samples, output_check, job_layout, analysis_request_status, strict=strict)
+    manifest["status"] = _overall_status(module_reports, samples, output_check, job_layout, analysis_request_status, handoff_check, strict=strict)
     if write:
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / "preflight_manifest.json"
-        path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
         manifest["manifest_path"] = str(path)
+        path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     return manifest
 
 
@@ -93,6 +96,8 @@ def _check_module(config: dict[str, Any], samples: pd.DataFrame, module_name: st
         warnings.append("raw_missing_required_columns:" + ",".join(raw_report["missing_required_columns"]))
     if raw_report["raw_enabled"] and raw_report["input_type"] not in raw_report["supported_input_types"]:
         warnings.append("raw_unsupported_input_type:" + raw_report["input_type"])
+    if raw_report["raw_enabled"] and raw_report.get("handoff_required"):
+        warnings.append("raw_upstream_handoff_required:" + raw_report["input_type"])
     if module_name == "scepi":
         scepi_status = str(checks["scepi_matrix_contract"].get("status", ""))
         if scepi_status.startswith("partial"):
@@ -124,6 +129,9 @@ def _raw_preflight(module_cfg: dict[str, Any], samples: pd.DataFrame, module_nam
     if raw_samplesheet and Path(raw_samplesheet).exists():
         raw_samples = pd.read_csv(raw_samplesheet, sep=None, engine="python")
     missing_paths = _missing_raw_input_paths(raw_samples)
+    declared_output_matrix = _path_check(raw_cfg.get("output_matrix"))
+    declared_output_object = _path_check(raw_cfg.get("output_object"))
+    handoff_required = _raw_handoff_required(input_type, declared_output_matrix, declared_output_object)
     return {
         "raw_enabled": enabled,
         "input_type": input_type,
@@ -131,13 +139,60 @@ def _raw_preflight(module_cfg: dict[str, Any], samples: pd.DataFrame, module_nam
         "samplesheet": _path_check(raw_samplesheet),
         "required_columns": list(contract.required_columns),
         "missing_required_columns": _missing_columns(raw_samples, contract.required_columns),
-        "declared_output_matrix": _path_check(raw_cfg.get("output_matrix")),
-        "declared_output_object": _path_check(raw_cfg.get("output_object")),
+        "declared_output_matrix": declared_output_matrix,
+        "declared_output_object": declared_output_object,
+        "handoff_required": handoff_required,
+        "handoff_status": str(raw_cfg.get("handoff_status") or ("required:not_executed" if handoff_required else "not_required")),
         "missing_input_paths": missing_paths,
         "existing_input_path_count": _existing_raw_input_count(raw_samples),
         "toolchain": list(raw_cfg.get("toolchain") or contract.open_replacements),
         "open_replacements": list(contract.open_replacements),
         "raw_tools_on_path": {tool: bool(shutil.which(tool)) for tool in contract.tools},
+    }
+
+
+def _raw_handoff_required(input_type: str, output_matrix: dict[str, Any], output_object: dict[str, Any]) -> bool:
+    normalized = str(input_type).lower()
+    direct_types = set(MATRIX_LIKE_INPUT_TYPES) | {
+        "10x_h5",
+        "10x_mtx",
+        "h5ad",
+        "h5mu",
+        "spatial_h5ad",
+        "spatialdata_zarr",
+        "beta_matrix",
+        "abundance_table",
+        "contig_annotations",
+        "clonotypes",
+        "airr_rearrangement",
+        "variant_table",
+        "cnv_table",
+        "cellsnp_matrix",
+        "vireo_result",
+        "souporcell_result",
+        "demuxlet_result",
+        "popscle_result",
+        "idat",
+        "visium_dir",
+        "cellranger_vdj_out",
+        "cellranger_atac_out",
+        "cellranger_arc_out",
+        "spaceranger_out",
+    }
+    if normalized in direct_types:
+        return False
+    if output_matrix.get("exists") or output_object.get("exists"):
+        return False
+    return normalized in {
+        "fastq",
+        "bcl",
+        "fragments",
+        "scbs_fastq",
+        "smartseq2_fastq",
+        "cuttag_fragments",
+        "cutrun_fragments",
+        "bam",
+        "bam_vcf_barcode",
     }
 
 
@@ -265,6 +320,16 @@ def _licensed_tool_checks(config: dict[str, Any]) -> dict[str, Any]:
         "policy": "user_provided_script_or_signature_only",
     }
     return checks
+
+
+def _preflight_handoff_check(config: dict[str, Any], out_dir: Path, *, write: bool) -> dict[str, Any]:
+    if not write:
+        return {"status": "not_run", "reason": "preflight_write_false"}
+    try:
+        root = Path((config.get("project") or {}).get("server_root", "/shared/shen/2026/ultimate"))
+        return run_handoff_check(root=root, output_dir=out_dir / "preflight_handoff_check")
+    except Exception as exc:
+        return {"status": "blocked", "reason": f"handoff_check_failed:{type(exc).__name__}:{exc}"}
 
 
 def _command_checks(commands: tuple[str, ...], config: dict[str, Any]) -> dict[str, bool]:
@@ -401,6 +466,7 @@ def _overall_status(
     output_check: dict[str, Any],
     job_layout: dict[str, Any],
     analysis_request_status: dict[str, Any],
+    handoff_check: dict[str, Any],
     *,
     strict: bool = False,
 ) -> str:
@@ -410,12 +476,16 @@ def _overall_status(
         return str(job_layout["status"])
     if strict and analysis_request_status.get("status") != "ready":
         return "blocked:missing_analysis_request"
+    if strict and handoff_check.get("status") == "blocked":
+        return "blocked:handoff_check"
     if samples.empty:
         return "blocked:no_samples"
     if any(report["checks"]["required_sample_columns"] for report in module_reports):
         return "blocked:sample_schema"
     if strict and any("raw_input_paths_missing:" in warning for report in module_reports for warning in report["warnings"]):
         return "blocked:raw_input_paths_missing"
+    if strict and any("raw_upstream_handoff_required:" in warning for report in module_reports for warning in report["warnings"]):
+        return "blocked:raw_upstream_handoff_required"
     if any("input_matrix_missing_or_not_configured" in report["warnings"] for report in module_reports):
         return "ready_with_warnings"
     return "ready"

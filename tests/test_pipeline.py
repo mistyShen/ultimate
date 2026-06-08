@@ -583,6 +583,38 @@ def test_preflight_blocks_missing_analysis_request_in_production_job(tmp_path: P
     assert preflight["analysis_request_status"]["status"] == "missing"
 
 
+def test_preflight_written_manifest_contains_manifest_path_and_handoff_check(tmp_path: Path) -> None:
+    manifest = init_project("rnaseq", tmp_path / "preflight_manifest_path", demo_data=True)
+    config = load_config(Path(manifest["config_path"])).raw
+    config["modules"]["rnaseq"].setdefault("raw", {})["enabled"] = False
+
+    preflight = run_preflight(config, write=True)
+    manifest_path = Path(preflight["manifest_path"])
+    written = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert written["manifest_path"] == str(manifest_path)
+    assert "handoff_check" in written
+    assert written["handoff_check"]["status"] in {"ready", "blocked"}
+
+
+def test_preflight_blocks_raw_fastq_without_upstream_handoff_in_production(tmp_path: Path) -> None:
+    source = init_project("rnaseq", tmp_path / "raw_fastq_handoff_source", demo_data=True)
+    root = tmp_path / "shared" / "shen" / "2026" / "ultimate"
+    job_manifest = prepare_job(config_path=Path(source["config_path"]), job_id="FASTQBLOCK", root=root, run_mode="production")
+    job_config = Path(job_manifest["config_path"])
+    config = load_config(job_config).raw
+    config["modules"]["rnaseq"]["input_matrix"] = ""
+    config["modules"]["rnaseq"]["raw"] = {"enabled": True, "input_type": "fastq", "input_path": str(tmp_path / "S1_R1.fastq.gz")}
+    config["samples"]["items"] = [{"sample_id": "S1", "condition": "control", "fastq_1": str(tmp_path / "S1_R1.fastq.gz")}]
+
+    preflight = run_preflight(config, write=False)
+
+    assert preflight["status"] == "blocked:raw_upstream_handoff_required"
+    module = preflight["modules"][0]
+    assert "raw_upstream_handoff_required:fastq" in module["warnings"]
+    assert module["checks"]["raw"]["handoff_required"] is True
+
+
 def test_unified_run_requires_production_approval_for_production_backend(tmp_path: Path) -> None:
     manifest = init_project("rnaseq", tmp_path / "approval_required", demo_data=True)
     config_path = Path(manifest["config_path"])

@@ -21,7 +21,7 @@ def test_prepare_job_creates_shared_layout_and_command_plan(tmp_path: Path) -> N
 
     job_dir = root / "jobs" / "ORDER_001"
     assert Path(manifest["job_dir"]) == job_dir
-    for name in ("raw_links", "config", "samples", "runs", "logs", "deliverables", "reproducible_code"):
+    for name in ("raw_links", "config", "samples", "runs", "logs", "deliverables", "reproducible_code", "work"):
         assert (job_dir / name).is_dir()
     assert (job_dir / "config" / "project.yaml").exists()
     assert (job_dir / "config" / "production_approval.json").exists()
@@ -30,6 +30,8 @@ def test_prepare_job_creates_shared_layout_and_command_plan(tmp_path: Path) -> N
     assert manifest["job_slurm_script"] == str(job_dir / "config" / "run_ultimate.sbatch")
     assert manifest["approval_gate"]["required"] is True
     assert manifest["approval_gate"]["status"] == "template_pending_approval"
+    assert manifest["samplesheet_status"]["status"] == "copied"
+    assert manifest["analysis_request_status"]["status"] == "copied"
     assert manifest["slurm_adapter"]["status"] == "missing"
     assert manifest["slurm_adapter"]["path"] == str(root / "slurm" / "ultimate_run.sbatch")
     command_plan = (job_dir / "config" / "command_plan.md").read_text(encoding="utf-8")
@@ -114,6 +116,24 @@ def test_prepare_job_interactive_submit_does_not_require_approval(tmp_path: Path
     assert "production approval JSON is not approved=true" not in submit_script
     config = load_config(job_dir / "config" / "project.yaml").raw
     assert "production_approval" not in config["project"]
+
+
+def test_prepare_job_records_missing_optional_inputs_without_running(tmp_path: Path) -> None:
+    source = init_project("rnaseq", tmp_path / "source_missing_inputs", demo_data=True)
+    config_path = Path(source["config_path"])
+    config = load_config(config_path).raw
+    config["samples"]["samplesheet"] = "missing_samples.tsv"
+    config["analysis_request"] = "missing_request.yaml"
+    from ultimate.config import dump_yaml
+
+    dump_yaml(config, config_path)
+    root = tmp_path / "shared" / "shen" / "2026" / "ultimate"
+
+    manifest = prepare_job(config_path=config_path, job_id="MISSING001", root=root)
+
+    assert manifest["samplesheet_status"]["status"] == "missing_or_not_copied"
+    assert manifest["analysis_request_status"]["status"] == "missing_or_not_copied"
+    assert not (Path(manifest["job_dir"]) / "run_manifest.json").exists()
 
 
 def test_prepare_job_copies_explicit_samplesheet_and_analysis_request(tmp_path: Path) -> None:

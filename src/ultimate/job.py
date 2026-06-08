@@ -10,7 +10,7 @@ from typing import Any
 from ultimate.config import dump_yaml, load_config, resolve_path
 
 
-JOB_SUBDIRS = ("raw_links", "config", "samples", "runs", "logs", "deliverables", "reproducible_code")
+JOB_SUBDIRS = ("raw_links", "config", "samples", "runs", "logs", "deliverables", "reproducible_code", "work")
 
 
 def prepare_job(
@@ -83,7 +83,9 @@ def prepare_job(
         "source_config": str(config_path.expanduser().resolve()),
         "config_path": str(job_config),
         "samplesheet": str(copied_samplesheet) if copied_samplesheet else "",
+        "samplesheet_status": _input_copy_status(selected_samplesheet, copied_samplesheet),
         "analysis_request": str(copied_request) if copied_request else "",
+        "analysis_request_status": _input_copy_status(selected_request, copied_request),
         "approval_template": str(approval_template),
         "job_slurm_script": str(job_slurm_script),
         "command_plan": str(command_plan),
@@ -135,6 +137,14 @@ def _copy_optional(path: Path | None, target_dir: Path, *, preferred_name: str |
     target = target_dir / (preferred_name or path.name)
     shutil.copy2(path, target)
     return target
+
+
+def _input_copy_status(source: Path | None, copied: Path | None) -> dict[str, str]:
+    if source is None:
+        return {"status": "not_configured", "source": "", "copied_to": ""}
+    if copied is None:
+        return {"status": "missing_or_not_copied", "source": str(source), "copied_to": ""}
+    return {"status": "copied", "source": str(source), "copied_to": str(copied)}
 
 
 def _write_raw_links_readme(path: Path) -> None:

@@ -373,8 +373,18 @@ Triage output status is one of `ready_to_run`, `needs_metadata`,
 `non_delivery_reason=triage_only_not_analysis_run`.
 
 Triage writes `triage_manifest.json`, `triage_report.md/html`,
-`suggested_project.yaml`, `samplesheet_template.tsv`, `slurm_command.txt`,
-`missing_requirements.tsv`, and `risk_flags.tsv`.
+`suggested_project.yaml`, `samplesheet_template.tsv`, `input_assessment.tsv`,
+`handoff_plan.md`, `slurm_command.txt`, `missing_requirements.tsv`, and
+`risk_flags.tsv`.
+
+V3.5 的接单前入口会区分标准输入和上游原始输入：
+
+- matrix/object/table 输入，例如 count matrix、10x matrix、h5ad、h5mu、
+  abundance table、beta matrix，可以进入 `prepare-job` 和 `preflight`。
+- FASTQ、BCL、fragments 等 raw upstream 输入只生成 handoff 方案；它们不会被
+  triage 标成可直接完成分析。
+- `slurm_command.txt` 只给出 `prepare-job` 和生成后 job sbatch 的命令草稿，
+  不再直接把 `project.yaml` 作为额外参数塞给全局 Slurm wrapper。
 
 ## scRNA MVP Validation
 
@@ -445,15 +455,27 @@ The standard workbench flow is:
 1. Provide raw data paths and a natural-language analysis request.
 2. Run `ultimate triage` or prepare an intake package to produce a reviewable
    module/tool/preset recommendation.
-3. Create or refine `config/project.yaml`.
-4. Run `ultimate preflight --config config/project.yaml` and resolve missing
+3. Review `triage/<job_id>/suggested_project.yaml`, `samplesheet_template.tsv`,
+   `input_assessment.tsv`, and `handoff_plan.md`.
+4. Create a job scaffold with `ultimate prepare-job --config
+   triage/<job_id>/suggested_project.yaml --job-id <job_id> --root
+   /shared/shen/2026/ultimate`.
+5. Run `ultimate preflight --config jobs/<job_id>/config/project.yaml` and resolve missing
    sample columns, paths, references, or licensed tools.
-5. Render a style review with `ultimate styles --style <style_key> --output-dir
+6. Render a style review with `ultimate styles --style <style_key> --output-dir
    <project>/style_review`.
-6. Submit raw or large analyses through Slurm, then rebuild reports with
+7. Submit raw or large analyses through Slurm, then rebuild reports with
    `ultimate report --run-dir <run_dir>`.
-7. Deliver `run_manifest.json`, `raw_qc_manifest.json`, figures, tables,
+8. Deliver `run_manifest.json`, `raw_qc_manifest.json`, figures, tables,
    objects, `report.html`, and `methods.md`.
+
+To summarize recent triage evidence:
+
+```bash
+python /shared/shen/2026/ultimate/01_tools/write_v3_5_intake_ready_report.py \
+  --root /shared/shen/2026/ultimate \
+  --output-dir /shared/shen/2026/ultimate/reports
+```
 
 ## Validated Run Handoff
 
