@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,6 +15,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from ultimate.modules.common import _coerce_mvp_table_schema
 
 
 def main() -> None:
@@ -137,6 +140,37 @@ def run_public_h5ad_validation(input_h5ad: Path, output_dir: Path, *, source_url
 
     cells, n_vars, read_summary = _read_perturb_h5ad_obs(input_h5ad, max_cells=max_cells, seed=seed)
     cells.to_csv(tables / "guide_assignments.tsv", sep="\t", index=False)
+    _write_perturb_mvp_table(
+        tables,
+        "guide_assignment.tsv",
+        pd.DataFrame(
+            {
+                "cell_id": cells["cell_id"],
+                "guide_id": cells["guide_id"],
+                "target_gene": cells["guide_id"].map(_target_gene_from_guide),
+                "assignment_class": np.where(cells["condition"].eq("control_like"), "control", "targeting"),
+                "confidence": 1.0,
+                "multiplet_strategy": "single_guide_metadata_handoff",
+            }
+        ),
+        input_h5ad=input_h5ad,
+        source_dataset="pertpy Adamson 2016 pilot Perturb-seq fixture",
+    )
+    _write_perturb_mvp_table(
+        tables,
+        "guide_qc.tsv",
+        pd.DataFrame(
+            {
+                "cell_id": cells["cell_id"],
+                "guide_id": cells["guide_id"],
+                "guide_count": 1,
+                "assignment_status": "assigned_from_public_h5ad_metadata",
+                "multiplet_warning": "Public fixture validates metadata import; multi-guide handling remains project-specific.",
+            }
+        ),
+        input_h5ad=input_h5ad,
+        source_dataset="pertpy Adamson 2016 pilot Perturb-seq fixture",
+    )
 
     guide_summary = cells.groupby("guide_id", observed=False).size().rename("n_cells").reset_index()
     guide_summary["fraction"] = guide_summary["n_cells"] / guide_summary["n_cells"].sum()
@@ -147,7 +181,24 @@ def run_public_h5ad_validation(input_h5ad: Path, output_dir: Path, *, source_url
         .agg(n_cells=("cell_id", "size"), mean_ncounts=("ncounts", "mean"), mean_ngenes=("ngenes", "mean"))
         .reset_index()
     )
-    perturb_summary.to_csv(tables / "perturbation_summary.tsv", sep="\t", index=False)
+    _write_perturb_mvp_table(
+        tables,
+        "perturbation_summary.tsv",
+        pd.DataFrame(
+            {
+                "perturbation": perturb_summary["guide_id"],
+                "target_gene": perturb_summary["guide_id"].map(_target_gene_from_guide),
+                "cell_count": perturb_summary["n_cells"],
+                "control_status": np.where(
+                    perturb_summary["perturbation_type"].astype(str).str.contains("control|ctrl|ntc", case=False, regex=True),
+                    "control_like",
+                    "targeting",
+                ),
+            }
+        ),
+        input_h5ad=input_h5ad,
+        source_dataset="pertpy Adamson 2016 pilot Perturb-seq fixture",
+    )
 
     control_mask = cells["perturbation_type"].astype(str).str.contains("control|ctrl|ntc", case=False, regex=True)
     if not control_mask.any():
@@ -160,8 +211,49 @@ def run_public_h5ad_validation(input_h5ad: Path, output_dir: Path, *, source_url
     effect["log2fc_ngenes"] = np.log2((effect["mean_ngenes"] + 1.0) / (control_mean_genes + 1.0))
     effect["effect_status"] = "design_ready_qc_metric_only"
     effect.to_csv(tables / "perturbation_de_summary.tsv", sep="\t", index=False)
-    effect.rename(columns={"mean_ncounts": "pseudobulk_ncounts_mean", "mean_ngenes": "pseudobulk_ngenes_mean"}).to_csv(
-        tables / "pseudobulk_by_perturbation.tsv", sep="\t", index=False
+    _write_perturb_mvp_table(
+        tables,
+        "perturbation_expression_effect.tsv",
+        pd.DataFrame(
+            {
+                "perturbation": effect["guide_id"],
+                "target_gene": effect["guide_id"].map(_target_gene_from_guide),
+                "feature_id": "ncounts",
+                "effect_size": effect["log2fc_ncounts"],
+                "model_status": effect["effect_status"],
+            }
+        ),
+        input_h5ad=input_h5ad,
+        source_dataset="pertpy Adamson 2016 pilot Perturb-seq fixture",
+    )
+    pseudobulk = effect.rename(columns={"mean_ncounts": "pseudobulk_ncounts_mean", "mean_ngenes": "pseudobulk_ngenes_mean"})
+    _write_perturb_mvp_table(
+        tables,
+        "pseudobulk_by_perturbation.tsv",
+        pd.DataFrame(
+            {
+                "perturbation": pseudobulk["guide_id"],
+                "feature_id": "ncounts_mean",
+                "count_value": pseudobulk["pseudobulk_ncounts_mean"],
+                "design_ready_status": pseudobulk["effect_status"],
+            }
+        ),
+        input_h5ad=input_h5ad,
+        source_dataset="pertpy Adamson 2016 pilot Perturb-seq fixture",
+    )
+    _write_perturb_mvp_table(
+        tables,
+        "target_response.tsv",
+        pd.DataFrame(
+            {
+                "target_gene": effect["guide_id"].map(_target_gene_from_guide),
+                "response_feature": "ncounts",
+                "effect_size": effect["log2fc_ncounts"],
+                "mechanism_warning": "QC-level public fixture effect; not a mechanistic perturbation model.",
+            }
+        ),
+        input_h5ad=input_h5ad,
+        source_dataset="pertpy Adamson 2016 pilot Perturb-seq fixture",
     )
 
     signature = effect[["contrast", "log2fc_ncounts", "log2fc_ngenes", "n_cells", "effect_status"]].copy()
@@ -225,6 +317,36 @@ def run_public_h5ad_validation(input_h5ad: Path, output_dir: Path, *, source_url
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     _write_report(manifest, reports / "report.md", reports / "report.html")
     return manifest
+
+
+def _write_perturb_mvp_table(
+    tables: Path,
+    filename: str,
+    frame: pd.DataFrame,
+    *,
+    input_h5ad: Path,
+    source_dataset: str,
+) -> None:
+    coerced = _coerce_mvp_table_schema(
+        "perturb_seq",
+        filename,
+        frame,
+        matrix=None,
+        samples=None,
+        analysis_fields={"analysis_level": "validated_backend", "delivery_allowed": False},
+        run_id=os.environ.get("SLURM_JOB_ID") or "local_public_validation",
+        source_dataset=source_dataset,
+        input_artifact=str(input_h5ad),
+        input_modality="h5ad",
+    )
+    coerced.to_csv(tables / filename, sep="\t", index=False)
+
+
+def _target_gene_from_guide(guide: object) -> str:
+    text = str(guide)
+    if text.lower() in {"control", "ctrl", "ntc", "non-targeting", "non_targeting"}:
+        return "non_targeting"
+    return text.split("_", 1)[0].split("-", 1)[0] or "unknown"
 
 
 def _read_perturb_h5ad_obs(input_h5ad: Path, *, max_cells: int, seed: int) -> tuple[pd.DataFrame, int, dict]:

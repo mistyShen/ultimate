@@ -15,6 +15,7 @@ if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
 from validate_perturb_seq_demo import run_public_h5ad_validation
+from ultimate.modules.common import GLOBAL_MVP_TABLE_COLUMNS
 
 
 def test_perturb_seq_public_h5ad_validation(tmp_path: Path) -> None:
@@ -47,5 +48,8 @@ def test_perturb_seq_public_h5ad_validation(tmp_path: Path) -> None:
     assert (tmp_path / "out" / "results" / "tables" / "guide_assignments.tsv").exists()
     assert (tmp_path / "out" / "results" / "tables" / "pseudobulk_by_perturbation.tsv").exists()
     assert (tmp_path / "out" / "results" / "tables" / "perturbation_model_handoff.tsv").exists()
+    for filename in ("guide_assignment.tsv", "perturbation_summary.tsv", "pseudobulk_by_perturbation.tsv", "target_response.tsv"):
+        header = (tmp_path / "out" / "results" / "tables" / filename).read_text(encoding="utf-8").splitlines()[0].split("\t")
+        assert header[: len(GLOBAL_MVP_TABLE_COLUMNS)] == list(GLOBAL_MVP_TABLE_COLUMNS)
     payload = json.loads((tmp_path / "out" / "run_manifest.json").read_text(encoding="utf-8"))
     assert payload["validation_evidence_allowed"] is True

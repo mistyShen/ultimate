@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,6 +16,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from ultimate.modules.common import _coerce_mvp_table_schema
 
 
 def main() -> None:
@@ -148,13 +151,62 @@ def run_public_fixture_validation(input_dir: Path, output_dir: Path, *, source_u
         }
     )
     assignments.to_csv(tables / "genotype_demux_assignments.tsv", sep="\t", index=False)
+    assignment_mvp = pd.DataFrame(
+        {
+            "cell_id": assignments["cell_id"],
+            "assigned_genotype": assignments["assignment"],
+            "doublet_status": "not_called_handoff",
+            "assignment_probability": assignments["assignment_confidence"],
+            "snp_count": int(n_snps),
+            "reference_vcf_status": "public_fixture_vcf_loaded",
+        }
+    )
+    _write_genotype_mvp_table(
+        tables,
+        "assignment.tsv",
+        assignment_mvp,
+        input_dir=input_dir,
+        source_dataset="single-cell-genetics/vireo data/cellSNP_mat",
+    )
+    _write_genotype_mvp_table(
+        tables,
+        "assignment_confidence.tsv",
+        assignment_mvp[["cell_id", "assigned_genotype", "assignment_probability"]].assign(
+            confidence_class=np.where(assignment_mvp["assignment_probability"].ge(0.5), "moderate_or_high", "low_confidence")
+        ),
+        input_dir=input_dir,
+        source_dataset="single-cell-genetics/vireo data/cellSNP_mat",
+    )
+    _write_genotype_mvp_table(
+        tables,
+        "cell_metadata_with_genotype.tsv",
+        assignment_mvp[["cell_id", "assigned_genotype", "doublet_status", "assignment_probability"]].assign(
+            metadata_handoff_status="ready_for_scrna_metadata_join"
+        ),
+        input_dir=input_dir,
+        source_dataset="single-cell-genetics/vireo data/cellSNP_mat",
+    )
 
     snp_qc = variants.copy()
     snp_qc["dp_sum"] = dp["row_sums"].astype(int)
     snp_qc["ad_sum"] = ad["row_sums"].astype(int)
     snp_qc["alt_fraction"] = np.divide(snp_qc["ad_sum"], np.maximum(snp_qc["dp_sum"], 1))
     snp_qc["detected_cell_fraction"] = np.divide(dp["row_nnz"], max(n_cells, 1))
-    snp_qc.to_csv(tables / "snp_qc.tsv", sep="\t", index=False)
+    _write_genotype_mvp_table(
+        tables,
+        "snp_qc.tsv",
+        pd.DataFrame(
+            {
+                "snp_id": snp_qc["variant_id"],
+                "chrom": snp_qc["chrom"],
+                "pos": snp_qc["pos"],
+                "covered_cell_count": dp["row_nnz"].astype(int),
+                "reference_vcf_status": "public_fixture_vcf_loaded",
+            }
+        ),
+        input_dir=input_dir,
+        source_dataset="single-cell-genetics/vireo data/cellSNP_mat",
+    )
 
     donor_summary = (
         assignments.groupby("assignment", observed=False)
@@ -162,6 +214,23 @@ def run_public_fixture_validation(input_dir: Path, output_dir: Path, *, source_u
         .reset_index()
     )
     donor_summary.to_csv(tables / "donor_assignment_summary.tsv", sep="\t", index=False)
+    composition = donor_summary.rename(columns={"assignment": "assigned_genotype", "n_cells": "cell_count"})
+    composition["composition_fraction"] = composition["cell_count"] / max(float(composition["cell_count"].sum()), 1.0)
+    composition["assignment_status"] = "assignment_ready_public_fixture"
+    _write_genotype_mvp_table(
+        tables,
+        "sample_composition.tsv",
+        composition[["assigned_genotype", "cell_count", "composition_fraction", "assignment_status"]],
+        input_dir=input_dir,
+        source_dataset="single-cell-genetics/vireo data/cellSNP_mat",
+    )
+    _write_genotype_mvp_table(
+        tables,
+        "doublet_summary.tsv",
+        composition[["assigned_genotype"]].assign(doublet_count=0, doublet_rate=0.0),
+        input_dir=input_dir,
+        source_dataset="single-cell-genetics/vireo data/cellSNP_mat",
+    )
     pd.DataFrame(
         [
             {"matrix": "AD", "path": str(ad_path), "n_snps": n_snps, "n_cells": n_cells, "nnz": ad["nnz"], "total_counts": int(ad["row_sums"].sum())},
@@ -228,6 +297,29 @@ def run_public_fixture_validation(input_dir: Path, output_dir: Path, *, source_u
     (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     _write_report(manifest, reports / "report.md", reports / "report.html")
     return manifest
+
+
+def _write_genotype_mvp_table(
+    tables: Path,
+    filename: str,
+    frame: pd.DataFrame,
+    *,
+    input_dir: Path,
+    source_dataset: str,
+) -> None:
+    coerced = _coerce_mvp_table_schema(
+        "genotype_demux",
+        filename,
+        frame,
+        matrix=None,
+        samples=None,
+        analysis_fields={"analysis_level": "validated_backend", "delivery_allowed": False},
+        run_id=os.environ.get("SLURM_JOB_ID") or "local_public_validation",
+        source_dataset=source_dataset,
+        input_artifact=str(input_dir),
+        input_modality="cellsnp_output",
+    )
+    coerced.to_csv(tables / filename, sep="\t", index=False)
 
 
 def _summarize_mtx(path: Path) -> dict:

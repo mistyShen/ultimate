@@ -11,6 +11,7 @@ if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
 from validate_genotype_demux_demo import run_public_fixture_validation
+from ultimate.modules.common import GLOBAL_MVP_TABLE_COLUMNS
 
 
 def test_genotype_demux_public_fixture_validation(tmp_path: Path) -> None:
@@ -63,5 +64,8 @@ def test_genotype_demux_public_fixture_validation(tmp_path: Path) -> None:
     assert manifest["is_stub"] is False
     assert (tmp_path / "out" / "results" / "tables" / "snp_qc.tsv").exists()
     assert (tmp_path / "out" / "results" / "tables" / "vireo_handoff.tsv").exists()
+    for filename in ("snp_qc.tsv", "assignment.tsv", "sample_composition.tsv", "cell_metadata_with_genotype.tsv"):
+        header = (tmp_path / "out" / "results" / "tables" / filename).read_text(encoding="utf-8").splitlines()[0].split("\t")
+        assert header[: len(GLOBAL_MVP_TABLE_COLUMNS)] == list(GLOBAL_MVP_TABLE_COLUMNS)
     payload = json.loads((tmp_path / "out" / "run_manifest.json").read_text(encoding="utf-8"))
     assert payload["dataset"] == "single-cell-genetics/vireo data/cellSNP_mat"

@@ -209,6 +209,9 @@ def test_mvp_tables_include_global_provenance_and_module_schema(tmp_path: Path) 
         "vdj": ("clonotype_summary.tsv", {"clonotype_id", "antigen_specificity_status"}),
         "mtdna": ("lineage_input.tsv", {"variant_id", "lineage_handoff_status"}),
         "hto_demux": ("hto_assignment.tsv", {"hashtag_id", "assignment_class"}),
+        "perturb_seq": ("guide_assignment.tsv", {"guide_id", "target_gene", "assignment_class"}),
+        "genotype_demux": ("snp_qc.tsv", {"snp_id", "covered_cell_count", "reference_vcf_status"}),
+        "method_tools": ("delivery_manifest_index.tsv", {"artifact", "feature_id", "value", "mvp_status"}),
         "spatial": ("spatial_qc.tsv", {"spot_id", "platform_note"}),
         "rnaseq": ("counts_raw.tsv", {"feature_id", "matrix_status"}),
     }

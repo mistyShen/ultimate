@@ -85,6 +85,29 @@ def test_module_entrypoint_files_import() -> None:
         assert isinstance(package.limitations(), list)
 
 
+def test_module_packages_keep_backend_aware_entrypoints_after_submodule_imports() -> None:
+    module_root = Path(__file__).parents[1] / "src" / "ultimate" / "modules"
+    for module_name in MODULE_ORDER:
+        package = importlib.import_module(f"ultimate.modules.{module_name}")
+        importlib.import_module(f"ultimate.modules.{module_name}.preflight")
+        importlib.import_module(f"ultimate.modules.{module_name}.demo")
+        importlib.import_module(f"ultimate.modules.{module_name}.validate")
+        importlib.import_module(f"ultimate.modules.{module_name}.run")
+
+        for entrypoint in ("preflight", "demo", "validate", "run", "backend_metadata"):
+            assert callable(getattr(package, entrypoint)), f"{module_name}:{entrypoint}"
+
+        metadata = package.backend_metadata()
+        assert metadata["module"] == module_name
+        default = metadata.get("default_backend", metadata)
+        assert default["backend_id"], module_name
+        assert default["backend_status"] == "fully_automatic_validated_entrypoint", module_name
+
+        for filename in ("__init__.py", "run.py"):
+            text = (module_root / module_name / filename).read_text(encoding="utf-8")
+            assert "run_contract_smoke" not in text, f"{module_name}/{filename}"
+
+
 def test_module_maturity_table_has_required_columns(tmp_path: Path) -> None:
     rows = build_module_maturity_rows(tmp_path)
     assert len(rows) == len(MODULE_ORDER)
