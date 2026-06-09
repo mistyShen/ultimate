@@ -66,6 +66,37 @@ def test_cli_prepare_intake(tmp_path: Path) -> None:
     assert (output_dir / "quote_preflight_checklist.md").exists()
 
 
+def test_cli_styles_supports_review_presets(tmp_path: Path) -> None:
+    runner = CliRunner()
+    minimal_dir = tmp_path / "style_minimal"
+    result = runner.invoke(main, ["styles", "--style", "morandi_clinical", "--minimal", "--output-dir", str(minimal_dir)])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["selected"] == "morandi_clinical"
+    assert payload["options_preset"] == "minimal"
+    assert Path(payload["contact_sheet"]).exists()
+    assert Path(payload["layout_qc"]).exists()
+
+    publication_dir = tmp_path / "style_publication"
+    result = runner.invoke(main, ["styles", "--style", "nature_modern", "--publication", "--output-dir", str(publication_dir)])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["selected"] == "nature_modern"
+    assert payload["options_preset"] == "publication"
+    assert Path(payload["contact_sheet"]).exists()
+
+    result = runner.invoke(main, ["styles", "--list"])
+    assert result.exit_code == 0, result.output
+    assert "morandi_clinical" in json.loads(result.output)
+
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(main, ["styles", "--style", "morandi_clinical", "--minimal"])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["options_preset"] == "minimal"
+        assert Path("style_reviews/v3_6/morandi_clinical/style_review_contact_sheet.png").exists()
+
+
 def test_cli_run_requires_approval_for_production_backend(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "cli_production_gate"

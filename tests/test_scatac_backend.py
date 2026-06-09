@@ -77,6 +77,16 @@ def _write_mapping(path: Path, value_column: str) -> Path:
     return path
 
 
+def _write_cell_metadata(path: Path) -> Path:
+    pd.DataFrame(
+        {
+            "cell_id": ["cell_a", "cell_b", "cell_c", "cell_d", "cell_e", "cell_f"],
+            "condition": ["control", "control", "treated", "treated", "control", "treated"],
+        }
+    ).to_csv(path, sep="\t", index=False)
+    return path
+
+
 def test_scatac_backend_generates_mvp_outputs(tmp_path: Path) -> None:
     peak_matrix = _write_scatac_fixture(tmp_path)
     config_path = _write_config(tmp_path, peak_matrix=peak_matrix)
@@ -162,10 +172,13 @@ def test_scatac_publication_preset_runs_chromvar_signac_outputs(tmp_path: Path) 
     active_ids = {row["backend_id"] for row in scatac["backend_plan"]["active_backends"]}
 
     assert "scatac.motif.chromvar_signac" in active_ids
+    assert "scatac.dar.peak_matrix" in active_ids
     execution_rows = {row["backend_id"]: row for row in scatac["backend_execution_rows"]}
     assert execution_rows["scatac.matrix.signac_or_snapatac2_mvp"]["status"] == "ready"
     assert execution_rows["scatac.motif.chromvar_signac"]["status"] == "ready"
     assert execution_rows["scatac.motif.chromvar_signac"]["reason"] == ""
+    assert execution_rows["scatac.dar.peak_matrix"]["status"] == "skipped"
+    assert "missing_cell_metadata" in execution_rows["scatac.dar.peak_matrix"]["reason"]
     for relative in [
         "results/tables/scatac/motif_deviation.tsv",
         "results/tables/scatac/motif_enrichment_handoff.tsv",
@@ -186,3 +199,55 @@ def test_scatac_publication_preset_runs_chromvar_signac_outputs(tmp_path: Path) 
     assert backend_manifest["formal_chromvar_status"]
     motif = pd.read_csv(run_dir / "results/tables/scatac/motif_deviation.tsv", sep="\t")
     assert {"motif_id", "cluster", "deviation_score", "method", "warning"}.issubset(motif.columns)
+
+
+def test_scatac_publication_preset_runs_dar_peak_matrix_outputs(tmp_path: Path) -> None:
+    peak_matrix = _write_scatac_fixture(tmp_path)
+    cell_metadata = _write_cell_metadata(tmp_path / "cell_metadata.tsv")
+    config_path = tmp_path / "dar.yaml"
+    dump_yaml(
+        {
+            "project": {
+                "name": "scatac_dar",
+                "organism": "human",
+                "output_dir": str(tmp_path / "dar"),
+                "server_root": str(tmp_path),
+                "run_mode": "interactive",
+            },
+            "samples": {"items": [{"sample_id": "A1", "condition": "control", "input_path": str(peak_matrix)}]},
+            "design": {"condition_column": "condition", "control": "control", "case": "treated"},
+            "modules": {
+                "scatac": {
+                    "enabled": True,
+                    "preset": "publication",
+                    "peak_matrix": str(peak_matrix),
+                    "cell_metadata": str(cell_metadata),
+                    "backends": {"dar": "peak_matrix"},
+                    "raw": {"enabled": False, "input_type": "peak_matrix"},
+                }
+            },
+        },
+        config_path,
+    )
+
+    manifest = run_pipeline_from_config(config_path)
+    run_dir = Path(manifest["output_dir"])
+    scatac = manifest["modules"][0]
+    execution_rows = {row["backend_id"]: row for row in scatac["backend_execution_rows"]}
+
+    assert execution_rows["scatac.dar.peak_matrix"]["status"] == "ready"
+    for relative in [
+        "results/tables/scatac/differential_peaks.tsv",
+        "results/tables/scatac/dar_backend_status.tsv",
+        "results/tables/scatac/dar_backend_manifest.json",
+        "results/tables/scatac/dar_backend_versions.tsv",
+        "results/figures/scatac/dar_volcano.png",
+        "results/figures/scatac/dar_peak_heatmap.png",
+        "objects/scatac/dar_peak_matrix_backend.rds",
+    ]:
+        path = run_dir / relative
+        assert path.exists() and path.stat().st_size > 0
+    dar = pd.read_csv(run_dir / "results/tables/scatac/differential_peaks.tsv", sep="\t")
+    assert {"peak_id", "log2FC", "padj", "method_boundary", "accessibility_not_expression_warning"}.issubset(dar.columns)
+    status = pd.read_csv(run_dir / "results/tables/scatac/dar_backend_status.tsv", sep="\t")
+    assert bool(status.loc[0, "delivery_allowed"]) is False

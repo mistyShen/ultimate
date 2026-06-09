@@ -74,7 +74,21 @@ def test_backend_plan_preset_resolver_selects_advanced_defaults() -> None:
     scatac_ids = {row["backend_id"] for row in scatac_plan["active_backends"]}
     assert "scatac.matrix.signac_or_snapatac2_mvp" in scatac_ids
     assert "scatac.motif.chromvar_signac" in scatac_ids
+    assert "scatac.dar.peak_matrix" in scatac_ids
     assert not scatac_plan["unknown_requested_backends"]
+
+    assert "multiome.peak_gene.correlation" in {
+        row["backend_id"] for row in build_backend_plan("multiome", {"modules": {"multiome": {"preset": "publication"}}})["active_backends"]
+    }
+    assert "spatial.neighborhood.squidpy" in {
+        row["backend_id"] for row in build_backend_plan("spatial", {"modules": {"spatial": {"preset": "publication"}}})["active_backends"]
+    }
+    assert "proteomics.de.limma_optional" in {
+        row["backend_id"] for row in build_backend_plan("proteomics", {"modules": {"proteomics": {"preset": "publication"}}})["active_backends"]
+    }
+    assert "methylation.dmp.limma_beta" in {
+        row["backend_id"] for row in build_backend_plan("methylation", {"modules": {"methylation": {"preset": "publication"}}})["active_backends"]
+    }
 
 
 def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
@@ -87,7 +101,9 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "wgcna.default.ready_matrix": "slurm/bulk_validation_suite.sbatch",
         "single_gene.default.gene_report_mvp": "slurm/bulk_validation_suite.sbatch",
         "methylation.default.beta_matrix_python_mvp": "slurm/bulk_validation_suite.sbatch",
+        "methylation.dmp.limma_beta": "slurm/bulk_validation_suite.sbatch",
         "proteomics.default.abundance_python_mvp": "slurm/proteomics_backend_validation.sbatch",
+        "proteomics.de.limma_optional": "slurm/proteomics_backend_validation.sbatch",
         "scrna.qc.scrublet": "slurm/scrna_mvp_validation.sbatch",
         "scrna.annotation.celltypist": "slurm/scrna_mvp_validation.sbatch",
         "scrna.functional.decoupler_gseapy": "slurm/scrna_mvp_validation.sbatch",
@@ -108,6 +124,9 @@ def test_v3_tabular_public_backends_are_evidence_gated_entrypoints() -> None:
         "scepi.default.matrix_handoff_mvp": "slurm/scepi_backend_validation.sbatch",
         "cite_seq.optional.dsb": "slurm/cite_seq_dsb_validation.sbatch",
         "scatac.motif.chromvar_signac": "slurm/scatac_chromvar_validation.sbatch",
+        "scatac.dar.peak_matrix": "slurm/scatac_backend_validation.sbatch",
+        "multiome.peak_gene.correlation": "slurm/multiome_backend_validation.sbatch",
+        "spatial.neighborhood.squidpy": "slurm/spatial_backend_validation.sbatch",
     }
 
     for backend_id, slurm_profile in expected.items():

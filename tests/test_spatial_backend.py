@@ -121,3 +121,35 @@ def test_spatial_backend_missing_inputs_remains_non_deliverable(tmp_path: Path) 
     qc_manifest = json.loads((run_dir / "results" / "tables" / "spatial" / "module_qc_manifest.json").read_text(encoding="utf-8"))
     assert qc_manifest["delivery_allowed"] is False
     assert qc_manifest["skip_reasons"]
+
+
+def test_spatial_publication_preset_runs_neighborhood_backend_outputs(tmp_path: Path) -> None:
+    matrix, coordinates = _write_spatial_fixture(tmp_path)
+    config_path = _write_config(tmp_path, matrix=matrix, coordinates=coordinates, output_name="publication")
+    raw = config_path.read_text(encoding="utf-8")
+    config_path.write_text(raw.replace("preset: standard", "preset: publication"), encoding="utf-8")
+
+    manifest = run_pipeline_from_config(config_path)
+    run_dir = Path(manifest["output_dir"])
+    spatial = manifest["modules"][0]
+    active_ids = {row["backend_id"] for row in spatial["backend_plan"]["active_backends"]}
+    execution_rows = {row["backend_id"]: row for row in spatial["backend_execution_rows"]}
+
+    assert "spatial.neighborhood.squidpy" in active_ids
+    assert execution_rows["spatial.neighborhood.squidpy"]["status"] == "ready"
+    for relative in [
+        "results/tables/spatial/spatial_autocorrelation.tsv",
+        "results/tables/spatial/spatial_neighborhood_enrichment.tsv",
+        "results/tables/spatial/domain_marker_preview.tsv",
+        "results/tables/spatial/spatial_neighborhood_backend_status.tsv",
+        "results/tables/spatial/spatial_neighborhood_backend_manifest.json",
+        "results/tables/spatial/spatial_neighborhood_backend_versions.tsv",
+        "results/figures/spatial/spatial_autocorrelation.png",
+        "results/figures/spatial/domain_marker_preview_heatmap.png",
+        "objects/spatial/spatial_neighborhood_backend.rds",
+    ]:
+        path = run_dir / relative
+        assert path.exists() and path.stat().st_size > 0
+    autocorr = pd.read_csv(run_dir / "results/tables/spatial/spatial_autocorrelation.tsv", sep="\t")
+    assert {"feature_id", "moran_i", "method_boundary"}.issubset(autocorr.columns)
+    assert "statistical evidence" in autocorr.loc[0, "method_boundary"]

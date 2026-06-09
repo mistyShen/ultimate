@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -128,6 +129,20 @@ def run_scatac_backend(*, config: dict[str, Any], output_dir: Path, samples: pd.
                 artifacts["tables"].update(chromvar_artifacts["tables"])
                 artifacts["figures"].update(chromvar_artifacts["figures"])
                 artifacts["objects"].update(chromvar_artifacts["objects"])
+            if "scatac.dar.peak_matrix" in active_backend_ids:
+                dar_artifacts = _run_dar_peak_matrix_backend(
+                    config=config,
+                    samples=samples,
+                    tables_dir=tables_dir,
+                    figures_dir=figures_dir,
+                    data=data,
+                    analysis_fields=level_fields,
+                    input_artifact=str(input_ref or ""),
+                    source_dataset=_source_dataset(config),
+                )
+                artifacts["tables"].update(dar_artifacts["tables"])
+                artifacts["figures"].update(dar_artifacts["figures"])
+                artifacts["objects"].update(dar_artifacts["objects"])
             artifacts["objects"].update(
                 _write_scatac_object(
                     objects_dir=objects_dir,
@@ -238,12 +253,30 @@ def _backend_execution_rows(
                 backend_plan=backend_plan,
             )
         )
+    if "scatac.dar.peak_matrix" in active_backend_ids:
+        rows.append(
+            _backend_status_execution_row(
+                backend_id="scatac.dar.peak_matrix",
+                status_path=tables_dir / "dar_backend_status.tsv",
+                analysis_fields=analysis_fields,
+                backend_plan=backend_plan,
+            )
+        )
     return rows
 
 
 def _chromvar_execution_row(*, status_path: Path, analysis_fields: dict[str, Any], backend_plan: dict[str, Any]) -> dict[str, Any]:
+    return _backend_status_execution_row(
+        backend_id="scatac.motif.chromvar_signac",
+        status_path=status_path,
+        analysis_fields=analysis_fields,
+        backend_plan=backend_plan,
+    )
+
+
+def _backend_status_execution_row(*, backend_id: str, status_path: Path, analysis_fields: dict[str, Any], backend_plan: dict[str, Any]) -> dict[str, Any]:
     status = "skipped"
-    reason = "missing_chromvar_signac_backend_status"
+    reason = f"missing_backend_status:{backend_id}"
     if status_path.exists() and status_path.stat().st_size > 0:
         try:
             frame = pd.read_csv(status_path, sep="\t")
@@ -257,7 +290,7 @@ def _chromvar_execution_row(*, status_path: Path, analysis_fields: dict[str, Any
                 reason = "" if pd.isna(reason_value) else str(reason_value)
     ready = status == "ready"
     return {
-        "backend_id": "scatac.motif.chromvar_signac",
+        "backend_id": backend_id,
         "status": "ready" if ready else "skipped",
         "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
         "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and ready),
@@ -639,6 +672,233 @@ def _write_scatac_figures(*, tables_dir: Path, figures_dir: Path) -> dict[str, s
     return {"lsi_umap": str(umap_path), "fragment_qc": str(fragment_path), "peak_accessibility_heatmap": str(heatmap_path)}
 
 
+def _run_dar_peak_matrix_backend(
+    *,
+    config: dict[str, Any],
+    samples: pd.DataFrame,
+    tables_dir: Path,
+    figures_dir: Path,
+    data: dict[str, Any],
+    analysis_fields: dict[str, Any],
+    input_artifact: str,
+    source_dataset: str,
+) -> dict[str, dict[str, str]]:
+    backend_id = "scatac.dar.peak_matrix"
+    result_path = tables_dir / "differential_peaks.tsv"
+    status_path = tables_dir / "dar_backend_status.tsv"
+    manifest_path = tables_dir / "dar_backend_manifest.json"
+    versions_path = tables_dir / "dar_backend_versions.tsv"
+    volcano_path = figures_dir / "dar_volcano.png"
+    heatmap_path = figures_dir / "dar_peak_heatmap.png"
+    object_path = tables_dir.parents[2] / "objects" / "scatac" / "dar_peak_matrix_backend.rds"
+    artifacts = {
+        "tables": {
+            "differential_peaks": str(result_path),
+            "dar_backend_status": str(status_path),
+            "dar_backend_manifest": str(manifest_path),
+            "dar_backend_versions": str(versions_path),
+        },
+        "figures": {"dar_volcano": str(volcano_path), "dar_peak_heatmap": str(heatmap_path)},
+        "objects": {"dar_backend_object": str(object_path)},
+    }
+    labels = _cell_condition_labels(config=config, samples=samples, barcodes=list(map(str, data["barcodes"])))
+    warning = "DAR 是 peak accessibility 统计差异，不是 gene expression、TSS/FRiP/peak calling 或机制证明。"
+    if labels["status"] != "ready":
+        _write_dar_skip(result_path, status_path, manifest_path, versions_path, volcano_path, heatmap_path, object_path, backend_id, analysis_fields, labels["reason"], warning)
+        return artifacts
+    matrix = _to_dense(data["matrix"])
+    control_idx = np.asarray([idx for idx, label in enumerate(labels["labels"]) if label == labels["control"]], dtype=int)
+    case_idx = np.asarray([idx for idx, label in enumerate(labels["labels"]) if label == labels["case"]], dtype=int)
+    results = _peak_differential_stats(matrix, list(map(str, data["peaks"])), control_idx, case_idx)
+    results.insert(0, "backend_id", backend_id)
+    results["control_group"] = labels["control"]
+    results["case_group"] = labels["case"]
+    results["method_boundary"] = warning
+    results["accessibility_not_expression_warning"] = "peak accessibility is not gene expression"
+    results.to_csv(result_path, sep="\t", index=False)
+    _write_dar_status(status_path, backend_id, "ready", "", analysis_fields, labels, warning)
+    _write_dar_versions(versions_path, backend_id)
+    _write_dar_manifest(manifest_path, backend_id, "ready", "", analysis_fields, labels, warning, artifacts)
+    object_path.write_text(
+        json.dumps({"backend_id": backend_id, "status": "ready", "top_peaks": results.head(100).to_dict(orient="records"), "method_boundary": warning}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    _write_dar_volcano(results, volcano_path)
+    top = results["peak_id"].astype(str).head(40).tolist()
+    _write_dar_heatmap(matrix, list(map(str, data["peaks"])), list(map(str, data["barcodes"])), top, control_idx, case_idx, heatmap_path)
+    return artifacts
+
+
+def _cell_condition_labels(*, config: dict[str, Any], samples: pd.DataFrame, barcodes: list[str]) -> dict[str, Any]:
+    module_cfg = _module_cfg(config)
+    design = config.get("design") if isinstance(config.get("design"), dict) else {}
+    condition_col = str(design.get("condition_column") or module_cfg.get("condition_column") or "condition")
+    control = str(design.get("control") or module_cfg.get("control") or "control")
+    case = str(design.get("case") or module_cfg.get("case") or "treated")
+    frame = samples.copy()
+    metadata_path = _optional_mapping_path(config, ("cell_metadata", "metadata", "cell_metadata_table"))
+    if metadata_path is not None and metadata_path.exists():
+        frame = pd.read_csv(metadata_path, sep=None, engine="python")
+    id_col = next((col for col in ("cell_id", "barcode", "sample_id") if col in frame.columns), None)
+    if id_col is None or condition_col not in frame.columns:
+        return {"status": "skipped", "reason": f"missing_cell_metadata_with_{condition_col}", "control": control, "case": case, "labels": []}
+    lookup = dict(zip(frame[id_col].astype(str), frame[condition_col].astype(str)))
+    labels = [lookup.get(barcode, "") for barcode in barcodes]
+    if not any(labels):
+        return {"status": "skipped", "reason": "missing_cell_metadata_barcode_match", "control": control, "case": case, "labels": labels}
+    n_control = sum(label == control for label in labels)
+    n_case = sum(label == case for label in labels)
+    if n_control < 2 or n_case < 2:
+        return {"status": "skipped", "reason": f"insufficient_cells_per_group:control={n_control};case={n_case};required=2", "control": control, "case": case, "labels": labels}
+    return {"status": "ready", "reason": "", "control": control, "case": case, "labels": labels, "n_control": n_control, "n_case": n_case}
+
+
+def _peak_differential_stats(matrix: np.ndarray, peaks: list[str], control_idx: np.ndarray, case_idx: np.ndarray) -> pd.DataFrame:
+    control = matrix[control_idx, :]
+    case = matrix[case_idx, :]
+    control_mean = control.mean(axis=0)
+    case_mean = case.mean(axis=0)
+    log2fc = np.log2((case_mean + 0.1) / (control_mean + 0.1))
+    stderr = np.sqrt(control.var(axis=0, ddof=1) / max(1, len(control_idx)) + case.var(axis=0, ddof=1) / max(1, len(case_idx)))
+    statistic = (case_mean - control_mean) / np.where(stderr == 0, np.nan, stderr)
+    statistic = np.nan_to_num(statistic, nan=0.0, posinf=0.0, neginf=0.0)
+    pvalue = pd.Series([0.5 * math.erfc(abs(float(value)) / math.sqrt(2.0)) * 2 for value in statistic])
+    padj = _bh(pvalue)
+    return pd.DataFrame(
+        {
+            "peak_id": peaks,
+            "control_mean_accessibility": control_mean,
+            "case_mean_accessibility": case_mean,
+            "log2FC": log2fc,
+            "statistic": statistic,
+            "pvalue": pvalue.to_numpy(),
+            "padj": padj.to_numpy(),
+        }
+    ).sort_values(["padj", "pvalue"])
+
+
+def _bh(pvalues: pd.Series) -> pd.Series:
+    values = pvalues.fillna(1.0).to_numpy(dtype=float)
+    order = np.argsort(values)
+    adjusted = np.empty_like(values)
+    cumulative = 1.0
+    n = len(values)
+    ranks = np.empty_like(order)
+    ranks[order] = np.arange(1, n + 1)
+    for idx in order[::-1]:
+        cumulative = min(cumulative, values[idx] * n / max(1, ranks[idx]))
+        adjusted[idx] = cumulative
+    return pd.Series(np.clip(adjusted, 0, 1), index=pvalues.index)
+
+
+def _write_dar_status(path: Path, backend_id: str, status: str, reason: str, analysis_fields: dict[str, Any], labels: dict[str, Any], warning: str) -> None:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "reason": reason,
+                "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+                "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and status == "ready"),
+                "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and status == "ready"),
+                "control_group": labels.get("control", ""),
+                "case_group": labels.get("case", ""),
+                "n_control_cells": labels.get("n_control", 0),
+                "n_case_cells": labels.get("n_case", 0),
+                "method_boundary": warning,
+            }
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_dar_versions(path: Path, backend_id: str) -> None:
+    pd.DataFrame(
+        [
+            {"backend_id": backend_id, "tool": "numpy", "version": np.__version__},
+            {"backend_id": backend_id, "tool": "pandas", "version": pd.__version__},
+            {"backend_id": backend_id, "tool": "scATAC_DAR_backend", "version": "python_matrix_mvp"},
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_dar_manifest(path: Path, backend_id: str, status: str, reason: str, analysis_fields: dict[str, Any], labels: dict[str, Any], warning: str, artifacts: dict[str, dict[str, str]]) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "skip_reason": reason,
+                "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+                "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and status == "ready"),
+                "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and status == "ready"),
+                "group_design": {key: labels.get(key) for key in ("control", "case", "n_control", "n_case", "reason")},
+                "method_boundary": warning,
+                "artifacts": artifacts,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_dar_skip(result_path: Path, status_path: Path, manifest_path: Path, versions_path: Path, volcano_path: Path, heatmap_path: Path, object_path: Path, backend_id: str, analysis_fields: dict[str, Any], reason: str, warning: str) -> None:
+    pd.DataFrame([{"backend_id": backend_id, "status": "skipped", "reason": reason, "method_boundary": warning}]).to_csv(result_path, sep="\t", index=False)
+    labels = {"control": "", "case": "", "reason": reason}
+    _write_dar_status(status_path, backend_id, "skipped", reason, analysis_fields, labels, warning)
+    _write_dar_versions(versions_path, backend_id)
+    _write_dar_manifest(manifest_path, backend_id, "skipped", reason, analysis_fields, labels, warning, {"tables": {"differential_peaks": str(result_path)}})
+    object_path.write_text(json.dumps({"backend_id": backend_id, "status": "skipped", "reason": reason}, indent=2), encoding="utf-8")
+    _write_placeholder_backend_figure(volcano_path, "scATAC DAR", reason)
+    _write_placeholder_backend_figure(heatmap_path, "scATAC DAR heatmap", reason)
+
+
+def _write_dar_volcano(results: pd.DataFrame, path: Path) -> None:
+    tokens = apply_clinical_journal_style()
+    frame = results.copy()
+    frame["neg_log10_padj"] = -np.log10(frame["padj"].astype(float).clip(lower=1e-300))
+    plt.figure(figsize=(6.4, 5.0))
+    plt.scatter(frame["log2FC"], frame["neg_log10_padj"], s=12, alpha=0.65, color=tokens["primary"])
+    plt.axhline(-np.log10(0.05), color=tokens["muted"], lw=0.9, ls="--")
+    plt.axvline(0, color=tokens["muted"], lw=0.9)
+    plt.xlabel("log2 accessibility fold change")
+    plt.ylabel("-log10 adjusted P")
+    plt.title("Differential Accessibility")
+    plt.tight_layout()
+    save_figure(path, style=tokens)
+
+
+def _write_dar_heatmap(matrix: np.ndarray, peaks: list[str], barcodes: list[str], top_peaks: list[str], control_idx: np.ndarray, case_idx: np.ndarray, path: Path) -> None:
+    tokens = apply_clinical_journal_style()
+    peak_lookup = {peak: idx for idx, peak in enumerate(peaks)}
+    indices = [peak_lookup[peak] for peak in top_peaks if peak in peak_lookup]
+    if not indices:
+        _write_placeholder_backend_figure(path, "DAR peak heatmap", "No differential peaks available")
+        return
+    selected_cells = np.concatenate([control_idx[: min(20, len(control_idx))], case_idx[: min(20, len(case_idx))]])
+    heat = matrix[selected_cells[:, None], indices].T
+    heat = pd.DataFrame(heat, index=[peaks[idx] for idx in indices], columns=[barcodes[idx] for idx in selected_cells])
+    heat = heat.sub(heat.mean(axis=1), axis=0).div(heat.std(axis=1).replace(0, np.nan), axis=0).fillna(0.0)
+    plt.figure(figsize=(7.2, max(4.8, min(9.0, 0.2 * len(indices) + 2.0))))
+    sns.heatmap(heat, cmap="vlag", center=0, cbar_kws={"label": "row z-score"})
+    plt.xlabel("Cells")
+    plt.ylabel("Peaks")
+    plt.title("DAR Peak Accessibility")
+    plt.tight_layout()
+    save_figure(path, style=tokens)
+
+
+def _write_placeholder_backend_figure(path: Path, title: str, message: str) -> None:
+    tokens = apply_clinical_journal_style()
+    plt.figure(figsize=(5.8, 3.6))
+    plt.text(0.5, 0.5, message, ha="center", va="center", wrap=True, color=tokens["muted"])
+    plt.axis("off")
+    plt.title(title)
+    plt.tight_layout()
+    save_figure(path, style=tokens)
+
+
 def _run_chromvar_signac_backend(
     *,
     config: dict[str, Any],
@@ -658,7 +918,7 @@ def _run_chromvar_signac_backend(
     versions_path = tables_dir / "chromvar_signac_backend_versions.tsv"
     chromvar_cell_path = tables_dir / "chromvar_cell_deviations.tsv"
     chromvar_script_path = tables_dir / "chromvar_run.R"
-    chromvar_object_path = tables_dir.parent.parent / "objects" / "scatac" / "chromvar_deviations.rds"
+    chromvar_object_path = tables_dir.parents[2] / "objects" / "scatac" / "chromvar_deviations.rds"
     motif_figure = figures_dir / "motif_deviation_heatmap.png"
     gene_figure = figures_dir / "gene_activity_heatmap.png"
     artifacts = {
@@ -1044,6 +1304,28 @@ def _write_chromvar_skip_outputs(
     for path in (motif_path, motif_handoff_path, gene_activity_path):
         _chromvar_skip_table(path, backend_id, analysis_fields, reason)
     _write_chromvar_status(status_path, backend_id, analysis_fields, "skipped", reason, None, None, "skipped", "skipped")
+    for optional_key in ("chromvar_signac_backend_versions", "chromvar_cell_deviations", "chromvar_run_script"):
+        optional_path = Path(artifacts.get("tables", {}).get(optional_key, ""))
+        if optional_path:
+            optional_path.parent.mkdir(parents=True, exist_ok=True)
+            if optional_key == "chromvar_signac_backend_versions":
+                pd.DataFrame(
+                    [
+                        {"backend_id": backend_id, "tool": "chromVAR/Signac", "version": "not_run", "status": "skipped", "reason": reason},
+                        {"backend_id": backend_id, "tool": "python", "version": "matrix_skip_manifest", "status": "ready", "reason": ""},
+                    ]
+                ).to_csv(optional_path, sep="\t", index=False)
+            elif optional_key == "chromvar_run_script":
+                optional_path.write_text(f"# chromVAR/Signac backend skipped\n# reason: {reason}\n", encoding="utf-8")
+            else:
+                _chromvar_skip_table(optional_path, backend_id, analysis_fields, reason)
+    for object_path in artifacts.get("objects", {}).values():
+        object_file = Path(str(object_path))
+        object_file.parent.mkdir(parents=True, exist_ok=True)
+        object_file.write_text(
+            json.dumps({"backend_id": backend_id, "status": "skipped", "reason": reason}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
     _write_status_figure(motif_figure, "chromVAR/Signac skipped", reason)
     _write_status_figure(gene_figure, "Gene activity skipped", reason)
     manifest_path.write_text(

@@ -136,7 +136,7 @@ design:
 modules:
   multiome:
     enabled: true
-    preset: multiome
+    preset: publication
     input_h5: $INPUT_H5
     analysis_level: validated_backend
     public_dataset: true

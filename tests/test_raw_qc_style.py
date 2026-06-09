@@ -6,7 +6,7 @@ import pandas as pd
 
 from ultimate.demo import init_project
 from ultimate.pipeline import run_pipeline_from_config
-from ultimate.plot_style import generate_style_review
+from ultimate.plot_style import available_styles, generate_style_review, get_style
 from ultimate.raw_qc import run_raw_qc
 from ultimate.raw_qc import RAW_CONTRACTS
 
@@ -16,10 +16,34 @@ def test_style_review_generates_expected_figures(tmp_path: Path) -> None:
     assert manifest["status"] == "ready_for_review"
     assert Path(manifest["style_manifest"]).exists()
     assert Path(manifest["figure_manifest"]).exists()
-    assert len(manifest["figures"]) >= 7
-    assert any(Path(figure).name == "qc_bar_review.png" for figure in manifest["figures"])
+    assert Path(manifest["layout_qc"]).exists()
+    assert Path(manifest["contact_sheet"]).exists()
+    assert len(manifest["figures"]) >= 10
+    figure_names = {Path(figure).name for figure in manifest["figures"]}
+    assert {"qc_bar_review.png", "composition_bar_review.png", "dotplot_review.png"}.issubset(figure_names)
     for figure in manifest["figures"]:
         assert Path(figure).exists()
+        assert Path(figure).stat().st_size > 0
+    layout_qc = pd.read_csv(manifest["layout_qc"], sep="\t")
+    assert not (layout_qc["layout_status"] == "layout_failed").any()
+    assert (layout_qc["layout_status"] == "layout_pass").all()
+
+
+def test_v36_style_registry_and_minimal_review(tmp_path: Path) -> None:
+    styles = available_styles()
+    assert {
+        "morandi_clinical",
+        "nord_science",
+        "carto_safe",
+        "nejm_blue_red_refined",
+        "high_contrast_publication",
+    }.issubset(styles)
+    manifest = generate_style_review(tmp_path / "minimal_review", style=get_style("morandi_clinical"), options_preset="minimal")
+    assert manifest["status"] == "ready_for_review"
+    assert manifest["figure_options"]["show_legend"] is False
+    assert Path(manifest["contact_sheet"]).exists()
+    layout_qc = pd.read_csv(manifest["layout_qc"], sep="\t")
+    assert not (layout_qc["layout_status"] == "layout_failed").any()
 
 
 def test_raw_qc_manifests_for_all_modules(tmp_path: Path) -> None:

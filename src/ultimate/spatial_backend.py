@@ -83,6 +83,9 @@ def run_spatial_backend(*, config: dict[str, Any], output_dir: Path, samples: pd
 
     artifacts: dict[str, dict[str, str]] = {"tables": {}, "figures": {}, "objects": {}, "reports": {}}
     warnings = [SPATIAL_WARNING]
+    backend_plan_base = build_backend_plan(module_name, config)
+    active_backend_ids = {str(row.get("backend_id")) for row in backend_plan_base.get("active_backends", []) if isinstance(row, dict)}
+    backend_execution_rows: list[dict[str, Any]] = []
     n_spots = 0
     n_genes = 0
     n_domains = 0
@@ -112,17 +115,52 @@ def run_spatial_backend(*, config: dict[str, Any], output_dir: Path, samples: pd
                 )
             )
             artifacts["figures"].update(_write_spatial_figures(tables_dir=tables_dir, figures_dir=figures_dir))
+            if "spatial.neighborhood.squidpy" in active_backend_ids:
+                neighborhood_artifacts = _run_spatial_neighborhood_backend(
+                    tables_dir=tables_dir,
+                    figures_dir=figures_dir,
+                    data=data,
+                    analysis_fields=level_fields,
+                    input_artifact=str(input_ref or data.get("source", "")),
+                    source_dataset=_source_dataset(config),
+                )
+                artifacts["tables"].update(neighborhood_artifacts["tables"])
+                artifacts["figures"].update(neighborhood_artifacts["figures"])
+                artifacts["objects"].update(neighborhood_artifacts["objects"])
             artifacts["objects"].update(_write_spatial_object(objects_dir=objects_dir, data=data, max_spots=int(module_cfg.get("max_spots_object", 3000))))
 
     artifacts["tables"]["tool_coverage"] = write_tool_coverage_table(module_name, tables_dir)
     artifacts["tables"]["backend_plan"] = str(write_backend_plan_table(module_name, config, tables_dir))
     artifacts["reports"]["methods_fragment"] = write_module_methods_fragment(module_name, reports_dir)
     backend_plan = enrich_backend_plan_for_run(
-        build_backend_plan(module_name, config),
+        backend_plan_base,
         analysis_level=str(level_fields.get("analysis_level") or "smoke_backend"),
         delivery_allowed=bool(level_fields.get("delivery_allowed") is True),
         validation_evidence_allowed=bool(level_fields.get("validation_evidence_allowed") is True),
     )
+    backend_execution_rows.append(
+        {
+            "backend_id": SPATIAL_BACKEND_ID,
+            "status": "ready" if not status.startswith("partial") else "skipped",
+            "analysis_level": level_fields.get("analysis_level") or "smoke_backend",
+            "delivery_allowed": bool(level_fields.get("delivery_allowed") is True and not status.startswith("partial")),
+            "validation_evidence_allowed": bool(level_fields.get("validation_evidence_allowed") is True and not status.startswith("partial")),
+            "reason": "" if not status.startswith("partial") else status,
+            "backend_slurm_job_id": str(backend_plan.get("backend_slurm_job_id") or ""),
+        }
+    )
+    if "spatial.neighborhood.squidpy" in active_backend_ids:
+        backend_execution_rows.append(
+            _status_execution_row(
+                backend_id="spatial.neighborhood.squidpy",
+                status_path=tables_dir / "spatial_neighborhood_backend_status.tsv",
+                analysis_fields=level_fields,
+                backend_plan=backend_plan,
+            )
+        )
+    backend_execution_path = tables_dir / "backend_execution.tsv"
+    pd.DataFrame(backend_execution_rows).to_csv(backend_execution_path, sep="\t", index=False)
+    artifacts["tables"]["backend_execution"] = str(backend_execution_path)
     artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
         module_name=module_name,
         tables_dir=tables_dir,
@@ -158,6 +196,7 @@ def run_spatial_backend(*, config: dict[str, Any], output_dir: Path, samples: pd
             "spatial_interpretation_warning": SPATIAL_WARNING,
         },
         "backend_plan": backend_plan,
+        "backend_execution_rows": backend_execution_rows,
         "backend_id": backend_plan["selected_backend_id"],
         "backend_status": backend_plan["selected_backend_status"],
         "backend_analysis_level": backend_plan["backend_analysis_level"],
@@ -574,6 +613,298 @@ def _write_spatial_figures(*, tables_dir: Path, figures_dir: Path) -> dict[str, 
     plt.tight_layout()
     save_figure(domain_path, style=tokens)
     return {"spatial_qc_plot": str(qc_path), "spatial_cluster": str(cluster_path), "domain_map": str(domain_path)}
+
+
+def _run_spatial_neighborhood_backend(
+    *,
+    tables_dir: Path,
+    figures_dir: Path,
+    data: dict[str, Any],
+    analysis_fields: dict[str, Any],
+    input_artifact: str,
+    source_dataset: str,
+) -> dict[str, dict[str, str]]:
+    backend_id = "spatial.neighborhood.squidpy"
+    autocorr_path = tables_dir / "spatial_autocorrelation.tsv"
+    enrichment_path = tables_dir / "spatial_neighborhood_enrichment.tsv"
+    marker_path = tables_dir / "domain_marker_preview.tsv"
+    status_path = tables_dir / "spatial_neighborhood_backend_status.tsv"
+    manifest_path = tables_dir / "spatial_neighborhood_backend_manifest.json"
+    versions_path = tables_dir / "spatial_neighborhood_backend_versions.tsv"
+    autocorr_fig = figures_dir / "spatial_autocorrelation.png"
+    marker_fig = figures_dir / "domain_marker_preview_heatmap.png"
+    object_path = tables_dir.parents[2] / "objects" / "spatial" / "spatial_neighborhood_backend.rds"
+    artifacts = {
+        "tables": {
+            "spatial_autocorrelation": str(autocorr_path),
+            "spatial_neighborhood_enrichment": str(enrichment_path),
+            "domain_marker_preview": str(marker_path),
+            "spatial_neighborhood_backend_status": str(status_path),
+            "spatial_neighborhood_backend_manifest": str(manifest_path),
+            "spatial_neighborhood_backend_versions": str(versions_path),
+        },
+        "figures": {"spatial_autocorrelation": str(autocorr_fig), "domain_marker_preview_heatmap": str(marker_fig)},
+        "objects": {"spatial_neighborhood_backend_object": str(object_path)},
+    }
+    warning = "Spatial neighborhood/autocorrelation is statistical evidence; deconvolution and cell-cell communication still require a reference."
+    coords = np.asarray(data.get("coords"), dtype=float)
+    matrix = np.asarray(data.get("matrix"), dtype=float)
+    if coords.ndim != 2 or coords.shape[0] < 3 or matrix.ndim != 2 or matrix.shape[0] != coords.shape[0]:
+        reason = f"insufficient_spatial_coordinates_or_matrix:spots={coords.shape[0] if coords.ndim == 2 else 0}"
+        _write_spatial_neighborhood_skip(autocorr_path, enrichment_path, marker_path, status_path, manifest_path, versions_path, autocorr_fig, marker_fig, object_path, backend_id, analysis_fields, reason, warning)
+        return artifacts
+    neighbor_pairs = _neighbor_pairs(coords)
+    autocorr = _spatial_autocorrelation(data, neighbor_pairs, analysis_fields, input_artifact, source_dataset, backend_id, warning)
+    enrichment = _neighborhood_enrichment(data, neighbor_pairs, analysis_fields, input_artifact, source_dataset, backend_id, warning)
+    markers = _domain_marker_preview(data, analysis_fields, input_artifact, source_dataset, backend_id, warning)
+    autocorr.to_csv(autocorr_path, sep="\t", index=False)
+    enrichment.to_csv(enrichment_path, sep="\t", index=False)
+    markers.to_csv(marker_path, sep="\t", index=False)
+    _write_spatial_neighborhood_status(status_path, backend_id, "ready", "", analysis_fields, warning, coords.shape[0], len(neighbor_pairs))
+    _write_spatial_neighborhood_versions(versions_path, backend_id)
+    _write_spatial_neighborhood_manifest(manifest_path, backend_id, "ready", "", analysis_fields, warning, artifacts)
+    object_path.write_text(json.dumps({"backend_id": backend_id, "status": "ready", "top_autocorrelation": autocorr.head(100).to_dict(orient="records"), "method_boundary": warning}, indent=2, ensure_ascii=False), encoding="utf-8")
+    _write_spatial_autocorr_plot(autocorr, autocorr_fig)
+    _write_domain_marker_heatmap(markers, marker_fig)
+    return artifacts
+
+
+def _neighbor_pairs(coords: np.ndarray) -> list[tuple[int, int, float]]:
+    if coords.shape[0] <= 1:
+        return []
+    try:
+        from sklearn.neighbors import NearestNeighbors
+
+        n_neighbors = min(7, coords.shape[0])
+        distances, indices = NearestNeighbors(n_neighbors=n_neighbors).fit(coords).kneighbors(coords)
+        pairs = []
+        for i in range(coords.shape[0]):
+            for dist, j in zip(distances[i][1:], indices[i][1:]):
+                pairs.append((i, int(j), float(dist)))
+        return pairs
+    except Exception:
+        order = np.argsort(coords[:, 0])
+        return [(int(left), int(right), float(np.linalg.norm(coords[left] - coords[right]))) for left, right in zip(order[:-1], order[1:])]
+
+
+def _spatial_autocorrelation(data: dict[str, Any], pairs: list[tuple[int, int, float]], analysis_fields: dict[str, Any], input_artifact: str, source_dataset: str, backend_id: str, warning: str) -> pd.DataFrame:
+    matrix = np.asarray(data["matrix"], dtype=float)
+    features = list(map(str, data["features"]))
+    totals = matrix.sum(axis=0)
+    selected = np.argsort(totals)[::-1][: min(80, len(features))]
+    rows = []
+    neighbor_map: dict[int, list[int]] = {}
+    for i, j, _distance in pairs:
+        neighbor_map.setdefault(i, []).append(j)
+    for idx in selected:
+        values = matrix[:, int(idx)].astype(float)
+        centered = values - values.mean()
+        denom = float(np.sum(centered**2))
+        if denom == 0 or not neighbor_map:
+            moran = 0.0
+        else:
+            numerator = 0.0
+            weight_count = 0
+            for i, neighbors in neighbor_map.items():
+                for j in neighbors:
+                    numerator += centered[i] * centered[j]
+                    weight_count += 1
+            moran = (len(values) / max(1, weight_count)) * numerator / denom
+        row = _base_fields(analysis_fields, input_artifact, source_dataset)
+        row.update(
+            {
+                "backend_id": backend_id,
+                "feature_id": features[int(idx)],
+                "moran_i": float(moran),
+                "mean_expression": float(values.mean()),
+                "neighbor_count": int(sum(len(v) for v in neighbor_map.values())),
+                "method": "moran_i_nearest_neighbor_fallback",
+                "method_boundary": warning,
+            }
+        )
+        rows.append(row)
+    return pd.DataFrame(rows).sort_values("moran_i", ascending=False)
+
+
+def _neighborhood_enrichment(data: dict[str, Any], pairs: list[tuple[int, int, float]], analysis_fields: dict[str, Any], input_artifact: str, source_dataset: str, backend_id: str, warning: str) -> pd.DataFrame:
+    domains = np.asarray(data["domains"]).astype(str)
+    domain_counts = pd.Series(domains).value_counts()
+    rows = []
+    pair_counts: dict[tuple[str, str], int] = {}
+    for i, j, _distance in pairs:
+        key = (domains[i], domains[j])
+        pair_counts[key] = pair_counts.get(key, 0) + 1
+    total_pairs = max(1, sum(pair_counts.values()))
+    total_spots = max(1, len(domains))
+    for (left, right), observed in sorted(pair_counts.items()):
+        expected = float(domain_counts[left] * domain_counts[right]) / total_spots
+        row = _base_fields(analysis_fields, input_artifact, source_dataset)
+        row.update(
+            {
+                "backend_id": backend_id,
+                "domain_id": left,
+                "neighbor_domain_id": right,
+                "observed_edges": int(observed),
+                "expected_edges": expected,
+                "enrichment_ratio": float(observed / max(expected, 1e-9)),
+                "edge_fraction": float(observed / total_pairs),
+                "method_boundary": warning,
+            }
+        )
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _domain_marker_preview(data: dict[str, Any], analysis_fields: dict[str, Any], input_artifact: str, source_dataset: str, backend_id: str, warning: str) -> pd.DataFrame:
+    matrix = np.asarray(data["matrix"], dtype=float)
+    domains = np.asarray(data["domains"]).astype(str)
+    features = list(map(str, data["features"]))
+    rows = []
+    for domain in sorted(set(domains)):
+        mask = domains == domain
+        if mask.sum() == 0:
+            continue
+        in_mean = matrix[mask].mean(axis=0)
+        out_mean = matrix[~mask].mean(axis=0) if (~mask).sum() else np.zeros_like(in_mean)
+        score = np.log2((in_mean + 0.1) / (out_mean + 0.1))
+        for idx in np.argsort(score)[::-1][:15]:
+            row = _base_fields(analysis_fields, input_artifact, source_dataset)
+            row.update(
+                {
+                    "backend_id": backend_id,
+                    "domain_id": domain,
+                    "feature_id": features[int(idx)],
+                    "preview_log2fc": float(score[int(idx)]),
+                    "domain_mean": float(in_mean[int(idx)]),
+                    "other_mean": float(out_mean[int(idx)]),
+                    "method": "domain_marker_preview_not_formal_de",
+                    "method_boundary": warning,
+                }
+            )
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _write_spatial_autocorr_plot(frame: pd.DataFrame, path: Path) -> None:
+    tokens = apply_clinical_journal_style()
+    top = frame.head(25).copy()
+    plt.figure(figsize=(7.2, 5.4))
+    sns.barplot(data=top, y="feature_id", x="moran_i", color=tokens["primary"])
+    plt.xlabel("Moran-like I")
+    plt.ylabel("Feature")
+    plt.title("Spatial autocorrelation")
+    plt.tight_layout()
+    save_figure(path, style=tokens)
+
+
+def _write_domain_marker_heatmap(frame: pd.DataFrame, path: Path) -> None:
+    if frame.empty:
+        _write_placeholder_backend_figure(path, "Domain marker preview", "No domain marker preview available")
+        return
+    tokens = apply_clinical_journal_style()
+    top = frame.sort_values("preview_log2fc", ascending=False).head(60)
+    heat = top.pivot_table(index="feature_id", columns="domain_id", values="preview_log2fc", fill_value=0.0)
+    plt.figure(figsize=(7.2, max(4.8, min(9.0, 0.2 * heat.shape[0] + 2.0))))
+    sns.heatmap(heat, cmap="vlag", center=0, cbar_kws={"label": "preview log2FC"})
+    plt.xlabel("Domain")
+    plt.ylabel("Feature")
+    plt.title("Domain marker preview")
+    plt.tight_layout()
+    save_figure(path, style=tokens)
+
+
+def _write_spatial_neighborhood_status(path: Path, backend_id: str, status: str, reason: str, analysis_fields: dict[str, Any], warning: str, n_spots: int, n_edges: int) -> None:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "reason": reason,
+                "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+                "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and status == "ready"),
+                "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and status == "ready"),
+                "n_spots": int(n_spots),
+                "n_neighbor_edges": int(n_edges),
+                "method_boundary": warning,
+            }
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_spatial_neighborhood_versions(path: Path, backend_id: str) -> None:
+    pd.DataFrame(
+        [
+            {"backend_id": backend_id, "tool": "numpy", "version": np.__version__},
+            {"backend_id": backend_id, "tool": "pandas", "version": pd.__version__},
+            {"backend_id": backend_id, "tool": "squidpy_compatible_neighborhood_backend", "version": "python_matrix_mvp"},
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_spatial_neighborhood_manifest(path: Path, backend_id: str, status: str, reason: str, analysis_fields: dict[str, Any], warning: str, artifacts: dict[str, dict[str, str]]) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "skip_reason": reason,
+                "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+                "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and status == "ready"),
+                "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and status == "ready"),
+                "method_boundary": warning,
+                "artifacts": artifacts,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_spatial_neighborhood_skip(autocorr_path: Path, enrichment_path: Path, marker_path: Path, status_path: Path, manifest_path: Path, versions_path: Path, autocorr_fig: Path, marker_fig: Path, object_path: Path, backend_id: str, analysis_fields: dict[str, Any], reason: str, warning: str) -> None:
+    row = {"backend_id": backend_id, "status": "skipped", "reason": reason, "method_boundary": warning}
+    pd.DataFrame([row]).to_csv(autocorr_path, sep="\t", index=False)
+    pd.DataFrame([row]).to_csv(enrichment_path, sep="\t", index=False)
+    pd.DataFrame([row]).to_csv(marker_path, sep="\t", index=False)
+    _write_spatial_neighborhood_status(status_path, backend_id, "skipped", reason, analysis_fields, warning, 0, 0)
+    _write_spatial_neighborhood_versions(versions_path, backend_id)
+    _write_spatial_neighborhood_manifest(manifest_path, backend_id, "skipped", reason, analysis_fields, warning, {"tables": {"spatial_autocorrelation": str(autocorr_path)}})
+    object_path.write_text(json.dumps({"backend_id": backend_id, "status": "skipped", "reason": reason}, indent=2), encoding="utf-8")
+    _write_placeholder_backend_figure(autocorr_fig, "Spatial autocorrelation", reason)
+    _write_placeholder_backend_figure(marker_fig, "Domain marker preview", reason)
+
+
+def _status_execution_row(*, backend_id: str, status_path: Path, analysis_fields: dict[str, Any], backend_plan: dict[str, Any]) -> dict[str, Any]:
+    status = "skipped"
+    reason = f"missing_backend_status:{backend_id}"
+    if status_path.exists() and status_path.stat().st_size > 0:
+        frame = pd.read_csv(status_path, sep="\t")
+        if not frame.empty:
+            first = frame.iloc[0]
+            status = str(first.get("status") or "skipped")
+            reason_value = first.get("reason")
+            reason = "" if pd.isna(reason_value) else str(reason_value)
+    ready = status == "ready"
+    return {
+        "backend_id": backend_id,
+        "status": "ready" if ready else "skipped",
+        "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+        "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and ready),
+        "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and ready),
+        "reason": reason or ("" if ready else status),
+        "backend_slurm_job_id": str(backend_plan.get("backend_slurm_job_id") or ""),
+    }
+
+
+def _write_placeholder_backend_figure(path: Path, title: str, message: str) -> None:
+    tokens = apply_clinical_journal_style()
+    plt.figure(figsize=(5.8, 3.6))
+    plt.text(0.5, 0.5, message, ha="center", va="center", wrap=True, color=tokens["muted"])
+    plt.axis("off")
+    plt.title(title)
+    plt.tight_layout()
+    save_figure(path, style=tokens)
 
 
 def _write_spatial_object(*, objects_dir: Path, data: dict[str, Any], max_spots: int) -> dict[str, str]:

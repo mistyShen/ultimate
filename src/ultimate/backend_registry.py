@@ -384,6 +384,25 @@ BACKEND_REGISTRY: tuple[BackendSpec, ...] = (
         interpretation_warning="motif enrichment/gene activity 是染色质可及性推断，不等于 TF 活性实验证明或基因表达。",
     ),
     _backend(
+        "scatac.dar.peak_matrix",
+        "scatac",
+        "optional_backend",
+        "publication",
+        "scATAC differential accessibility from peak matrix",
+        "peak matrix differential accessibility",
+        ("peak_matrix", "h5ad", "cell_metadata"),
+        "ultimate-scatac-multiome",
+        "slurm/scatac_backend_validation.sbatch",
+        ("differential_peaks.tsv", "dar_backend_status.tsv", "dar_backend_manifest.json", "dar_volcano.png", "dar_peak_heatmap.png"),
+        "10x PBMC scATAC public peak matrix Slurm validation with validation-only condition labels",
+        ("差异开放区域依赖分组/重复或细胞级 metadata；peak accessibility 不是 gene expression；无 fragments 不能声称 TSS/FRiP/peak calling。",),
+        production_allowed=True,
+        backend_status="fully_automatic_validated_entrypoint",
+        skip_reason="",
+        resource_profile="medium_chromatin_matrix",
+        interpretation_warning="DAR 是 peak accessibility 统计差异，不等于基因表达变化或调控机制证明。",
+    ),
+    _backend(
         "multiome.default.muon_mvp",
         "multiome",
         "default_backend",
@@ -394,12 +413,31 @@ BACKEND_REGISTRY: tuple[BackendSpec, ...] = (
         "ultimate-scatac-multiome",
         "slurm/multiome_backend_validation.sbatch",
         ("barcode_overlap.tsv", "rna_qc.tsv", "atac_qc.tsv", "multiome_mvp.h5mu"),
-        "10x PBMC Multiome public data",
+        "10x PBMC Multiome public data Slurm validation",
         ("Multiome 不是 scRNA+scATAC 简单拼接；必须检查 barcode overlap。",),
         production_allowed=True,
         backend_status="fully_automatic_validated_entrypoint",
         skip_reason="",
         resource_profile="large_multiome",
+    ),
+    _backend(
+        "multiome.peak_gene.correlation",
+        "multiome",
+        "optional_backend",
+        "publication",
+        "RNA-ATAC peak-gene correlation backend",
+        "MuData-compatible peak-gene correlation",
+        ("rna_matrix_atac_matrix", "10x_arc_h5", "h5mu"),
+        "ultimate-scatac-multiome",
+        "slurm/multiome_backend_validation.sbatch",
+        ("peak_gene_links.tsv", "peak_gene_correlation_backend_status.tsv", "peak_gene_correlation_backend_manifest.json", "peak_gene_correlation_heatmap.png"),
+        "10x PBMC Multiome public data",
+        ("peak-gene link 是同细胞 barcode 上的统计关联，不是 enhancer-gene 实验证明。",),
+        production_allowed=True,
+        backend_status="fully_automatic_validated_entrypoint",
+        skip_reason="",
+        resource_profile="medium_multiome_matrix",
+        interpretation_warning="Peak-gene correlation 是统计关联，需要基因组注释和实验验证后才能写成调控关系。",
     ),
     _backend(
         "spatial.visium.squidpy_mvp",
@@ -412,12 +450,31 @@ BACKEND_REGISTRY: tuple[BackendSpec, ...] = (
         "ultimate-spatial-py",
         "slurm/spatial_backend_validation.sbatch",
         ("spatial_qc.tsv", "coordinate_check.tsv", "spatial_cluster.png", "spatial_mvp.h5ad"),
-        "Squidpy public Visium H&E",
+        "Squidpy public Visium H&E Slurm validation",
         ("Visium spot 不是单细胞；空间通讯和解卷积必须依赖 reference 并标警示。",),
         production_allowed=True,
         backend_status="fully_automatic_validated_entrypoint",
         skip_reason="",
         resource_profile="large_spatial",
+    ),
+    _backend(
+        "spatial.neighborhood.squidpy",
+        "spatial",
+        "optional_backend",
+        "publication",
+        "Spatial neighborhood and autocorrelation backend",
+        "squidpy-compatible neighborhood statistics",
+        ("visium_h5ad", "coordinate_expression_matrix", "spaceranger_output"),
+        "ultimate-spatial-py",
+        "slurm/spatial_backend_validation.sbatch",
+        ("spatial_autocorrelation.tsv", "spatial_neighborhood_enrichment.tsv", "domain_marker_preview.tsv", "spatial_neighborhood_backend_manifest.json", "spatial_autocorrelation.png"),
+        "Squidpy public Visium H&E",
+        ("空间邻域、自相关和 domain marker 都是统计推断；deconvolution 仍需要 reference。",),
+        production_allowed=True,
+        backend_status="fully_automatic_validated_entrypoint",
+        skip_reason="",
+        resource_profile="medium_spatial_matrix",
+        interpretation_warning="Spatial neighborhood/autocorrelation 是空间统计证据，不能写成细胞通讯或机制证明。",
     ),
     _backend(
         "spatial.upstream.spaceranger",
@@ -596,6 +653,25 @@ BACKEND_REGISTRY: tuple[BackendSpec, ...] = (
         resource_profile="small_matrix",
     ),
     _backend(
+        "proteomics.de.limma_optional",
+        "proteomics",
+        "optional_backend",
+        "publication",
+        "Proteomics limma-style differential abundance",
+        "limma optional backend with guarded Python fallback",
+        ("abundance_table", "maxquant_table", "proteome_discoverer_table"),
+        "ultimate-core",
+        "slurm/proteomics_backend_validation.sbatch",
+        ("limma_de_results.tsv", "proteomics_limma_backend_status.tsv", "proteomics_limma_backend_manifest.json", "proteomics_limma_volcano.png", "proteomics_limma_heatmap.png"),
+        "LFQ-Analyst public MaxQuant-like abundance table Slurm validation",
+        ("limma 差异需要分组和重复；缺 R/limma 时只能写 fallback/skip 状态；相关网络不能写成真实 PPI。",),
+        production_allowed=True,
+        backend_status="fully_automatic_validated_entrypoint",
+        skip_reason="",
+        resource_profile="small_matrix",
+        interpretation_warning="蛋白差异是 abundance table 统计结果，不能写成 PPI 或机制证明。",
+    ),
+    _backend(
         "methylation.default.beta_matrix_python_mvp",
         "methylation",
         "default_backend",
@@ -611,6 +687,25 @@ BACKEND_REGISTRY: tuple[BackendSpec, ...] = (
         production_allowed=True,
         backend_status="fully_automatic_validated_entrypoint",
         resource_profile="small_matrix",
+    ),
+    _backend(
+        "methylation.dmp.limma_beta",
+        "methylation",
+        "optional_backend",
+        "publication",
+        "Methylation beta matrix DMP backend",
+        "limma-style beta/M-value DMP",
+        ("beta_matrix", "region_matrix"),
+        "ultimate-core",
+        "slurm/bulk_validation_suite.sbatch",
+        ("dmp_limma_results.tsv", "methylation_dmp_backend_status.tsv", "methylation_dmp_backend_manifest.json", "methylation_dmp_volcano.png", "methylation_dmp_heatmap.png"),
+        "ARRmData public beta matrix Slurm validation",
+        ("beta matrix DMP 不是完整 DMR；IDAT、scBS-seq、CUT&Tag/CUT&RUN 统计假设不能混用。",),
+        production_allowed=True,
+        backend_status="fully_automatic_validated_entrypoint",
+        skip_reason="",
+        resource_profile="small_matrix",
+        interpretation_warning="DMP 是 CpG/region-level 统计差异，不等于 DMR 或表观调控机制证明。",
     ),
     _backend(
         "single_gene.default.gene_report_mvp",
@@ -987,7 +1082,11 @@ PRESET_BACKEND_DEFAULTS: dict[tuple[str, str], tuple[str, ...]] = {
         "scrna.functional.decoupler_gseapy",
         "scrna.pseudobulk.deseq2_edger",
     ),
-    ("scatac", "publication"): ("scatac.motif.chromvar_signac",),
+    ("scatac", "publication"): ("scatac.motif.chromvar_signac", "scatac.dar.peak_matrix"),
+    ("multiome", "publication"): ("multiome.peak_gene.correlation",),
+    ("spatial", "publication"): ("spatial.neighborhood.squidpy",),
+    ("proteomics", "publication"): ("proteomics.de.limma_optional",),
+    ("methylation", "publication"): ("methylation.dmp.limma_beta",),
     ("cite_seq", "publication"): ("cite_seq.optional.dsb",),
 }
 
@@ -1035,6 +1134,16 @@ def _backend_aliases(specs: list[BackendSpec]) -> dict[str, BackendSpec]:
             tokens.update({"pseudobulk_de", "deseq2", "edger", "pseudobulk.deseq2_edger"})
         elif spec.backend_id == "scatac.motif.chromvar_signac":
             tokens.update({"chromvar", "signac", "chromvar_signac", "motif.chromvar", "motif.signac"})
+        elif spec.backend_id == "scatac.dar.peak_matrix":
+            tokens.update({"dar", "differential_peaks", "peak_matrix_dar", "dar.peak_matrix"})
+        elif spec.backend_id == "multiome.peak_gene.correlation":
+            tokens.update({"peak_gene", "peak_gene_correlation", "peak_gene.correlation", "linkage.correlation"})
+        elif spec.backend_id == "spatial.neighborhood.squidpy":
+            tokens.update({"spatial_neighborhood", "neighborhood.squidpy", "moran", "spatial_autocorrelation"})
+        elif spec.backend_id == "proteomics.de.limma_optional":
+            tokens.update({"limma", "proteomics_limma", "de.limma", "limma_optional"})
+        elif spec.backend_id == "methylation.dmp.limma_beta":
+            tokens.update({"dmp", "limma_beta", "dmp.limma_beta", "methylation_dmp"})
         elif spec.backend_id == "cite_seq.optional.dsb":
             tokens.update({"dsb", "optional.dsb"})
         for token in tokens:

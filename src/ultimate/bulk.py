@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,6 +98,8 @@ def run_bulk_module(
     matrix = _normalize_matrix(module_name, inputs.matrix)
     stats = _differential_stats(matrix, samples, design)
     artifacts = {"tables": {}, "figures": {}, "objects": {}}
+    backend_plan_base = build_backend_plan(module_name, config)
+    active_backend_ids = {str(row.get("backend_id")) for row in backend_plan_base.get("active_backends", []) if isinstance(row, dict)}
 
     artifacts["tables"].update(_write_common_tables(module_name, matrix, stats, samples, inputs, tables_dir))
     artifacts["tables"].update(_write_module_tables(module_name, matrix, stats, samples, inputs, tables_dir, module_cfg))
@@ -105,6 +108,8 @@ def run_bulk_module(
     artifacts["objects"].update(_write_bulk_objects(module_name, matrix, stats, inputs, objects_dir))
     backend_execution: list[dict[str, Any]] = []
     rnaseq_de_result: dict[str, Any] | None = None
+    proteomics_limma_result: dict[str, Any] | None = None
+    methylation_dmp_result: dict[str, Any] | None = None
     if module_name == "rnaseq" and rnaseq_de_backend_requested(module_cfg):
         backend_samplesheet = _write_backend_samplesheet(samples, tables_dir)
         rnaseq_de_result = run_rnaseq_de_backend(
@@ -134,6 +139,34 @@ def run_bulk_module(
                 artifacts["figures"][f"de_backend_{key}"] = str(de_artifacts[key])
         if "rds" in de_artifacts:
             artifacts["objects"]["rnaseq_de_backend_rds"] = str(de_artifacts["rds"])
+    if module_name == "proteomics" and "proteomics.de.limma_optional" in active_backend_ids:
+        proteomics_limma_result = _run_proteomics_limma_backend(
+            matrix=matrix,
+            samples=samples,
+            design=design,
+            tables_dir=tables_dir,
+            figures_dir=figures_dir,
+            objects_dir=objects_dir,
+            analysis_fields=level_fields,
+            input_artifact=str(input_matrix or inputs.source),
+            source_dataset=_source_dataset(config, module_name),
+        )
+        backend_execution.append(_bulk_backend_execution_row(proteomics_limma_result, level_fields))
+        _merge_backend_artifacts(artifacts, proteomics_limma_result.get("artifacts", {}))
+    if module_name == "methylation" and "methylation.dmp.limma_beta" in active_backend_ids:
+        methylation_dmp_result = _run_methylation_dmp_backend(
+            beta_matrix=matrix,
+            samples=samples,
+            design=design,
+            tables_dir=tables_dir,
+            figures_dir=figures_dir,
+            objects_dir=objects_dir,
+            analysis_fields=level_fields,
+            input_artifact=str(input_matrix or inputs.source),
+            source_dataset=_source_dataset(config, module_name),
+        )
+        backend_execution.append(_bulk_backend_execution_row(methylation_dmp_result, level_fields))
+        _merge_backend_artifacts(artifacts, methylation_dmp_result.get("artifacts", {}))
     artifacts["tables"].update(
         write_mvp_tables(
             module_name=module_name,
@@ -154,7 +187,7 @@ def run_bulk_module(
     artifacts["tables"]["tool_coverage"] = write_tool_coverage_table(module_name, tables_dir)
     artifacts["tables"]["backend_plan"] = str(write_backend_plan_table(module_name, config, tables_dir))
     backend_plan = enrich_backend_plan_for_run(
-        build_backend_plan(module_name, config),
+        backend_plan_base,
         analysis_level=str(level_fields.get("analysis_level") or "smoke_backend"),
         delivery_allowed=bool(level_fields.get("delivery_allowed") is True),
         validation_evidence_allowed=bool(level_fields.get("validation_evidence_allowed") is True),
@@ -169,6 +202,12 @@ def run_bulk_module(
     if rnaseq_de_result is not None and rnaseq_de_result.get("status") != "ready":
         module_status = f"partial:rnaseq_de_backend_{rnaseq_de_result.get('status')}"
         skip_reasons.append(str(rnaseq_de_result.get("skip_reason") or "rnaseq_de_backend_not_ready"))
+    if proteomics_limma_result is not None and proteomics_limma_result.get("status") != "ready":
+        module_status = f"partial:proteomics_limma_backend_{proteomics_limma_result.get('status')}"
+        skip_reasons.append(str(proteomics_limma_result.get("skip_reason") or "proteomics_limma_backend_not_ready"))
+    if methylation_dmp_result is not None and methylation_dmp_result.get("status") != "ready":
+        module_status = f"partial:methylation_dmp_backend_{methylation_dmp_result.get('status')}"
+        skip_reasons.append(str(methylation_dmp_result.get("skip_reason") or "methylation_dmp_backend_not_ready"))
 
     artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
         module_name=module_name,
@@ -198,6 +237,8 @@ def run_bulk_module(
         "backend_plan": backend_plan,
         "backend_execution": backend_execution,
         "rnaseq_de_backend": rnaseq_de_result or {"backend_id": "rnaseq.de.deseq2_edger", "status": "not_requested"},
+        "proteomics_limma_backend": proteomics_limma_result or {"backend_id": "proteomics.de.limma_optional", "status": "not_requested"},
+        "methylation_dmp_backend": methylation_dmp_result or {"backend_id": "methylation.dmp.limma_beta", "status": "not_requested"},
         "backend_id": backend_plan["selected_backend_id"],
         "backend_status": backend_plan["selected_backend_status"],
         "backend_analysis_level": backend_plan["backend_analysis_level"],
@@ -585,6 +626,349 @@ def _proteomics_tables(matrix: pd.DataFrame, stats: pd.DataFrame, tables_dir: Pa
         "enrichment_handoff": str(enrichment),
         "ppi_export": str(ppi),
     }
+
+
+def _run_proteomics_limma_backend(
+    *,
+    matrix: pd.DataFrame,
+    samples: pd.DataFrame,
+    design: dict[str, Any],
+    tables_dir: Path,
+    figures_dir: Path,
+    objects_dir: Path,
+    analysis_fields: dict[str, Any],
+    input_artifact: str,
+    source_dataset: str,
+) -> dict[str, Any]:
+    backend_id = "proteomics.de.limma_optional"
+    paths = _backend_paths(tables_dir, figures_dir, objects_dir, prefix="proteomics_limma", result_name="limma_de_results")
+    group = _validated_two_group_columns(matrix, samples, design, min_per_group=2)
+    warning = "蛋白差异是 abundance table 统计结果；相关网络/PPI 仍为 handoff，不能写成真实物理互作或机制证明。"
+    if group["status"] != "ready":
+        return _write_bulk_backend_skip(paths, backend_id, analysis_fields, group["reason"], warning)
+    result = _two_group_stats(matrix, group["control_cols"], group["case_cols"]).rename(
+        columns={"feature_id": "protein_id", "log2FC": "log2_abundance_delta"}
+    )
+    result.insert(0, "backend_id", backend_id)
+    result["method"] = "limma_style_moderated_statistics_python_fallback"
+    result["method_boundary"] = warning
+    result["control_group"] = group["control"]
+    result["case_group"] = group["case"]
+    result.to_csv(paths["result"], sep="\t", index=False)
+    _write_backend_status(paths["status"], backend_id, "ready", "", analysis_fields, warning, group)
+    _write_backend_versions(paths["versions"], backend_id)
+    _write_backend_manifest(paths["manifest"], backend_id, "ready", "", analysis_fields, warning, paths, group)
+    _write_bulk_backend_object(paths["object"], backend_id, "ready", result.head(100), warning)
+    _write_backend_volcano(result.rename(columns={"protein_id": "feature_id", "log2_abundance_delta": "log2FC"}), paths["volcano"], title="Proteomics limma-style DE")
+    _write_backend_heatmap(matrix, group["control_cols"] + group["case_cols"], result["protein_id"].astype(str).head(40).tolist(), paths["heatmap"], title="Proteomics differential abundance")
+    return {
+        "backend_id": backend_id,
+        "status": "ready",
+        "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+        "skip_reason": "",
+        "artifacts": {
+            "tables": {
+                "limma_de_results": str(paths["result"]),
+                "proteomics_limma_backend_status": str(paths["status"]),
+                "proteomics_limma_backend_manifest": str(paths["manifest"]),
+                "proteomics_limma_backend_versions": str(paths["versions"]),
+            },
+            "figures": {
+                "proteomics_limma_volcano": str(paths["volcano"]),
+                "proteomics_limma_heatmap": str(paths["heatmap"]),
+            },
+            "objects": {"proteomics_limma_backend_object": str(paths["object"])},
+        },
+    }
+
+
+def _run_methylation_dmp_backend(
+    *,
+    beta_matrix: pd.DataFrame,
+    samples: pd.DataFrame,
+    design: dict[str, Any],
+    tables_dir: Path,
+    figures_dir: Path,
+    objects_dir: Path,
+    analysis_fields: dict[str, Any],
+    input_artifact: str,
+    source_dataset: str,
+) -> dict[str, Any]:
+    backend_id = "methylation.dmp.limma_beta"
+    paths = _backend_paths(tables_dir, figures_dir, objects_dir, prefix="methylation_dmp", result_name="dmp_limma_results")
+    mvalue_summary = tables_dir / "methylation_mvalue_summary.tsv"
+    beta = beta_matrix.clip(1e-4, 1 - 1e-4)
+    mvalues = np.log2(beta / (1 - beta))
+    pd.DataFrame(
+        {
+            "sample_id": beta.columns.astype(str),
+            "mean_beta": beta.mean(axis=0).to_numpy(),
+            "median_beta": beta.median(axis=0).to_numpy(),
+            "mean_m_value": mvalues.mean(axis=0).to_numpy(),
+            "median_m_value": mvalues.median(axis=0).to_numpy(),
+        }
+    ).to_csv(mvalue_summary, sep="\t", index=False)
+    warning = "DMP 是 CpG/region-level beta/M-value 统计差异，不是完整 DMR；IDAT、scBS-seq、CUT&Tag/CUT&RUN 不能混用统计假设。"
+    group = _validated_two_group_columns(mvalues, samples, design, min_per_group=2)
+    if group["status"] != "ready":
+        skipped = _write_bulk_backend_skip(paths, backend_id, analysis_fields, group["reason"], warning)
+        skipped["artifacts"]["tables"]["methylation_mvalue_summary"] = str(mvalue_summary)
+        return skipped
+    result = _two_group_stats(mvalues, group["control_cols"], group["case_cols"]).rename(
+        columns={"feature_id": "region_id", "log2FC": "m_value_delta"}
+    )
+    beta_delta = beta[group["case_cols"]].mean(axis=1) - beta[group["control_cols"]].mean(axis=1)
+    result["beta_delta"] = result["region_id"].map(beta_delta.to_dict()).astype(float)
+    result.insert(0, "backend_id", backend_id)
+    result["method"] = "limma_style_mvalue_dmp_python_fallback"
+    result["method_boundary"] = warning
+    result["annotation_status"] = "annotation_handoff_required_for_genomic_context"
+    result["control_group"] = group["control"]
+    result["case_group"] = group["case"]
+    result.to_csv(paths["result"], sep="\t", index=False)
+    _write_backend_status(paths["status"], backend_id, "ready", "", analysis_fields, warning, group)
+    _write_backend_versions(paths["versions"], backend_id)
+    _write_backend_manifest(paths["manifest"], backend_id, "ready", "", analysis_fields, warning, paths, group)
+    _write_bulk_backend_object(paths["object"], backend_id, "ready", result.head(100), warning)
+    _write_backend_volcano(result.rename(columns={"region_id": "feature_id", "m_value_delta": "log2FC"}), paths["volcano"], title="Methylation DMP")
+    _write_backend_heatmap(mvalues, group["control_cols"] + group["case_cols"], result["region_id"].astype(str).head(40).tolist(), paths["heatmap"], title="DMP M-value heatmap")
+    return {
+        "backend_id": backend_id,
+        "status": "ready",
+        "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+        "skip_reason": "",
+        "artifacts": {
+            "tables": {
+                "dmp_limma_results": str(paths["result"]),
+                "methylation_dmp_backend_status": str(paths["status"]),
+                "methylation_dmp_backend_manifest": str(paths["manifest"]),
+                "methylation_dmp_backend_versions": str(paths["versions"]),
+                "methylation_mvalue_summary": str(mvalue_summary),
+            },
+            "figures": {
+                "methylation_dmp_volcano": str(paths["volcano"]),
+                "methylation_dmp_heatmap": str(paths["heatmap"]),
+            },
+            "objects": {"methylation_dmp_backend_object": str(paths["object"])},
+        },
+    }
+
+
+def _backend_paths(tables_dir: Path, figures_dir: Path, objects_dir: Path, *, prefix: str, result_name: str) -> dict[str, Path]:
+    return {
+        "result": tables_dir / f"{result_name}.tsv",
+        "status": tables_dir / f"{prefix}_backend_status.tsv",
+        "manifest": tables_dir / f"{prefix}_backend_manifest.json",
+        "versions": tables_dir / f"{prefix}_backend_versions.tsv",
+        "volcano": figures_dir / f"{prefix}_volcano.png",
+        "heatmap": figures_dir / f"{prefix}_heatmap.png",
+        "object": objects_dir / f"{prefix}_backend.rds",
+    }
+
+
+def _validated_two_group_columns(matrix: pd.DataFrame, samples: pd.DataFrame, design: dict[str, Any], *, min_per_group: int) -> dict[str, Any]:
+    condition_column = str(design.get("condition_column", "condition"))
+    control = str(design.get("control", "control"))
+    case = str(design.get("case", "treated"))
+    if samples.empty or "sample_id" not in samples.columns:
+        return {"status": "skipped", "reason": "missing_samplesheet_with_sample_id", "control": control, "case": case, "control_cols": [], "case_cols": []}
+    if condition_column not in samples.columns:
+        return {"status": "skipped", "reason": f"missing_condition_column:{condition_column}", "control": control, "case": case, "control_cols": [], "case_cols": []}
+    lookup = dict(zip(samples["sample_id"].astype(str), samples[condition_column].astype(str)))
+    control_cols = [col for col in matrix.columns.astype(str) if lookup.get(str(col)) == control]
+    case_cols = [col for col in matrix.columns.astype(str) if lookup.get(str(col)) == case]
+    if len(control_cols) < min_per_group or len(case_cols) < min_per_group:
+        return {
+            "status": "skipped",
+            "reason": f"insufficient_replicates:control={len(control_cols)};case={len(case_cols)};required={min_per_group}",
+            "control": control,
+            "case": case,
+            "control_cols": control_cols,
+            "case_cols": case_cols,
+        }
+    return {"status": "ready", "reason": "", "control": control, "case": case, "control_cols": control_cols, "case_cols": case_cols}
+
+
+def _two_group_stats(matrix: pd.DataFrame, control_cols: list[str], case_cols: list[str]) -> pd.DataFrame:
+    control = matrix[control_cols].apply(pd.to_numeric, errors="coerce")
+    case = matrix[case_cols].apply(pd.to_numeric, errors="coerce")
+    control_mean = control.mean(axis=1)
+    case_mean = case.mean(axis=1)
+    effect = case_mean - control_mean
+    control_var = control.var(axis=1, ddof=1).replace(0, np.nan)
+    case_var = case.var(axis=1, ddof=1).replace(0, np.nan)
+    stderr = np.sqrt((control_var / max(1, len(control_cols))) + (case_var / max(1, len(case_cols)))).replace(0, np.nan).fillna(matrix.std(axis=1).replace(0, np.nan).fillna(1.0))
+    z_score = effect / stderr
+    pvalue = pd.Series([_normal_sf(abs(value)) * 2 for value in z_score.fillna(0.0)], index=matrix.index)
+    padj = _benjamini_hochberg(pvalue)
+    return pd.DataFrame(
+        {
+            "feature_id": matrix.index.astype(str),
+            "control_mean": control_mean.to_numpy(),
+            "case_mean": case_mean.to_numpy(),
+            "log2FC": effect.to_numpy(),
+            "statistic": z_score.to_numpy(),
+            "pvalue": pvalue.to_numpy(),
+            "padj": padj.to_numpy(),
+        }
+    ).sort_values(["padj", "pvalue"])
+
+
+def _write_bulk_backend_skip(paths: dict[str, Path], backend_id: str, analysis_fields: dict[str, Any], reason: str, warning: str) -> dict[str, Any]:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": "skipped",
+                "reason": reason,
+                "method_boundary": warning,
+                "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+            }
+        ]
+    ).to_csv(paths["result"], sep="\t", index=False)
+    _write_backend_status(paths["status"], backend_id, "skipped", reason, analysis_fields, warning, {})
+    _write_backend_versions(paths["versions"], backend_id)
+    _write_backend_manifest(paths["manifest"], backend_id, "skipped", reason, analysis_fields, warning, paths, {})
+    _write_bulk_backend_object(paths["object"], backend_id, "skipped", pd.DataFrame(), warning)
+    _write_placeholder_backend_figure(paths["volcano"], title=backend_id, message=reason)
+    _write_placeholder_backend_figure(paths["heatmap"], title=backend_id, message=reason)
+    return {
+        "backend_id": backend_id,
+        "status": "skipped",
+        "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+        "skip_reason": reason,
+        "artifacts": {
+            "tables": {
+                "result": str(paths["result"]),
+                "backend_status": str(paths["status"]),
+                "backend_manifest": str(paths["manifest"]),
+                "backend_versions": str(paths["versions"]),
+            },
+            "figures": {"volcano": str(paths["volcano"]), "heatmap": str(paths["heatmap"])},
+            "objects": {"backend_object": str(paths["object"])},
+        },
+    }
+
+
+def _write_backend_status(path: Path, backend_id: str, status: str, reason: str, analysis_fields: dict[str, Any], warning: str, group: dict[str, Any]) -> None:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "reason": reason,
+                "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+                "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and status == "ready"),
+                "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and status == "ready"),
+                "control_group": group.get("control", ""),
+                "case_group": group.get("case", ""),
+                "n_control": len(group.get("control_cols", []) or []),
+                "n_case": len(group.get("case_cols", []) or []),
+                "method_boundary": warning,
+            }
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_backend_versions(path: Path, backend_id: str) -> None:
+    pd.DataFrame(
+        [
+            {"backend_id": backend_id, "tool": "python", "version": "runtime"},
+            {"backend_id": backend_id, "tool": "numpy", "version": np.__version__},
+            {"backend_id": backend_id, "tool": "pandas", "version": pd.__version__},
+            {"backend_id": backend_id, "tool": "Rscript", "version": "available" if shutil.which("Rscript") else "not_available"},
+            {"backend_id": backend_id, "tool": "limma", "version": "optional_r_backend_not_invoked_by_python_mvp"},
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_backend_manifest(path: Path, backend_id: str, status: str, reason: str, analysis_fields: dict[str, Any], warning: str, paths: dict[str, Path], group: dict[str, Any]) -> None:
+    manifest = {
+        "backend_id": backend_id,
+        "status": status,
+        "skip_reason": reason,
+        "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+        "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and status == "ready"),
+        "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and status == "ready"),
+        "method_boundary": warning,
+        "group_design": {key: value for key, value in group.items() if key in {"control", "case", "control_cols", "case_cols", "reason"}},
+        "artifacts": {key: str(value) for key, value in paths.items()},
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _write_bulk_backend_object(path: Path, backend_id: str, status: str, frame: pd.DataFrame, warning: str) -> None:
+    payload = {
+        "backend_id": backend_id,
+        "status": status,
+        "method_boundary": warning,
+        "top_rows": frame.to_dict(orient="records") if not frame.empty else [],
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _write_backend_volcano(stats: pd.DataFrame, path: Path, *, title: str) -> None:
+    tokens = apply_clinical_journal_style()
+    plot = stats.copy()
+    plot["neg_log10_padj"] = -np.log10(plot["padj"].astype(float).clip(lower=1e-300))
+    plt.figure(figsize=(6.4, 5.0))
+    plt.scatter(plot["log2FC"].astype(float), plot["neg_log10_padj"], s=14, alpha=0.65, color=tokens["primary"])
+    plt.axhline(-np.log10(0.05), color=tokens["muted"], lw=0.9, ls="--")
+    plt.axvline(0, color=tokens["muted"], lw=0.9)
+    plt.xlabel("Effect size")
+    plt.ylabel("-log10 adjusted P")
+    plt.title(title)
+    plt.tight_layout()
+    save_figure(path, style=tokens)
+
+
+def _write_backend_heatmap(matrix: pd.DataFrame, columns: list[str], features: list[str], path: Path, *, title: str) -> None:
+    tokens = apply_clinical_journal_style()
+    selected_features = [feature for feature in features if feature in matrix.index][: min(40, len(features))]
+    selected_columns = [column for column in columns if column in matrix.columns]
+    if not selected_features or not selected_columns:
+        _write_placeholder_backend_figure(path, title=title, message="No features available")
+        return
+    heat = matrix.loc[selected_features, selected_columns].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    heat = heat.sub(heat.mean(axis=1), axis=0).div(heat.std(axis=1).replace(0, np.nan), axis=0).fillna(0.0)
+    plt.figure(figsize=(7.2, max(4.5, min(9.0, 0.18 * len(selected_features) + 2.0))))
+    sns.heatmap(heat, cmap="vlag", center=0, cbar_kws={"label": "row z-score"})
+    plt.xlabel("Sample")
+    plt.ylabel("Feature")
+    plt.title(title)
+    plt.tight_layout()
+    save_figure(path, style=tokens)
+
+
+def _write_placeholder_backend_figure(path: Path, *, title: str, message: str) -> None:
+    tokens = apply_clinical_journal_style()
+    plt.figure(figsize=(5.8, 3.6))
+    plt.text(0.5, 0.5, message, ha="center", va="center", wrap=True, color=tokens["muted"])
+    plt.axis("off")
+    plt.title(title)
+    plt.tight_layout()
+    save_figure(path, style=tokens)
+
+
+def _bulk_backend_execution_row(result: dict[str, Any], analysis_fields: dict[str, Any]) -> dict[str, Any]:
+    ready = result.get("status") == "ready"
+    return {
+        "backend_id": result.get("backend_id", ""),
+        "status": "ready" if ready else "skipped",
+        "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+        "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and ready),
+        "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and ready),
+        "reason": "" if ready else str(result.get("skip_reason") or "backend_not_ready"),
+        "backend_slurm_job_id": "",
+    }
+
+
+def _merge_backend_artifacts(artifacts: dict[str, dict[str, str]], backend_artifacts: dict[str, Any]) -> None:
+    for section in ("tables", "figures", "objects"):
+        values = backend_artifacts.get(section) if isinstance(backend_artifacts, dict) else None
+        if isinstance(values, dict):
+            artifacts.setdefault(section, {}).update({str(key): str(value) for key, value in values.items()})
 
 
 def _publicdb_tables(matrix: pd.DataFrame, stats: pd.DataFrame, clinical: pd.DataFrame, tables_dir: Path) -> dict[str, str]:

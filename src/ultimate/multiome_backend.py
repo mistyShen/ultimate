@@ -80,6 +80,9 @@ def run_multiome_backend(*, config: dict[str, Any], output_dir: Path, samples: p
 
     artifacts: dict[str, dict[str, str]] = {"tables": {}, "figures": {}, "objects": {}, "reports": {}}
     warnings = [MULTIOME_WARNING]
+    backend_plan_base = build_backend_plan(module_name, config)
+    active_backend_ids = {str(row.get("backend_id")) for row in backend_plan_base.get("active_backends", []) if isinstance(row, dict)}
+    backend_execution_rows: list[dict[str, Any]] = []
     n_cells = 0
     n_rna_features = 0
     n_atac_features = 0
@@ -108,6 +111,18 @@ def run_multiome_backend(*, config: dict[str, Any], output_dir: Path, samples: p
                 )
             )
             artifacts["figures"].update(_write_multiome_figures(tables_dir=tables_dir, figures_dir=figures_dir))
+            if "multiome.peak_gene.correlation" in active_backend_ids:
+                peak_gene_artifacts = _run_peak_gene_correlation_backend(
+                    tables_dir=tables_dir,
+                    figures_dir=figures_dir,
+                    data=data,
+                    analysis_fields=level_fields,
+                    input_artifact=str(input_ref or ""),
+                    source_dataset=_source_dataset(config),
+                )
+                artifacts["tables"].update(peak_gene_artifacts["tables"])
+                artifacts["figures"].update(peak_gene_artifacts["figures"])
+                artifacts["objects"].update(peak_gene_artifacts["objects"])
             artifacts["objects"].update(
                 _write_multiome_object(
                     objects_dir=objects_dir,
@@ -121,11 +136,34 @@ def run_multiome_backend(*, config: dict[str, Any], output_dir: Path, samples: p
     artifacts["tables"]["backend_plan"] = str(write_backend_plan_table(module_name, config, tables_dir))
     artifacts["reports"]["methods_fragment"] = write_module_methods_fragment(module_name, reports_dir)
     backend_plan = enrich_backend_plan_for_run(
-        build_backend_plan(module_name, config),
+        backend_plan_base,
         analysis_level=str(level_fields.get("analysis_level") or "smoke_backend"),
         delivery_allowed=bool(level_fields.get("delivery_allowed") is True),
         validation_evidence_allowed=bool(level_fields.get("validation_evidence_allowed") is True),
     )
+    backend_execution_rows.append(
+        {
+            "backend_id": MULTIOME_BACKEND_ID,
+            "status": "ready" if not status.startswith("partial") else "skipped",
+            "analysis_level": level_fields.get("analysis_level") or "smoke_backend",
+            "delivery_allowed": bool(level_fields.get("delivery_allowed") is True and not status.startswith("partial")),
+            "validation_evidence_allowed": bool(level_fields.get("validation_evidence_allowed") is True and not status.startswith("partial")),
+            "reason": "" if not status.startswith("partial") else status,
+            "backend_slurm_job_id": str(backend_plan.get("backend_slurm_job_id") or ""),
+        }
+    )
+    if "multiome.peak_gene.correlation" in active_backend_ids:
+        backend_execution_rows.append(
+            _status_execution_row(
+                backend_id="multiome.peak_gene.correlation",
+                status_path=tables_dir / "peak_gene_correlation_backend_status.tsv",
+                analysis_fields=level_fields,
+                backend_plan=backend_plan,
+            )
+        )
+    backend_execution_path = tables_dir / "backend_execution.tsv"
+    pd.DataFrame(backend_execution_rows).to_csv(backend_execution_path, sep="\t", index=False)
+    artifacts["tables"]["backend_execution"] = str(backend_execution_path)
     artifacts["tables"]["module_qc_manifest"] = write_module_qc_manifest(
         module_name=module_name,
         tables_dir=tables_dir,
@@ -161,6 +199,7 @@ def run_multiome_backend(*, config: dict[str, Any], output_dir: Path, samples: p
             "modality_warning": MULTIOME_WARNING,
         },
         "backend_plan": backend_plan,
+        "backend_execution_rows": backend_execution_rows,
         "backend_id": backend_plan["selected_backend_id"],
         "backend_status": backend_plan["selected_backend_status"],
         "backend_analysis_level": backend_plan["backend_analysis_level"],
@@ -512,6 +551,198 @@ def _write_multiome_figures(*, tables_dir: Path, figures_dir: Path) -> dict[str,
     plt.tight_layout()
     save_figure(modality_path, style=tokens)
     return {"joint_embedding_placeholder": str(embedding_path), "modality_qc": str(modality_path)}
+
+
+def _run_peak_gene_correlation_backend(
+    *,
+    tables_dir: Path,
+    figures_dir: Path,
+    data: dict[str, Any],
+    analysis_fields: dict[str, Any],
+    input_artifact: str,
+    source_dataset: str,
+) -> dict[str, dict[str, str]]:
+    backend_id = "multiome.peak_gene.correlation"
+    links_path = tables_dir / "peak_gene_links.tsv"
+    modality_path = tables_dir / "peak_gene_modality_correlation.tsv"
+    status_path = tables_dir / "peak_gene_correlation_backend_status.tsv"
+    manifest_path = tables_dir / "peak_gene_correlation_backend_manifest.json"
+    versions_path = tables_dir / "peak_gene_correlation_backend_versions.tsv"
+    heatmap_path = figures_dir / "peak_gene_correlation_heatmap.png"
+    object_path = tables_dir.parents[2] / "objects" / "multiome" / "peak_gene_correlation_backend.rds"
+    artifacts = {
+        "tables": {
+            "peak_gene_links": str(links_path),
+            "peak_gene_modality_correlation": str(modality_path),
+            "peak_gene_correlation_backend_status": str(status_path),
+            "peak_gene_correlation_backend_manifest": str(manifest_path),
+            "peak_gene_correlation_backend_versions": str(versions_path),
+        },
+        "figures": {"peak_gene_correlation_heatmap": str(heatmap_path)},
+        "objects": {"peak_gene_correlation_backend_object": str(object_path)},
+    }
+    warning = "Peak-gene linkage is a same-barcode statistical association and is not enhancer-gene experimental proof."
+    if len(data["barcodes"]) < 3 or len(data["rna_features"]) < 2 or len(data["atac_features"]) < 2:
+        reason = f"insufficient_multiome_dimensions:cells={len(data['barcodes'])};rna={len(data['rna_features'])};atac={len(data['atac_features'])}"
+        _write_peak_gene_skip(links_path, modality_path, status_path, manifest_path, versions_path, heatmap_path, object_path, backend_id, analysis_fields, reason, warning)
+        return artifacts
+    rna = _to_dense(data["rna"])
+    atac = _to_dense(data["atac"])
+    rna_idx = _top_feature_indices(rna, min(30, rna.shape[1]))
+    atac_idx = _top_feature_indices(atac, min(30, atac.shape[1]))
+    rna_sub = np.log1p(rna[:, rna_idx])
+    atac_sub = np.log1p(atac[:, atac_idx])
+    corr = _safe_corr(atac_sub, rna_sub)
+    rows = []
+    for peak_pos, peak_idx in enumerate(atac_idx):
+        for gene_pos, gene_idx in enumerate(rna_idx):
+            value = float(corr[peak_pos, gene_pos])
+            rows.append(
+                {
+                    "backend_id": backend_id,
+                    "peak_id": str(data["atac_features"][int(peak_idx)]),
+                    "gene_id": str(data["rna_features"][int(gene_idx)]),
+                    "correlation": value,
+                    "abs_correlation": abs(value),
+                    "n_shared_barcodes": int(len(data["barcodes"])),
+                    "method": "pearson_correlation_log1p_counts",
+                    "method_boundary": warning,
+                    "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+                }
+            )
+    links = pd.DataFrame(rows).sort_values("abs_correlation", ascending=False)
+    links.to_csv(links_path, sep="\t", index=False)
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "rna_feature_count": int(rna.shape[1]),
+                "atac_peak_count": int(atac.shape[1]),
+                "shared_barcode_count": int(len(data["barcodes"])),
+                "median_abs_peak_gene_correlation": float(np.median(np.abs(corr))),
+                "method_boundary": warning,
+            }
+        ]
+    ).to_csv(modality_path, sep="\t", index=False)
+    _write_peak_gene_status(status_path, backend_id, "ready", "", analysis_fields, warning, len(data["barcodes"]))
+    _write_peak_gene_versions(versions_path, backend_id)
+    _write_peak_gene_manifest(manifest_path, backend_id, "ready", "", analysis_fields, warning, artifacts)
+    object_path.write_text(json.dumps({"backend_id": backend_id, "status": "ready", "top_links": links.head(100).to_dict(orient="records"), "method_boundary": warning}, indent=2, ensure_ascii=False), encoding="utf-8")
+    _write_peak_gene_heatmap(corr, [str(data["atac_features"][int(i)]) for i in atac_idx], [str(data["rna_features"][int(i)]) for i in rna_idx], heatmap_path)
+    return artifacts
+
+
+def _safe_corr(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    left_z = left - left.mean(axis=0, keepdims=True)
+    right_z = right - right.mean(axis=0, keepdims=True)
+    left_sd = left_z.std(axis=0, ddof=1, keepdims=True)
+    right_sd = right_z.std(axis=0, ddof=1, keepdims=True)
+    left_z = left_z / np.where(left_sd == 0, np.nan, left_sd)
+    right_z = right_z / np.where(right_sd == 0, np.nan, right_sd)
+    corr = np.nan_to_num((left_z.T @ right_z) / max(1, left.shape[0] - 1), nan=0.0, posinf=0.0, neginf=0.0)
+    return np.clip(corr, -1.0, 1.0)
+
+
+def _write_peak_gene_heatmap(corr: np.ndarray, peaks: list[str], genes: list[str], path: Path) -> None:
+    tokens = apply_clinical_journal_style()
+    heat = pd.DataFrame(corr[: min(20, len(peaks)), : min(20, len(genes))], index=peaks[:20], columns=genes[:20])
+    plt.figure(figsize=(8.0, 6.5))
+    sns.heatmap(heat, cmap="vlag", center=0, cbar_kws={"label": "Pearson r"})
+    plt.xlabel("RNA genes")
+    plt.ylabel("ATAC peaks")
+    plt.title("Peak-gene correlation")
+    plt.tight_layout()
+    save_figure(path, style=tokens)
+
+
+def _write_peak_gene_status(path: Path, backend_id: str, status: str, reason: str, analysis_fields: dict[str, Any], warning: str, n_barcodes: int) -> None:
+    pd.DataFrame(
+        [
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "reason": reason,
+                "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+                "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and status == "ready"),
+                "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and status == "ready"),
+                "n_shared_barcodes": int(n_barcodes),
+                "method_boundary": warning,
+            }
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_peak_gene_versions(path: Path, backend_id: str) -> None:
+    pd.DataFrame(
+        [
+            {"backend_id": backend_id, "tool": "numpy", "version": np.__version__},
+            {"backend_id": backend_id, "tool": "pandas", "version": pd.__version__},
+            {"backend_id": backend_id, "tool": "peak_gene_correlation_backend", "version": "python_matrix_mvp"},
+        ]
+    ).to_csv(path, sep="\t", index=False)
+
+
+def _write_peak_gene_manifest(path: Path, backend_id: str, status: str, reason: str, analysis_fields: dict[str, Any], warning: str, artifacts: dict[str, dict[str, str]]) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "backend_id": backend_id,
+                "status": status,
+                "skip_reason": reason,
+                "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+                "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and status == "ready"),
+                "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and status == "ready"),
+                "method_boundary": warning,
+                "artifacts": artifacts,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_peak_gene_skip(links_path: Path, modality_path: Path, status_path: Path, manifest_path: Path, versions_path: Path, heatmap_path: Path, object_path: Path, backend_id: str, analysis_fields: dict[str, Any], reason: str, warning: str) -> None:
+    pd.DataFrame([{"backend_id": backend_id, "status": "skipped", "reason": reason, "method_boundary": warning}]).to_csv(links_path, sep="\t", index=False)
+    pd.DataFrame([{"backend_id": backend_id, "status": "skipped", "reason": reason, "method_boundary": warning}]).to_csv(modality_path, sep="\t", index=False)
+    _write_peak_gene_status(status_path, backend_id, "skipped", reason, analysis_fields, warning, 0)
+    _write_peak_gene_versions(versions_path, backend_id)
+    _write_peak_gene_manifest(manifest_path, backend_id, "skipped", reason, analysis_fields, warning, {"tables": {"peak_gene_links": str(links_path)}})
+    object_path.write_text(json.dumps({"backend_id": backend_id, "status": "skipped", "reason": reason}, indent=2), encoding="utf-8")
+    _write_placeholder_backend_figure(heatmap_path, "Peak-gene correlation", reason)
+
+
+def _status_execution_row(*, backend_id: str, status_path: Path, analysis_fields: dict[str, Any], backend_plan: dict[str, Any]) -> dict[str, Any]:
+    status = "skipped"
+    reason = f"missing_backend_status:{backend_id}"
+    if status_path.exists() and status_path.stat().st_size > 0:
+        frame = pd.read_csv(status_path, sep="\t")
+        if not frame.empty:
+            first = frame.iloc[0]
+            status = str(first.get("status") or "skipped")
+            reason_value = first.get("reason")
+            reason = "" if pd.isna(reason_value) else str(reason_value)
+    ready = status == "ready"
+    return {
+        "backend_id": backend_id,
+        "status": "ready" if ready else "skipped",
+        "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
+        "delivery_allowed": bool(analysis_fields.get("delivery_allowed") is True and ready),
+        "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and ready),
+        "reason": reason or ("" if ready else status),
+        "backend_slurm_job_id": str(backend_plan.get("backend_slurm_job_id") or ""),
+    }
+
+
+def _write_placeholder_backend_figure(path: Path, title: str, message: str) -> None:
+    tokens = apply_clinical_journal_style()
+    plt.figure(figsize=(5.8, 3.6))
+    plt.text(0.5, 0.5, message, ha="center", va="center", wrap=True, color=tokens["muted"])
+    plt.axis("off")
+    plt.title(title)
+    plt.tight_layout()
+    save_figure(path, style=tokens)
 
 
 def _write_multiome_object(*, objects_dir: Path, data: dict[str, Any], max_cells: int, max_features: int) -> dict[str, str]:

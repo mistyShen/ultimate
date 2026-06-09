@@ -125,7 +125,7 @@ design:
 modules:
   spatial:
     enabled: true
-    preset: standard
+    preset: publication
     analysis_level: validated_backend
     public_dataset: true
     validation_dataset: squidpy_visium_hne

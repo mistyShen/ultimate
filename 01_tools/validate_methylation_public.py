@@ -206,6 +206,7 @@ def _write_project_config(*, output_dir: Path, prepared: dict[str, Any]) -> Path
         "modules": {
             "methylation": {
                 "enabled": True,
+                "preset": "publication",
                 "analysis_level": "validated_backend",
                 "is_demo": False,
                 "input_matrix": str(prepared["beta_matrix"]),
@@ -218,7 +219,7 @@ def _write_project_config(*, output_dir: Path, prepared: dict[str, Any]) -> Path
                     "output_matrix": str(output_dir / "raw_qc" / "methylation" / "objects" / "methylation_standard_matrix.tsv"),
                     "output_object": str(output_dir / "raw_qc" / "methylation" / "objects" / "methylation_standard_object.json"),
                     "qc": {"enabled": True},
-                    "toolchain": ["ARRmData beta matrix import", "minfi/ChAMP handoff"],
+                    "toolchain": ["ARRmData beta matrix import", "methylation.dmp.limma_beta publication backend", "minfi/ChAMP handoff"],
                 },
             }
         },

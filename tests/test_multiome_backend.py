@@ -124,3 +124,33 @@ def test_multiome_backend_missing_inputs_remains_non_deliverable(tmp_path: Path)
     qc_manifest = json.loads((run_dir / "results" / "tables" / "multiome" / "module_qc_manifest.json").read_text(encoding="utf-8"))
     assert qc_manifest["delivery_allowed"] is False
     assert qc_manifest["skip_reasons"]
+
+
+def test_multiome_publication_preset_runs_peak_gene_correlation_outputs(tmp_path: Path) -> None:
+    rna, atac = _write_multiome_fixture(tmp_path)
+    config_path = _write_config(tmp_path, rna=rna, atac=atac, output_name="publication")
+    raw = config_path.read_text(encoding="utf-8")
+    config_path.write_text(raw.replace("preset: multiome", "preset: publication"), encoding="utf-8")
+
+    manifest = run_pipeline_from_config(config_path)
+    run_dir = Path(manifest["output_dir"])
+    multiome = manifest["modules"][0]
+    active_ids = {row["backend_id"] for row in multiome["backend_plan"]["active_backends"]}
+    execution_rows = {row["backend_id"]: row for row in multiome["backend_execution_rows"]}
+
+    assert "multiome.peak_gene.correlation" in active_ids
+    assert execution_rows["multiome.peak_gene.correlation"]["status"] == "ready"
+    for relative in [
+        "results/tables/multiome/peak_gene_links.tsv",
+        "results/tables/multiome/peak_gene_modality_correlation.tsv",
+        "results/tables/multiome/peak_gene_correlation_backend_status.tsv",
+        "results/tables/multiome/peak_gene_correlation_backend_manifest.json",
+        "results/tables/multiome/peak_gene_correlation_backend_versions.tsv",
+        "results/figures/multiome/peak_gene_correlation_heatmap.png",
+        "objects/multiome/peak_gene_correlation_backend.rds",
+    ]:
+        path = run_dir / relative
+        assert path.exists() and path.stat().st_size > 0
+    links = pd.read_csv(run_dir / "results/tables/multiome/peak_gene_links.tsv", sep="\t")
+    assert {"peak_id", "gene_id", "correlation", "method_boundary", "n_shared_barcodes"}.issubset(links.columns)
+    assert "not enhancer-gene experimental proof" in links.loc[0, "method_boundary"]

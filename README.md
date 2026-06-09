@@ -667,8 +667,22 @@ Set `report.style` in `config/project.yaml`:
 - `cividis_gold`: Cividis 蓝金连续值配色。
 - `clean_clinical`: 清爽蓝灰临床报告配色。
 - `warm_academic`: 暖彩学术配色。
+- `morandi_clinical`: Morandi 高级临床柔彩，低饱和、留白充足。
+- `nord_science`: Nord Science 冷静科研，蓝灰主调。
+- `carto_safe`: CARTO Safe 高分辨分类，适合分类较多的图。
+- `nejm_blue_red_refined`: NEJM 蓝红精修，适合病例/对照强调。
+- `high_contrast_publication`: 高对比出版图，适合打印和投屏。
 
-Use `ultimate styles --output-dir <dir>` to render one review set, or
-`ultimate styles --all --output-dir <dir>` to render all style options before delivery.
-Generated review images live in `style_reviews/` or the requested output
-directory and are intentionally not committed to Git.
+Use `ultimate styles --style <style_key>` to render one review set into
+`style_reviews/v3_6/<style_key>/`, `ultimate styles --output-dir <dir>` to
+choose a custom directory, or `ultimate styles --all --output-dir <dir>` to
+render all style options before delivery. Use `ultimate styles --list` to print
+registered style tokens without rendering figures.
+Use `--publication` for full review figures with title, subtitle, legend, grid,
+caption and panel labels, or `--minimal` for sparse figures with nonessential
+elements switched off. Each review set renders PCA, UMAP, volcano, heatmap, QC
+violin/bar, composition bar, dotplot, Kaplan-Meier and spatial scatter examples,
+plus `style_review_contact_sheet.png`, `figure_manifest.tsv`,
+`style_manifest.json` and `layout_qc.tsv`. Generated review images live in
+`style_reviews/` or the requested output directory and are intentionally not
+committed to Git.

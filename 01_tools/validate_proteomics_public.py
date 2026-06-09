@@ -111,8 +111,8 @@ def run_validation(
     manifest["slurm_job_name"] = manifest.get("slurm_job_name") or os.environ.get("SLURM_JOB_NAME", "")
     manifest["validation_note"] = (
         "Public LFQ-Analyst MaxQuant proteinGroups validation for the Ultimate proteomics abundance-table backend. "
-        "This is validation evidence only and is not customer delivery. Differential abundance uses the Python MVP "
-        "proxy table; limma remains the publication-grade handoff/backend target."
+        "This is validation evidence only and is not customer delivery. The publication preset records the guarded "
+        "proteomics.de.limma_optional backend status and keeps enrichment/PPI interpretation as handoff."
     )
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     return finalize_run_outputs(output_dir, manifest_path, manifest)
@@ -301,6 +301,7 @@ def _write_project_config(*, output_dir: Path, prepared: dict[str, Any]) -> Path
         "modules": {
             "proteomics": {
                 "enabled": True,
+                "preset": "publication",
                 "analysis_level": "validated_backend",
                 "is_demo": False,
                 "input_matrix": str(prepared["abundance_matrix"]),
@@ -314,7 +315,7 @@ def _write_project_config(*, output_dir: Path, prepared: dict[str, Any]) -> Path
                     "output_matrix": str(output_dir / "raw_qc" / "proteomics" / "objects" / "proteomics_standard_matrix.tsv"),
                     "output_object": str(output_dir / "raw_qc" / "proteomics" / "objects" / "proteomics_standard_object.json"),
                     "qc": {"enabled": True},
-                    "toolchain": ["MaxQuant proteinGroups import", "LFQ abundance matrix", "Python MVP differential abundance"],
+                    "toolchain": ["MaxQuant proteinGroups import", "LFQ abundance matrix", "proteomics.de.limma_optional publication backend"],
                 },
             }
         },

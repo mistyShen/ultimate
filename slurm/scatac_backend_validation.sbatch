@@ -115,6 +115,36 @@ if ! PYTHON_BIN="$(select_python)"; then
 fi
 
 export PYTHONPATH="$PROJECT_ROOT/src"
+CELL_METADATA="$OUT_DIR/config/cell_metadata.tsv"
+"$PYTHON_BIN" - "$INPUT_H5" "$CELL_METADATA" <<'PY'
+import sys
+from pathlib import Path
+
+import h5py
+import pandas as pd
+
+input_h5 = Path(sys.argv[1])
+out = Path(sys.argv[2])
+out.parent.mkdir(parents=True, exist_ok=True)
+with h5py.File(input_h5, "r") as handle:
+    barcodes = [
+        value.decode("utf-8") if isinstance(value, bytes) else str(value)
+        for value in handle["matrix"]["barcodes"][:]
+    ]
+limit = min(len(barcodes), int(__import__("os").environ.get("ULTIMATE_SCATAC_VALIDATION_CELLS", "1200")))
+barcodes = barcodes[:limit]
+split = max(2, limit // 2)
+labels = ["control" if idx < split else "treated" for idx in range(limit)]
+if labels.count("treated") < 2 and limit >= 4:
+    labels[-2:] = ["treated", "treated"]
+pd.DataFrame(
+    {
+        "cell_id": barcodes,
+        "condition": labels,
+        "validation_note": "validation-only synthetic condition labels for DAR backend smoke; not biological annotation",
+    }
+).to_csv(out, sep="\t", index=False)
+PY
 
 cat > "$OUT_DIR/config/project.yaml" <<YAML
 project:
@@ -131,13 +161,14 @@ samples:
       input_path: $INPUT_H5
 design:
   condition_column: condition
-  control: public_validation
-  case: public_validation
+  control: control
+  case: treated
 modules:
   scatac:
     enabled: true
-    preset: standard
+    preset: publication
     input_h5: $INPUT_H5
+    cell_metadata: $CELL_METADATA
     analysis_level: validated_backend
     public_dataset: true
     max_cells_object: ${ULTIMATE_SCATAC_MAX_CELLS_OBJECT:-3000}
