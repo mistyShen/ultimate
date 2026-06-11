@@ -320,8 +320,10 @@ for job in jobs:
     raw_status = ",".join(row.get("execution_status", "") for row in raw_rows) or "missing"
     rows.append({"job": job.name, "delivery_status": delivery_status, "raw_status": raw_status})
 ready = [row for row in rows if row["delivery_status"] == "ready"]
-raw_ready = [row for row in rows if "ready" in row["raw_status"]]
-blocked = [row for row in rows if row not in ready]
+raw_upstream_validated = [row for row in rows if "ready" in row["raw_status"]]
+blocked = [row for row in rows if "blocked" in row["raw_status"] or (row["delivery_status"] not in {"ready"} and "ready" not in row["raw_status"])]
+handoff_required = [row for row in rows if "handoff" in row["raw_status"] or "adapter" in row["raw_status"]]
+license_required = [row for row in rows if "license" in row["raw_status"] or "licensed" in row["raw_status"]]
 report_path.parent.mkdir(parents=True, exist_ok=True)
 lines = [
     "# Ultimate V4.2 raw-to-customer trial report",
@@ -329,9 +331,11 @@ lines = [
     f"- Suite stamp: `{stamp}`",
     "- Scope: controlled customer_delivery rehearsal; no real customer data.",
     f"- Jobs found: {len(rows)}",
-    f"- Customer packages ready: {len(ready)}",
-    f"- Raw upstream ready rows: {len(raw_ready)}",
-    f"- Blocked or handoff-required jobs: {len(blocked)}",
+    f"- ready: {len(ready)} customer package(s) passed delivery-check.",
+    f"- blocked: {len(blocked)} job(s) require dependency/input fixes before rerun.",
+    f"- handoff-required: {len(handoff_required)} job(s) require upstream handoff or adapter execution.",
+    f"- license-required: {len(license_required)} job(s) require user-provided licensed tool paths.",
+    f"- raw-upstream-validated: {len(raw_upstream_validated)} raw/semi-raw import evidence row(s) are ready.",
     "",
     "## Jobs",
 ]
@@ -343,6 +347,7 @@ PY
 
 "$CORE_ENV/bin/python" -m ultimate.cli batch-status \
   --batch-dir "$PROJECT_ROOT/jobs" \
+  --job-glob "v4_2_*_${STAMP}" \
   --output-dir "$PROJECT_ROOT/reports/batch_status_v4_2"
 
 if [[ "$DELIVERY_CHECK_FAILURES" -ne 0 ]]; then

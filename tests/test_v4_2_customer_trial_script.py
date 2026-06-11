@@ -17,6 +17,9 @@ def test_v4_2_customer_trial_script_scope_and_entries() -> None:
     assert "delivery_scope: customer_delivery" in text
     assert "delivery_mode: customer_delivery_rehearsal" in text
     assert "v4_2_customer_trial_report.md" in text
+    assert "raw-upstream-validated" in text
+    assert "license-required" in text
+    assert "handoff-required" in text
 
 
 def test_v4_2_customer_trial_uses_formal_customer_package_and_batch_status() -> None:
@@ -25,6 +28,7 @@ def test_v4_2_customer_trial_uses_formal_customer_package_and_batch_status() -> 
     assert "customer-package --run-dir" in text
     assert "delivery-check --run-dir" in text
     assert "batch-status" in text
+    assert '--job-glob "v4_2_*_${STAMP}"' in text
     assert "tool-completeness" in text
     assert "order-readiness" in text
     assert "storage_v4_2_latest" in text

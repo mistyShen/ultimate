@@ -180,9 +180,10 @@ def customer_package_command(run_dir: Path, output_dir: Path | None) -> None:
 @main.command("batch-status")
 @click.option("--batch-dir", type=click.Path(path_type=Path, exists=True, file_okay=False), required=True, help="Batch output directory or directory containing prepared jobs.")
 @click.option("--output-dir", type=click.Path(path_type=Path), default=None, help="Where batch status artifacts should be written. Defaults to --batch-dir.")
-def batch_status_command(batch_dir: Path, output_dir: Path | None) -> None:
+@click.option("--job-glob", default=None, help="Optional job directory glob used to limit status scans, for example 'v4_2_*_20260611T000000Z'.")
+def batch_status_command(batch_dir: Path, output_dir: Path | None, job_glob: str | None) -> None:
     """Summarize raw-upstream, run, customer-package, and delivery-check status for a batch."""
-    manifest = build_batch_status(batch_dir=batch_dir, output_dir=output_dir)
+    manifest = build_batch_status(batch_dir=batch_dir, output_dir=output_dir, job_glob=job_glob)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 

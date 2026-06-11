@@ -236,6 +236,37 @@ def test_batch_status_cli(tmp_path: Path) -> None:
     assert payload["rows"][0]["overall_status"] == "blocked"
 
 
+def test_batch_status_job_glob_limits_large_job_roots(tmp_path: Path) -> None:
+    jobs_root = tmp_path / "jobs"
+    for job_id in ("v4_2_rnaseq_trial_20260611", "v4_2_scrna_trial_20260611", "old_historical_job"):
+        job_dir = jobs_root / job_id
+        job_dir.mkdir(parents=True)
+        (job_dir / "job_manifest.json").write_text(json.dumps({"job_id": job_id}), encoding="utf-8")
+
+    manifest = build_batch_status(batch_dir=jobs_root, output_dir=tmp_path / "status", job_glob="v4_2_*_20260611")
+
+    assert manifest["job_count"] == 2
+    assert manifest["job_glob"] == "v4_2_*_20260611"
+    assert {row["job_id"] for row in manifest["rows"]} == {"v4_2_rnaseq_trial_20260611", "v4_2_scrna_trial_20260611"}
+
+
+def test_batch_status_cli_job_glob(tmp_path: Path) -> None:
+    jobs_root = tmp_path / "jobs"
+    for job_id in ("KEEP_A", "DROP_A"):
+        job_dir = jobs_root / job_id
+        job_dir.mkdir(parents=True)
+        (job_dir / "job_manifest.json").write_text(json.dumps({"job_id": job_id}), encoding="utf-8")
+
+    from click.testing import CliRunner
+
+    result = CliRunner().invoke(main, ["batch-status", "--batch-dir", str(jobs_root), "--job-glob", "KEEP_*"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["job_count"] == 1
+    assert payload["rows"][0]["job_id"] == "KEEP_A"
+
+
 def _write_project_config(path: Path, raw_counts: Path) -> Path:
     return dump_yaml(
         {

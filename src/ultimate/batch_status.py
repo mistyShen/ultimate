@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import fnmatch
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,13 +23,17 @@ BATCH_STATUS_COLUMNS = (
 )
 
 
-def build_batch_status(*, batch_dir: Path, output_dir: Path | None = None) -> dict[str, Any]:
+def build_batch_status(*, batch_dir: Path, output_dir: Path | None = None, job_glob: str | None = None) -> dict[str, Any]:
     batch_dir = batch_dir.expanduser().resolve()
     output_dir = (output_dir or batch_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    rows = [_status_row(job) for job in _job_dirs(batch_dir)]
+    rows = [_status_row(job) for job in _job_dirs(batch_dir, job_glob=job_glob)]
     if not rows and (batch_dir / "batch_manifest.json").exists():
-        rows = [_manifest_row(row) for row in _batch_manifest_rows(batch_dir / "batch_manifest.json")]
+        rows = [
+            _manifest_row(row)
+            for row in _batch_manifest_rows(batch_dir / "batch_manifest.json")
+            if _matches_job_glob(Path(str(row.get("job_dir") or row.get("job_id") or "")), job_glob)
+        ]
     table = output_dir / "batch_status.tsv"
     report = output_dir / "batch_status_report.md"
     _write_tsv(table, rows, BATCH_STATUS_COLUMNS)
@@ -37,6 +42,7 @@ def build_batch_status(*, batch_dir: Path, output_dir: Path | None = None) -> di
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "batch_dir": str(batch_dir),
         "output_dir": str(output_dir),
+        "job_glob": job_glob or "",
         "job_count": len(rows),
         "status_counts": {status: sum(1 for row in rows if row["overall_status"] == status) for status in sorted({row["overall_status"] for row in rows})},
         "delivery_allowed": False,
@@ -50,12 +56,30 @@ def build_batch_status(*, batch_dir: Path, output_dir: Path | None = None) -> di
     return manifest
 
 
-def _job_dirs(batch_dir: Path) -> list[Path]:
+def _job_dirs(batch_dir: Path, *, job_glob: str | None = None) -> list[Path]:
     if (batch_dir / "jobs").is_dir():
-        return sorted(path for path in (batch_dir / "jobs").iterdir() if path.is_dir())
+        return _filter_job_dirs(sorted(path for path in (batch_dir / "jobs").iterdir() if path.is_dir()), job_glob)
     if (batch_dir / "batch_manifest.json").exists():
-        return [Path(str(row.get("job_dir"))) for row in _batch_manifest_rows(batch_dir / "batch_manifest.json") if row.get("job_dir")]
-    return sorted(path for path in batch_dir.iterdir() if path.is_dir() and (path / "job_manifest.json").exists()) if batch_dir.is_dir() else []
+        return _filter_job_dirs(
+            [Path(str(row.get("job_dir"))) for row in _batch_manifest_rows(batch_dir / "batch_manifest.json") if row.get("job_dir")],
+            job_glob,
+        )
+    return (
+        _filter_job_dirs(sorted(path for path in batch_dir.iterdir() if path.is_dir() and (path / "job_manifest.json").exists()), job_glob)
+        if batch_dir.is_dir()
+        else []
+    )
+
+
+def _filter_job_dirs(paths: list[Path], job_glob: str | None) -> list[Path]:
+    return [path for path in paths if _matches_job_glob(path, job_glob)]
+
+
+def _matches_job_glob(path: Path, job_glob: str | None) -> bool:
+    if not job_glob:
+        return True
+    name = path.name or str(path)
+    return fnmatch.fnmatch(name, job_glob)
 
 
 def _status_row(job_dir: Path) -> dict[str, str]:
