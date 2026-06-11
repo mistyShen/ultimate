@@ -339,6 +339,8 @@ def _run_kind(path: Path, manifest: dict[str, Any]) -> str:
         if scope == "internal_rehearsal":
             return "production_rehearsal"
         if scope == "customer_delivery":
+            if _delivery_mode(manifest) == "customer_delivery_rehearsal":
+                return "customer_delivery_rehearsal"
             return "customer_delivery"
         return "prepared_job"
     if "validation_runs" in parts:
@@ -536,6 +538,21 @@ def _delivery_scope(manifest: dict[str, Any]) -> str:
         return str(approval["delivery_scope"])
     if manifest.get("delivery_scope"):
         return str(manifest["delivery_scope"])
+    return ""
+
+
+def _delivery_mode(manifest: dict[str, Any]) -> str:
+    gate = manifest.get("delivery_gate")
+    if isinstance(gate, dict) and gate.get("delivery_mode"):
+        return str(gate["delivery_mode"])
+    approval = manifest.get("production_approval")
+    if isinstance(approval, dict) and approval.get("delivery_mode"):
+        return str(approval["delivery_mode"])
+    project = manifest.get("project")
+    if isinstance(project, dict) and project.get("delivery_mode"):
+        return str(project["delivery_mode"])
+    if manifest.get("delivery_mode"):
+        return str(manifest["delivery_mode"])
     return ""
 
 

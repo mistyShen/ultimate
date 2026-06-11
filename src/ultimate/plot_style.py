@@ -422,6 +422,7 @@ STYLE_REGISTRY: dict[str, dict[str, Any]] = {
 
 CLINICAL_JOURNAL_STYLE: dict[str, Any] = STYLE_REGISTRY["soft_color"]
 _ACTIVE_STYLE: dict[str, Any] = {}
+_ACTIVE_FIGURE_OPTIONS: dict[str, Any] = {}
 
 DEFAULT_FIGURE_OPTIONS: dict[str, Any] = {
     "show_title": True,
@@ -465,6 +466,21 @@ def figure_options(preset: str = "publication", overrides: dict[str, Any] | None
     return {**FIGURE_OPTION_PRESETS[preset], **(overrides or {})}
 
 
+def set_active_figure_options(options: dict[str, Any] | None = None) -> dict[str, Any]:
+    global _ACTIVE_FIGURE_OPTIONS
+    _ACTIVE_FIGURE_OPTIONS = figure_options("publication", options or {})
+    return dict(_ACTIVE_FIGURE_OPTIONS)
+
+
+def set_active_figure_options_from_config(config: dict[str, Any]) -> dict[str, Any]:
+    report = config.get("report") if isinstance(config.get("report"), dict) else {}
+    preset = str(report.get("figure_options_preset") or "publication")
+    overrides = report.get("figure_options") if isinstance(report.get("figure_options"), dict) else {}
+    global _ACTIVE_FIGURE_OPTIONS
+    _ACTIVE_FIGURE_OPTIONS = figure_options(preset, overrides)
+    return dict(_ACTIVE_FIGURE_OPTIONS)
+
+
 def get_style(style_id: str | None = None, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     key = str(style_id or "soft_color")
     base = STYLE_REGISTRY.get(key) or next((style for style in STYLE_REGISTRY.values() if style["style_id"] == key), None)
@@ -488,9 +504,10 @@ def set_active_style_from_config(config: dict[str, Any]) -> dict[str, Any]:
 
 def apply_clinical_journal_style(style: dict[str, Any] | None = None) -> dict[str, Any]:
     tokens = {**CLINICAL_JOURNAL_STYLE, **_ACTIVE_STYLE, **(style or {})}
+    opts = {**DEFAULT_FIGURE_OPTIONS, **_ACTIVE_FIGURE_OPTIONS}
     sns.set_theme(
         context="paper",
-        style="whitegrid",
+        style="whitegrid" if opts.get("show_grid") else "white",
         font=tokens["font_family"],
         rc={
             "figure.facecolor": tokens["background"],
@@ -501,19 +518,21 @@ def apply_clinical_journal_style(style: dict[str, Any] | None = None) -> dict[st
             "axes.titlecolor": tokens["text"],
             "grid.color": tokens["grid"],
             "grid.linewidth": 0.7,
-            "font.size": 11,
-            "axes.titlesize": 14,
-            "axes.labelsize": 11,
-            "xtick.labelsize": 10,
-            "ytick.labelsize": 10,
-            "legend.fontsize": 10,
-            "legend.title_fontsize": 10,
+            "font.size": 12,
+            "axes.titlesize": 15,
+            "axes.labelsize": 12,
+            "xtick.labelsize": 11,
+            "ytick.labelsize": 11,
+            "legend.fontsize": 11,
+            "legend.title_fontsize": 11,
             "text.color": tokens["text"],
             "xtick.color": tokens["axis"],
             "ytick.color": tokens["axis"],
             "legend.frameon": False,
-            "axes.spines.top": False,
-            "axes.spines.right": False,
+            "axes.spines.top": bool(opts.get("show_spines")),
+            "axes.spines.right": bool(opts.get("show_spines")),
+            "axes.spines.left": bool(opts.get("show_spines")),
+            "axes.spines.bottom": bool(opts.get("show_spines")),
             "patch.edgecolor": tokens["grid"],
             "savefig.facecolor": tokens["background"],
             "savefig.bbox": "tight",
@@ -554,6 +573,7 @@ def write_style_manifest(output_dir: Path, style: dict[str, Any] | None = None) 
 
 def save_figure(path: Path, *, style: dict[str, Any] | None = None, formats: tuple[str, ...] = ("png",), close: bool = True) -> list[str]:
     tokens = apply_clinical_journal_style(style)
+    _apply_active_figure_options_to_current_figure()
     path.parent.mkdir(parents=True, exist_ok=True)
     saved = []
     for fmt in formats:
@@ -563,6 +583,39 @@ def save_figure(path: Path, *, style: dict[str, Any] | None = None, formats: tup
     if close:
         plt.close()
     return saved
+
+
+def generate_run_figure_qc(run_dir: Path, *, style: dict[str, Any] | None = None) -> dict[str, Any]:
+    run_dir = run_dir.resolve()
+    tokens = {**CLINICAL_JOURNAL_STYLE, **_ACTIVE_STYLE, **(style or {})}
+    figures_root = run_dir / "results" / "figures"
+    tables_root = run_dir / "results" / "tables"
+    tables_root.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, Any]] = []
+    layout_rows: list[dict[str, str]] = []
+    if figures_root.exists():
+        for path in sorted(figures_root.rglob("*")):
+            if not path.is_file() or path.suffix.lower() not in {".png", ".pdf", ".svg", ".jpg", ".jpeg"}:
+                continue
+            rel = path.relative_to(figures_root)
+            module = rel.parts[0] if len(rel.parts) > 1 else ""
+            figure_id = "_".join(rel.with_suffix("").parts)
+            layout = _file_layout_qc(figure_id, path)
+            layout_rows.append(layout)
+            rows.append(_row(figure_id, module, path.stem, path, _short_title(path.stem), tokens, layout))
+    figure_manifest = write_figure_manifest(rows, tables_root)
+    layout_qc = _write_layout_qc(layout_rows, tables_root)
+    failed = [row for row in layout_rows if row.get("layout_status") == "layout_failed"]
+    warning = [row for row in layout_rows if row.get("layout_status") == "layout_warning"]
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": "ready" if not failed else "layout_failed",
+        "figure_count": len(rows),
+        "layout_warning_count": len(warning),
+        "layout_failed_count": len(failed),
+        "figure_manifest": str(figure_manifest),
+        "layout_qc": str(layout_qc),
+    }
 
 
 def write_figure_manifest(rows: list[dict[str, Any]], output_dir: Path) -> Path:
@@ -947,6 +1000,53 @@ def _write_layout_qc(rows: list[dict[str, str]], output_dir: Path) -> Path:
     path = output_dir / "layout_qc.tsv"
     pd.DataFrame(rows, columns=["figure_id", "path", "layout_status", "layout_warning"]).to_csv(path, sep="\t", index=False)
     return path
+
+
+def _apply_active_figure_options_to_current_figure() -> None:
+    opts = {**DEFAULT_FIGURE_OPTIONS, **_ACTIVE_FIGURE_OPTIONS}
+    fig = plt.gcf()
+    if not opts.get("show_title"):
+        if fig._suptitle is not None:
+            fig._suptitle.set_text("")
+        for ax in fig.axes:
+            ax.set_title("")
+    for ax in fig.axes:
+        if not opts.get("show_legend") and ax.get_legend() is not None:
+            ax.get_legend().remove()
+        ax.grid(bool(opts.get("show_grid")))
+        for spine in ax.spines.values():
+            spine.set_visible(bool(opts.get("show_spines")))
+        if not opts.get("show_labels"):
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+
+
+def _file_layout_qc(figure_id: str, path: Path) -> dict[str, str]:
+    warning = ""
+    status = "layout_pass"
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        return {"figure_id": figure_id, "path": str(path), "layout_status": "layout_failed", "layout_warning": f"missing_or_unreadable:{exc}"}
+    if size <= 0:
+        return {"figure_id": figure_id, "path": str(path), "layout_status": "layout_failed", "layout_warning": "empty_file"}
+    if path.suffix.lower() == ".png":
+        try:
+            image = plt.imread(str(path))
+            height, width = int(image.shape[0]), int(image.shape[1])
+        except Exception as exc:
+            return {"figure_id": figure_id, "path": str(path), "layout_status": "layout_failed", "layout_warning": f"png_unreadable:{exc}"}
+        if width < 480 or height < 320:
+            status = "layout_warning"
+            warning = f"small_canvas:{width}x{height}"
+    return {"figure_id": figure_id, "path": str(path), "layout_status": status, "layout_warning": warning}
+
+
+def _short_title(stem: str) -> str:
+    text = stem.replace("_", " ").replace("-", " ").strip()
+    if len(text) <= 64:
+        return text
+    return text[:61].rstrip() + "..."
 
 
 def _write_contact_sheet(rows: list[dict[str, str]], output_dir: Path, tokens: dict[str, Any], opts: dict[str, Any]) -> Path:

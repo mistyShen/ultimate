@@ -429,7 +429,7 @@ def _write_skip_outputs(*, tables_dir: Path, figures_dir: Path, objects_dir: Pat
     plt.text(0.5, 0.5, "method_tools skipped", ha="center", va="center")
     plt.axis("off")
     plt.tight_layout()
-    plt.savefig(figure, dpi=160)
+    save_figure(figure, close=False)
     plt.close()
     obj = objects_dir / "cellxgene_ready.h5ad"
     obj.write_text(json.dumps({**base, "status": "skipped_missing_input"}, ensure_ascii=False), encoding="utf-8")

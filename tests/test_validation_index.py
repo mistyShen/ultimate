@@ -406,6 +406,64 @@ def test_validation_index_includes_prepared_jobs_and_delivery_scope_priority(tmp
     assert row["has_slurm_evidence"] == "true"
 
 
+def test_validation_index_distinguishes_customer_delivery_rehearsal(tmp_path: Path) -> None:
+    root = tmp_path / "ultimate"
+    run = root / "jobs" / "V4_ALPHA" / "runs" / "V4_ALPHA"
+    (run / "reports").mkdir(parents=True)
+    (run / "logs").mkdir(parents=True)
+    (run / "results" / "figures").mkdir(parents=True)
+    (run / "results" / "tables").mkdir(parents=True)
+    (run / "objects").mkdir(parents=True)
+    (run / "reports" / "report.html").write_text("<html></html>", encoding="utf-8")
+    (run / "reports" / "methods.md").write_text("methods", encoding="utf-8")
+    (run / "logs" / "run.log").write_text("ok", encoding="utf-8")
+    (run / "results" / "figures" / "pca.png").write_text("png", encoding="utf-8")
+    (run / "results" / "tables" / "qc.tsv").write_text("a\n1\n", encoding="utf-8")
+    (run / "objects" / "object.rds").write_text("object", encoding="utf-8")
+    (run / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "module": "rnaseq",
+                "status": "ready",
+                "analysis_level": "production_backend",
+                "is_demo": False,
+                "is_stub": False,
+                "delivery_allowed": True,
+                "validation_evidence_allowed": True,
+                "slurm_job_id": "456",
+                "production_approval": {
+                    "approved": True,
+                    "approved_by": "pytest",
+                    "approved_at": "2026-06-11T00:00:00Z",
+                    "project_id": "V4_ALPHA",
+                    "input_path": str(run / "config.yaml"),
+                    "output_dir": str(run),
+                    "delivery_scope": "customer_delivery",
+                    "delivery_mode": "customer_delivery_rehearsal",
+                    "reason": "pytest",
+                },
+                "delivery_gate": {
+                    "status": "ready",
+                    "delivery_allowed": True,
+                    "approval_status": "approved",
+                    "delivery_scope": "customer_delivery",
+                    "delivery_mode": "customer_delivery_rehearsal",
+                },
+                "figures": ["results/figures/pca.png"],
+                "tables": ["results/tables/qc.tsv"],
+                "objects": {"rds": "objects/object.rds"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_validation_index(root=root, output_dir=tmp_path / "index")
+
+    rows = json.loads(Path(result["validation_index_json"]).read_text(encoding="utf-8"))
+    assert rows[0]["run_kind"] == "customer_delivery_rehearsal"
+    assert rows[0]["delivery_scope"] == "customer_delivery"
+
+
 def test_validation_index_demo_or_smoke_cannot_be_ready_for_delivery(tmp_path: Path) -> None:
     root = tmp_path / "ultimate"
     for name, level in {"demo": "demo_result", "smoke": "smoke_backend"}.items():

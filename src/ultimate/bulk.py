@@ -666,6 +666,7 @@ def _run_proteomics_limma_backend(
         "status": "ready",
         "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
         "skip_reason": "",
+        "interpretation_warning": warning,
         "artifacts": {
             "tables": {
                 "limma_de_results": str(paths["result"]),
@@ -737,6 +738,7 @@ def _run_methylation_dmp_backend(
         "status": "ready",
         "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
         "skip_reason": "",
+        "interpretation_warning": warning,
         "artifacts": {
             "tables": {
                 "dmp_limma_results": str(paths["result"]),
@@ -837,6 +839,7 @@ def _write_bulk_backend_skip(paths: dict[str, Path], backend_id: str, analysis_f
         "status": "skipped",
         "analysis_level": analysis_fields.get("analysis_level") or "smoke_backend",
         "skip_reason": reason,
+        "interpretation_warning": warning,
         "artifacts": {
             "tables": {
                 "result": str(paths["result"]),
@@ -961,6 +964,7 @@ def _bulk_backend_execution_row(result: dict[str, Any], analysis_fields: dict[st
         "validation_evidence_allowed": bool(analysis_fields.get("validation_evidence_allowed") is True and ready),
         "reason": "" if ready else str(result.get("skip_reason") or "backend_not_ready"),
         "backend_slurm_job_id": "",
+        "interpretation_warning": str(result.get("interpretation_warning") or result.get("method_boundary") or ""),
     }
 
 

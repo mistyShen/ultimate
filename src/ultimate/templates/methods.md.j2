@@ -10,6 +10,11 @@
 - 输出目录：`{{ manifest.output_dir }}`
 - Preflight 状态：`{{ preflight.status }}`
 - 出图风格：`{{ manifest.figure_style.style_cn | default("临床期刊版") }}`（白底、柔彩主色、低饱和连续色条）；审阅图清单：`{{ manifest.style_review.figure_manifest }}`
+{% set figure_qc = manifest.get("figure_qc") or {} %}
+{% set figure_options = manifest.get("figure_options") or {} %}
+- 真实图表清单：`{{ figure_qc.get("figure_manifest", "not_recorded") }}`
+- 布局 QA：`{{ figure_qc.get("layout_qc", "not_recorded") }}`；图表数：`{{ figure_qc.get("figure_count", 0) }}`；布局警告：`{{ figure_qc.get("layout_warning_count", 0) }}`；布局失败：`{{ figure_qc.get("layout_failed_count", 0) }}`
+- 图形元素开关：title=`{{ figure_options.get("show_title", true) }}`；legend=`{{ figure_options.get("show_legend", true) }}`；legend_position=`{{ figure_options.get("legend_position", "outside_right") }}`；grid=`{{ figure_options.get("show_grid", true) }}`；colorbar=`{{ figure_options.get("show_colorbar", true) }}`
 
 ## 交付门控
 

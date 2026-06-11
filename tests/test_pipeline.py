@@ -76,6 +76,15 @@ def test_pipeline_generates_required_artifacts(tmp_path: Path) -> None:
     assert advanced["backend_count"] >= len(MODULE_ORDER)
     assert Path(advanced["table"]).exists()
     assert Path(advanced["manifest_path"]).exists()
+    figure_qc = run_manifest["figure_qc"]
+    assert figure_qc["status"] == "ready"
+    assert figure_qc["figure_count"] >= len(MODULE_ORDER)
+    assert Path(figure_qc["figure_manifest"]).exists()
+    assert Path(figure_qc["layout_qc"]).exists()
+    figure_manifest_text = Path(figure_qc["figure_manifest"]).read_text(encoding="utf-8")
+    assert "figure_id\tmodule\tkind\tpath" in figure_manifest_text
+    assert "rnaseq" in figure_manifest_text
+    assert "scrna" in figure_manifest_text
     for module in run_manifest["modules"]:
         assert module["analysis_level"] in {"demo_result", "smoke_backend", "validated_backend", "production_backend"}
         assert module["delivery_allowed"] is False
@@ -205,6 +214,80 @@ def test_advanced_backend_execution_prefers_actual_backend_rows(tmp_path: Path) 
     assert rows[0]["execution_status"] == "skipped"
     assert rows[0]["validation_evidence_allowed"] == "false"
     assert rows[0]["skip_reason"] == "dependency_missing:Rscript"
+
+
+def test_advanced_backend_execution_marks_completed_primary_backend_ready(tmp_path: Path) -> None:
+    manifest = _write_advanced_backend_execution(
+        tmp_path,
+        [
+            {
+                "module": "rnaseq",
+                "status": "complete_bulk_backend",
+                "analysis_level": "production_backend",
+                "delivery_allowed": True,
+                "validation_evidence_allowed": True,
+                "backend_id": "rnaseq.matrix.python_mvp",
+                "backend_slurm_job_id": "9406872",
+                "backend_plan": {
+                    "active_backends": [
+                        {
+                            "backend_id": "rnaseq.matrix.python_mvp",
+                            "backend_role": "default_backend",
+                            "backend_status": "fully_automatic_validated_entrypoint",
+                        }
+                    ]
+                },
+            }
+        ],
+    )
+
+    rows = manifest["rows"]
+    assert len(rows) == 1
+    assert rows[0]["execution_status"] == "ready"
+    assert rows[0]["skip_reason"] == ""
+    assert rows[0]["slurm_job_id"] == "9406872"
+
+
+def test_advanced_backend_execution_reads_module_backend_execution_rows(tmp_path: Path) -> None:
+    manifest = _write_advanced_backend_execution(
+        tmp_path,
+        [
+            {
+                "module": "proteomics",
+                "status": "complete_python_bulk_backend",
+                "analysis_level": "production_backend",
+                "delivery_allowed": True,
+                "validation_evidence_allowed": True,
+                "backend_id": "proteomics.default.abundance_python_mvp",
+                "backend_plan": {
+                    "active_backends": [
+                        {
+                            "backend_id": "proteomics.de.limma_optional",
+                            "backend_role": "optional_backend",
+                            "backend_status": "fully_automatic_validated_entrypoint",
+                        }
+                    ],
+                    "interpretation_warnings": ["protein abundance statistics, not mechanism proof"],
+                },
+                "backend_execution": [
+                    {
+                        "backend_id": "proteomics.de.limma_optional",
+                        "status": "ready",
+                        "analysis_level": "production_backend",
+                        "delivery_allowed": True,
+                        "validation_evidence_allowed": True,
+                        "skip_reason": "",
+                    }
+                ],
+            }
+        ],
+    )
+
+    rows = manifest["rows"]
+    assert len(rows) == 1
+    assert rows[0]["backend_id"] == "proteomics.de.limma_optional"
+    assert rows[0]["execution_status"] == "ready"
+    assert rows[0]["interpretation_warning"] == "protein abundance statistics, not mechanism proof"
 
 
 def test_delivery_index_skips_zero_byte_artifacts(tmp_path: Path) -> None:

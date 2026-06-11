@@ -492,6 +492,8 @@ def _write_job_level_delivery(run_dir: Path, repro_manifest: dict[str, Any], rep
         "methods_md": _copy_if_exists(run_dir / "reports" / "methods.md", deliverables_dir / "latest_methods.md"),
         "report_manifest": _copy_if_exists(run_dir / "reports" / "report_manifest.json", deliverables_dir / "latest_report_manifest.json"),
         "delivery_index": _copy_if_exists(run_dir / "delivery_index.tsv", deliverables_dir / "latest_delivery_index.tsv"),
+        "figure_manifest": _copy_if_exists(run_dir / "results" / "tables" / "figure_manifest.tsv", deliverables_dir / "latest_figure_manifest.tsv"),
+        "layout_qc": _copy_if_exists(run_dir / "results" / "tables" / "layout_qc.tsv", deliverables_dir / "latest_layout_qc.tsv"),
         "rerun_script": _copy_if_exists(run_dir / "reproducible_code" / "rerun.sh", package_dir / "rerun.sh"),
         "repro_readme": _copy_if_exists(run_dir / "reproducible_code" / "README.md", package_dir / "README.md"),
         "config_snapshot": _copy_if_exists(run_dir / "reproducible_code" / "config_snapshot.yaml", package_dir / "config_snapshot.yaml"),

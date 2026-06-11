@@ -10,6 +10,69 @@ from typing import Any
 
 VALID_DELIVERY_SCOPES = {"internal_rehearsal", "customer_delivery"}
 REQUIRED_CATEGORIES = ("figure", "table", "object", "report", "reproducible_code")
+CUSTOMER_PACKAGE_FILES = (
+    "report.html",
+    "methods.md",
+    "delivery_index.tsv",
+    "sanitization.tsv",
+    "customer_delivery_sanitization.tsv",
+    "customer_package_manifest.tsv",
+    "readme_for_customer.md",
+)
+CUSTOMER_FORBIDDEN_TOKENS = (
+    "/shared",
+    "/Users",
+    "raw_links",
+    "production_approval",
+    "production approval",
+    "SLURM_JOB_ID",
+    "slurm_job_id",
+    ".conda",
+    "/jobs/",
+)
+CUSTOMER_FORBIDDEN_RAW_PATH_HINTS = (
+    "raw data path",
+    "raw_data_path",
+    "raw input path",
+    "raw_input_path",
+    "raw fastq path",
+    "raw_fastq_path",
+    "raw bam path",
+    "raw_bam_path",
+    "raw data dir",
+    "raw_data_dir",
+    "raw_dir",
+    "input_path",
+    "source_raw_path",
+)
+CUSTOMER_TEXT_SUFFIXES = {
+    ".csv",
+    ".html",
+    ".htm",
+    ".json",
+    ".log",
+    ".md",
+    ".tsv",
+    ".txt",
+    ".svg",
+    ".yaml",
+    ".yml",
+}
+CUSTOMER_WARNING_TOKENS = (
+    "warning",
+    "warn",
+    "interpretation",
+    "boundary",
+    "not causal",
+    "not direct",
+    "not mechanism",
+    "not proof",
+    "警示",
+    "解释边界",
+    "不是",
+    "不能",
+    "不得",
+)
 
 
 def run_delivery_check(run_dir: Path) -> dict[str, Any]:
@@ -37,7 +100,11 @@ def run_delivery_check(run_dir: Path) -> dict[str, Any]:
     software_versions = resolved_run_dir / "reproducible_code" / "software_versions.tsv"
     input_checksums = resolved_run_dir / "reproducible_code" / "input_checksums.tsv"
     rerun_script = resolved_run_dir / "reproducible_code" / "rerun.sh"
+    repro_manifest = resolved_run_dir / "reproducible_code" / "repro_manifest.json"
+    repro_readme = resolved_run_dir / "reproducible_code" / "README.md"
     advanced_manifest = resolved_run_dir / "results" / "tables" / "advanced_backend_execution_manifest.json"
+    figure_manifest = resolved_run_dir / "results" / "tables" / "figure_manifest.tsv"
+    layout_qc = resolved_run_dir / "results" / "tables" / "layout_qc.tsv"
 
     for check_id, path, note in (
         ("report_html", report_html, "reports/report.html must exist and be non-empty"),
@@ -46,7 +113,11 @@ def run_delivery_check(run_dir: Path) -> dict[str, Any]:
         ("software_versions", software_versions, "software_versions.tsv must exist and be non-empty"),
         ("input_checksums", input_checksums, "input_checksums.tsv must exist and be non-empty"),
         ("rerun_script", rerun_script, "rerun.sh must exist and be non-empty"),
+        ("repro_manifest", repro_manifest, "repro_manifest.json must exist and be non-empty"),
+        ("repro_readme", repro_readme, "reproducible README.md must exist and be non-empty"),
         ("advanced_backend_manifest", advanced_manifest, "advanced backend execution manifest must exist and be non-empty"),
+        ("figure_manifest", figure_manifest, "figure_manifest.tsv must exist and be non-empty"),
+        ("layout_qc", layout_qc, "layout_qc.tsv must exist and be non-empty"),
     ):
         _check(rows, check_id, _nonempty(path), path, note)
 
@@ -54,8 +125,16 @@ def run_delivery_check(run_dir: Path) -> dict[str, Any]:
         _check_delivery_index(rows, delivery_index)
     if _nonempty(advanced_manifest):
         _check_advanced_backend_manifest(rows, advanced_manifest, manifest)
+    if _nonempty(repro_manifest):
+        _check_repro_manifest(rows, repro_manifest)
+    if _nonempty(figure_manifest):
+        _check_figure_manifest(rows, figure_manifest)
+    if _nonempty(layout_qc):
+        _check_layout_qc(rows, layout_qc)
     if _nonempty(report_html) and _nonempty(methods_md):
         _check_report_warnings(rows, report_html, methods_md)
+    if manifest and _delivery_scope(manifest) == "customer_delivery":
+        _check_customer_delivery_package(rows, resolved_run_dir, job_dir)
 
     status = "ready" if all(row["status"] == "pass" for row in rows) else "blocked"
     blockers = [row["check_id"] for row in rows if row["status"] != "pass"]
@@ -98,8 +177,11 @@ def _resolve_run_dir(path: Path) -> tuple[Path, Path | None]:
 def _check_production_approval(rows: list[dict[str, Any]], manifest: dict[str, Any], path: Path) -> None:
     approval = manifest.get("production_approval") if isinstance(manifest.get("production_approval"), dict) else {}
     scope = str(approval.get("delivery_scope") or manifest.get("delivery_scope") or "")
+    mode = str(approval.get("delivery_mode") or manifest.get("delivery_mode") or "")
     _check(rows, "production_approval_approved", approval.get("approved") is True, path, "production approval must be approved=true")
     _check(rows, "delivery_scope_valid", scope in VALID_DELIVERY_SCOPES, path, "delivery_scope must be internal_rehearsal or customer_delivery")
+    if scope == "customer_delivery":
+        _check(rows, "delivery_mode_customer_declared", bool(mode), path, "customer_delivery packages must declare delivery_mode")
     for field in ("approved_by", "approved_at", "project_id", "input_path", "output_dir", "reason"):
         _check(rows, f"production_approval_{field}", bool(str(approval.get(field) or "")), path, f"production approval must include {field}")
     input_path = Path(str(approval.get("input_path") or ""))
@@ -147,15 +229,58 @@ def _check_advanced_backend_manifest(rows: list[dict[str, Any]], path: Path, man
         for module in (manifest.get("modules") if isinstance(manifest.get("modules"), list) else [])
         if isinstance(module, dict)
     }
-    if module_names & {"scrna", "scatac"}:
-        _check(rows, "advanced_backend_rows_present", bool(rows_payload), path, "scrna/scatac delivery must include backend execution rows")
-        unresolved = [
-            row
-            for row in rows_payload
-            if str(row.get("execution_status") or "") == "registered_active"
-            and str(row.get("backend_registry_status") or "").startswith("fully_automatic")
-        ]
-        _check(rows, "advanced_backend_no_unresolved_active_rows", not unresolved, path, "fully automatic active backend rows must be executed or explicitly skipped")
+    _check(rows, "advanced_backend_rows_present", bool(rows_payload), path, "production delivery must include backend execution rows")
+    unresolved = [
+        row
+        for row in rows_payload
+        if str(row.get("execution_status") or "") == "registered_active"
+        and str(row.get("backend_registry_status") or "").startswith("fully_automatic")
+    ]
+    _check(rows, "advanced_backend_no_unresolved_active_rows", not unresolved, path, "fully automatic active backend rows must be executed or explicitly skipped")
+    unexplained_skips = [
+        row
+        for row in rows_payload
+        if str(row.get("execution_status") or "") in {"skipped", "partial", "blocked"}
+        and not str(row.get("skip_reason") or "").strip()
+    ]
+    _check(rows, "advanced_backend_skips_explained", not unexplained_skips, path, "skipped/partial backend rows must include skip_reason")
+    automatic_rows = [
+        row
+        for row in rows_payload
+        if str(row.get("backend_registry_status") or "").startswith("fully_automatic")
+        or str(row.get("execution_status") or "") in {"ready", "skipped"}
+    ]
+    missing_warnings = [
+        row
+        for row in automatic_rows
+        if not str(row.get("interpretation_warning") or "").strip()
+        and str(row.get("execution_status") or "") == "ready"
+    ]
+    _check(rows, "advanced_backend_warnings_present", not missing_warnings, path, "ready backend rows must include interpretation warnings")
+
+
+def _check_figure_manifest(rows: list[dict[str, Any]], path: Path) -> None:
+    indexed = _read_tsv(path)
+    _check(rows, "figure_manifest_rows_present", bool(indexed), path, "figure manifest must include at least one figure")
+    bad_paths = [row for row in indexed if not _nonempty(Path(str(row.get("path") or "")))]
+    _check(rows, "figure_manifest_paths_nonempty", not bad_paths, path, "all figure manifest paths must exist and be non-empty")
+
+
+def _check_layout_qc(rows: list[dict[str, Any]], path: Path) -> None:
+    indexed = _read_tsv(path)
+    _check(rows, "layout_qc_rows_present", bool(indexed), path, "layout QC must include at least one figure")
+    failed = [row for row in indexed if str(row.get("layout_status") or "") == "layout_failed"]
+    warnings = [row for row in indexed if str(row.get("layout_status") or "") == "layout_warning"]
+    _check(rows, "layout_qc_no_failed", not failed, path, "layout QC must not contain layout_failed rows")
+    _check(rows, "layout_qc_no_warnings", not warnings, path, "layout QC must not contain layout_warning rows for delivery")
+
+
+def _check_repro_manifest(rows: list[dict[str, Any]], path: Path) -> None:
+    payload = _read_json(path)
+    _check(rows, "repro_manifest_valid", bool(payload), path, "repro manifest must be valid JSON")
+    for key in ("rerun_script", "software_versions", "input_checksums", "delivery_index"):
+        target = Path(str(payload.get(key) or ""))
+        _check(rows, f"repro_manifest_{key}", _nonempty(target), path, f"repro manifest {key} must point to a non-empty file")
 
 
 def _check_report_warnings(rows: list[dict[str, Any]], report_html: Path, methods_md: Path) -> None:
@@ -164,6 +289,99 @@ def _check_report_warnings(rows: list[dict[str, Any]], report_html: Path, method
     _check(rows, "report_has_delivery_gate", "delivery_allowed" in text or "交付许可" in text, report_html, "report/methods must show delivery permission")
     warning_tokens = ("warn", "警示", "不得", "不能", "not direct", "not causal", "不是")
     _check(rows, "report_has_interpretation_warning", any(token in text for token in warning_tokens), report_html, "report/methods must include interpretation or delivery warnings")
+
+
+def _delivery_scope(manifest: dict[str, Any]) -> str:
+    approval = manifest.get("production_approval") if isinstance(manifest.get("production_approval"), dict) else {}
+    gate = manifest.get("delivery_gate") if isinstance(manifest.get("delivery_gate"), dict) else {}
+    return str(gate.get("delivery_scope") or approval.get("delivery_scope") or manifest.get("delivery_scope") or "")
+
+
+def _check_customer_delivery_package(rows: list[dict[str, Any]], run_dir: Path, job_dir: Path | None) -> None:
+    """Require a sanitized customer-facing package for true customer delivery.
+
+    Internal run manifests and reproducibility packages intentionally retain
+    paths and Slurm evidence. Customer delivery therefore needs a separate
+    sanitized surface that can be checked without weakening internal provenance.
+    """
+    customer_dir = (job_dir / "deliverables" / "customer") if job_dir else (run_dir / "deliverables" / "customer")
+    _check(rows, "customer_package_dir", customer_dir.exists(), customer_dir, "customer_delivery requires deliverables/customer")
+    package_paths = [customer_dir / name for name in CUSTOMER_PACKAGE_FILES]
+    for path in package_paths:
+        _check(rows, f"customer_package_{path.name}", _nonempty(path), path, f"customer package must include non-empty {path.name}")
+
+    for name in ("figures", "tables"):
+        directory = customer_dir / name
+        _check(rows, f"customer_package_{name}_dir", directory.is_dir(), directory, f"customer package must include {name}/")
+        _check(rows, f"customer_package_{name}_nonempty", _has_nonempty_file(directory), directory, f"customer package {name}/ must contain at least one non-empty file")
+
+    visible_paths = _customer_visible_text_files(customer_dir)
+    leaks = _customer_visible_leaks(visible_paths)
+    _check(rows, "customer_package_no_internal_path_leaks", not leaks, customer_dir, "customer-facing package must not expose server paths, raw_links, approval files, or Slurm internals")
+    _check(
+        rows,
+        "customer_package_interpretation_warning",
+        _customer_has_interpretation_warning(customer_dir),
+        customer_dir,
+        "customer-facing package must include an interpretation warning or boundary statement",
+    )
+    sanitization_path = customer_dir / "sanitization.tsv"
+    legacy_sanitization_path = customer_dir / "customer_delivery_sanitization.tsv"
+    if not sanitization_path.exists() and legacy_sanitization_path.exists():
+        sanitization_path = legacy_sanitization_path
+    if _nonempty(sanitization_path):
+        scan_rows = _read_tsv(sanitization_path)
+        _check(rows, "customer_sanitization_rows_present", bool(scan_rows), sanitization_path, "customer sanitization table must include checks")
+        failed = [row for row in scan_rows if str(row.get("status") or "").lower() not in {"pass", "passed", "ready"}]
+        _check(rows, "customer_sanitization_all_pass", not failed, sanitization_path, "customer sanitization checks must all pass")
+        expected = {"internal_path_exposure", "raw_path_exposure", "sensitive_metadata", "interpretation_warning"}
+        present = {str(row.get("check_id") or "") for row in scan_rows}
+        _check(rows, "customer_sanitization_required_checks", expected.issubset(present), sanitization_path, "customer sanitization table must cover internal paths, raw paths, sensitive metadata, and warnings")
+    package_manifest = customer_dir / "customer_package_manifest.tsv"
+    if _nonempty(package_manifest):
+        package_rows = _read_tsv(package_manifest)
+        _check(rows, "customer_package_manifest_rows_present", bool(package_rows), package_manifest, "customer package manifest must list customer-visible files")
+        bad_visibility = [
+            row
+            for row in package_rows
+            if str(row.get("customer_visible") or "").lower() not in {"true", "yes", "1"}
+            or str(row.get("sanitized") or "").lower() not in {"true", "yes", "1", "pass", "passed"}
+        ]
+        _check(rows, "customer_package_manifest_visible_sanitized", not bad_visibility, package_manifest, "customer package manifest rows must be customer-visible and sanitized")
+
+
+def _has_nonempty_file(directory: Path) -> bool:
+    return directory.is_dir() and any(path.is_file() and path.stat().st_size > 0 for path in directory.rglob("*"))
+
+
+def _customer_visible_text_files(customer_dir: Path) -> list[Path]:
+    if not customer_dir.is_dir():
+        return []
+    return sorted(
+        path
+        for path in customer_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() in CUSTOMER_TEXT_SUFFIXES
+    )
+
+
+def _customer_visible_leaks(paths: list[Path]) -> list[str]:
+    leaks: list[str] = []
+    for path in paths:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        lower_text = text.lower()
+        for token in CUSTOMER_FORBIDDEN_TOKENS:
+            if token.lower() in lower_text:
+                leaks.append(f"{path}:{token}")
+        for token in CUSTOMER_FORBIDDEN_RAW_PATH_HINTS:
+            if token in lower_text:
+                leaks.append(f"{path}:{token}")
+    return leaks
+
+
+def _customer_has_interpretation_warning(customer_dir: Path) -> bool:
+    paths = [customer_dir / "report.html", customer_dir / "methods.md", customer_dir / "readme_for_customer.md"]
+    text = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in paths if path.exists()).lower()
+    return any(token in text for token in CUSTOMER_WARNING_TOKENS)
 
 
 def _write_outputs(run_dir: Path, job_dir: Path | None, payload: dict[str, Any]) -> None:

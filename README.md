@@ -316,6 +316,247 @@ bash /shared/shen/2026/ultimate/scripts/check_dev_entrypoint.sh --mode local
 Use `--mode remote` only for short shared-root checks through `hpc-run`; full
 validation and rehearsal execution still belong on Slurm.
 
+### V3.8 Multiomics Publication Rehearsal
+
+V3.8 connects the reviewed figure style rules, publication-grade backend rows,
+delivery QA and audit views into one production-style rehearsal suite. It does
+not make validation evidence customer-deliverable: only
+`production_backend + delivery_scope=internal_rehearsal + production_approval`
+plus a passing `delivery-check` is considered order-ready evidence.
+
+Submit the V3.8 suite with:
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/v3_8_multiomics_publication_rehearsal.sbatch
+```
+
+The suite writes one job tree per rehearsal under
+`/shared/shen/2026/ultimate/jobs/<job_id>/` and covers:
+
+- `rnaseq publication`
+- `scrna publication`
+- `proteomics publication`
+- `methylation publication`
+- `scatac publication`
+- `multiome publication`
+- `spatial publication`
+
+Every run is expected to include `run_manifest.json`, `reports/report.html`,
+`reports/methods.md`, `delivery_index.tsv`,
+`reports/delivery_check.json`, `reproducible_code/rerun.sh`,
+`reproducible_code/software_versions.tsv`,
+`reproducible_code/input_checksums.tsv`,
+`results/tables/figure_manifest.tsv`, and `results/tables/layout_qc.tsv`.
+The delivery QA gate also checks backend execution rows, Slurm job id,
+production approval, method-boundary warnings, non-empty figures/tables and the
+reproducible package manifest.
+
+After the suite, it refreshes:
+
+```text
+reports/validation_index_v38/
+audits/production_v38_latest/
+audits/backends_v38_latest/
+reports/v3_8_order_ready_report.md
+```
+
+`reports/v3_8_order_ready_report.md` is the quick answer to which publication
+presets are ready for internal rehearsal and which remain blocked or need
+manual review. The suite uses synthetic/lightweight rehearsal inputs generated
+inside each job directory and never overwrites raw data.
+
+### V4 Alpha Customer Delivery Loop
+
+V4 Alpha moves from internal rehearsal toward a controlled customer-delivery
+loop. It does not add new algorithms and it does not use real customer data by
+default. The purpose is to prove that customer-facing packages are separate
+from internal provenance and can pass stricter QA.
+
+Batch scaffolding is available for intake batches:
+
+```bash
+ultimate prepare-batch \
+  --batch config/batch_orders.yaml \
+  --root /shared/shen/2026/ultimate
+```
+
+`prepare-batch` only creates prepared job directories, command plans and a
+batch summary under `<root>/batches/<batch_id>/`. It does not submit Slurm,
+does not run analysis and writes `delivery_allowed=false` with
+`non_delivery_reason=batch_scaffold_not_analysis_run`.
+
+For true `delivery_scope=customer_delivery`, `delivery-check` additionally
+requires a sanitized customer package:
+
+```text
+jobs/<job_id>/deliverables/customer/report.html
+jobs/<job_id>/deliverables/customer/methods.md
+jobs/<job_id>/deliverables/customer/delivery_index.tsv
+jobs/<job_id>/deliverables/customer/sanitization.tsv
+jobs/<job_id>/deliverables/customer/customer_package_manifest.tsv
+```
+
+The customer package must not expose `/shared`, home paths, raw data paths,
+`raw_links`, approval files, Slurm internals, or other internal provenance.
+Those internal records remain in the run manifest and reproducibility package;
+the customer-facing package is a separate sanitized surface.
+
+`sanitization.tsv` is the standard customer-facing sanitization table name.
+Legacy packages may still provide `customer_delivery_sanitization.tsv`; tooling
+should continue to accept that legacy name for compatibility while new packages
+write `sanitization.tsv`.
+
+`customer_package_manifest.tsv` is the customer-facing package inventory. It
+lists the sanitized files included in the package, their customer-visible
+relative paths, artifact type, and brief notes. It must not include server
+paths, raw input paths, home paths, approval records, Slurm variables, or other
+internal provenance.
+
+The V4 Alpha rehearsal suite is expected to write:
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/v4_alpha_customer_delivery_rehearsal.sbatch
+```
+
+It covers controlled-data rehearsals for:
+
+- `rnaseq standard`
+- `scrna standard`
+- `proteomics standard`
+- `spatial standard`
+
+The suite uses `delivery_scope=customer_delivery` plus
+`delivery_mode=customer_delivery_rehearsal`, then writes:
+
+```text
+reports/v4_alpha_customer_delivery_report.md
+```
+
+and `validation-index` should classify controlled rehearsal jobs as
+`customer_delivery_rehearsal`, not as real customer delivery.
+
+### V4 Beta Customer Trial
+
+V4 Beta keeps the same customer-delivery boundary, but strengthens the last
+mile needed before real customer work:
+
+- customer packages must include sanitized `report.html`, `methods.md`,
+  `readme_for_customer.md`, `delivery_index.tsv`, standard `sanitization.tsv`
+  with legacy `customer_delivery_sanitization.tsv` accepted for compatibility,
+  `customer_package_manifest.tsv`, plus non-empty `figures/` and `tables/`
+  directories;
+- `delivery-check` rejects customer-facing files that expose internal paths,
+  raw path hints, approval files, Slurm internals, environment paths or missing
+  interpretation warnings;
+- batch scaffolds record `ready_to_run`, `needs_metadata`, `needs_license`,
+  `raw_upstream_required` or `blocked`, and each prepared job gets
+  `failure_recovery.md`;
+- raw upstream evidence is still lightweight and explicit: V4 Beta validates
+  small controlled `rnaseq` FASTQ and `scrna` 10x MTX import paths on Slurm,
+  without claiming to replace nf-core or licensed 10x tools.
+
+The V4 Beta trial suite is expected to write:
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/v4_beta_customer_trial.sbatch
+```
+
+It refreshes `validation-index`, `audit-production`, `audit-backends`, storage
+audit, and writes:
+
+```text
+reports/v4_beta_customer_trial_report.md
+```
+
+V4 Beta remains a controlled rehearsal, not real customer delivery.
+
+### V4.1 Tool Completeness And Customer Package Docs
+
+V4.1 documentation keeps tool-completeness evidence separate from customer
+delivery evidence. Tool readiness and disposition are documented through
+`docs/MULTIOMICS_IMPLEMENTATION_PLAN.md` and generated `audit-tools` /
+`audit-backends` outputs such as `tool_registry.tsv/json`; customer packages
+only expose sanitized delivery artifacts plus `customer_package_manifest.tsv`.
+
+The V4.1 local audit commands are:
+
+```bash
+ultimate tool-completeness \
+  --root /shared/shen/2026/ultimate \
+  --output-dir /shared/shen/2026/ultimate/audits/tool_completeness_latest
+
+ultimate order-readiness \
+  --root /shared/shen/2026/ultimate \
+  --output-dir /shared/shen/2026/ultimate/audits/order_readiness_latest
+```
+
+They write:
+
+```text
+audits/tool_completeness_latest/tool_completeness_matrix.tsv
+audits/tool_completeness_latest/tool_completeness_matrix.json
+audits/tool_completeness_latest/raw_upstream_readiness_matrix.tsv
+audits/tool_completeness_latest/customer_package_matrix.tsv
+audits/tool_completeness_latest/v4_1_tool_completeness_report.md
+audits/order_readiness_latest/module_order_readiness_matrix.tsv
+audits/order_readiness_latest/module_order_readiness_report.md
+```
+
+`tool_completeness_matrix.tsv` must have `missing_review=false` for every
+registered tool. Tools that are not retained still need an explicit disposition:
+`default_backend`, `optional_backend`, `handoff_adapter`,
+`licensed_path_detection`, `reference_only`, or `rejected_cleaned`.
+
+The V4.1 Slurm evidence scripts are:
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/v4_1_tool_completeness_audit.sbatch
+hpc-sbatch /shared/shen/2026/ultimate/slurm/v4_1_order_readiness_rehearsal.sbatch
+```
+
+The first script is audit-only and should not run heavy algorithms. The second
+script refreshes internal production-style rehearsal evidence for the next
+high-frequency modules: `vdj`, `cite_seq`, `methylation`, `scatac`,
+`multiome`, and `functional_state`.
+
+### V4.2 Raw-to-Customer Trial
+
+V4.2 moves from audit completeness to a controlled raw/standard-input customer
+rehearsal. The intended path is:
+
+```text
+triage -> prepare-job -> preflight -> raw-upstream-evidence -> run -> customer-package -> delivery-check -> batch-status
+```
+
+Two new CLI surfaces support that path:
+
+```bash
+ultimate customer-package --run-dir /shared/shen/2026/ultimate/jobs/<job_id>
+ultimate batch-status --batch-dir /shared/shen/2026/ultimate/jobs \
+  --output-dir /shared/shen/2026/ultimate/reports/batch_status_v4_2
+```
+
+`customer-package` builds a sanitized customer-facing package with
+`report.html`, `methods.md`, `delivery_index.tsv`, `sanitization.tsv`, legacy
+`customer_delivery_sanitization.tsv`, `customer_package_manifest.tsv`,
+`readme_for_customer.md`, and non-empty `figures/` and `tables/`. It redacts
+internal paths and raw-path hints before `delivery-check` evaluates the package.
+
+The V4.2 Slurm evidence suite is:
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/v4_2_raw_to_customer_trial.sbatch
+```
+
+It attempts a controlled `rnaseq FASTQ -> tiny count matrix -> customer package`
+chain and a controlled `scrna 10x MTX -> object/report -> customer package`
+chain. The RNA-seq raw stage is explicit: `rnaseq_fastq_tiny_counts` requires a
+tiny FASTA reference and a visible `salmon`, `featureCounts`, or `subread`
+command. If that dependency is missing, the raw stage must write a blocked
+manifest and `failure_recovery.md`; it must not silently fall back to fake
+evidence. V4.2 remains a controlled customer-delivery rehearsal, not a real
+customer data release.
+
 ## SCEPI Matrix Backend
 
 The SCEPI module is a matrix-level single-cell epigenomics MVP, not a full

@@ -125,6 +125,29 @@ def test_v3_4_order_ready_rehearsal_slurm_script_covers_next_modules() -> None:
     assert "audit-backends" in text
 
 
+def test_v3_8_multiomics_publication_rehearsal_slurm_script_covers_publication_modules() -> None:
+    script = Path(__file__).resolve().parents[1] / "slurm" / "v3_8_multiomics_publication_rehearsal.sbatch"
+    text = script.read_text(encoding="utf-8")
+
+    assert "set -euo pipefail" in text
+    assert "/share/home" not in text
+    assert "write_tabular_job rnaseq publication" in text
+    assert "write_scrna_job" in text
+    assert "write_tabular_job proteomics publication" in text
+    assert "write_tabular_job methylation publication" in text
+    assert "write_scatac_job" in text
+    assert "write_multiome_job" in text
+    assert "write_spatial_job" in text
+    assert "expression_matrix: $job_dir/samples/spatial_expression.tsv" in text
+    assert "production_approval.json" in text
+    assert "delivery_scope: internal_rehearsal" in text
+    assert "delivery-check --run-dir" in text
+    assert "validation-index" in text
+    assert "audit-production" in text
+    assert "audit-backends" in text
+    assert "v3_8_order_ready_report.md" in text
+
+
 def test_dev_entrypoint_check_script_has_local_and_remote_modes() -> None:
     script = Path(__file__).resolve().parents[1] / "scripts" / "check_dev_entrypoint.sh"
     text = script.read_text(encoding="utf-8")

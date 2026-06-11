@@ -20,6 +20,8 @@
   <p>生成时间：{{ generated_at }}</p>
   <p>物种：{{ manifest.project.organism }}；输出目录：<code>{{ manifest.output_dir }}</code></p>
   <p>出图风格：{{ manifest.figure_style.style_cn | default("临床期刊版") }}；审阅图清单：<code>{{ manifest.style_review.figure_manifest }}</code></p>
+  {% set figure_qc = manifest.get("figure_qc") or {} %}
+  <p>真实图表清单：<code>{{ figure_qc.get("figure_manifest", "not_recorded") }}</code>；布局 QA：<code>{{ figure_qc.get("layout_qc", "not_recorded") }}</code></p>
 
   <h2>交付门控</h2>
   {% set gate = delivery_gate or manifest.get("delivery_gate") or {} %}
@@ -84,6 +86,23 @@
     </tbody>
   </table>
   <p class="warn">高级算法结果必须按上述执行状态和限制警示解释；skip/blocked backend 不得写成已完成分析。</p>
+
+  <h2>统一出图 QA</h2>
+  {% set figure_options = manifest.get("figure_options") or {} %}
+  <table>
+    <tbody>
+      <tr><th>图表数量</th><td><code>{{ figure_qc.get("figure_count", 0) }}</code></td></tr>
+      <tr><th>布局警告</th><td><code>{{ figure_qc.get("layout_warning_count", 0) }}</code></td></tr>
+      <tr><th>布局失败</th><td><code>{{ figure_qc.get("layout_failed_count", 0) }}</code></td></tr>
+      <tr><th>图表 manifest</th><td><code>{{ figure_qc.get("figure_manifest", "not_recorded") }}</code></td></tr>
+      <tr><th>layout_qc</th><td><code>{{ figure_qc.get("layout_qc", "not_recorded") }}</code></td></tr>
+      <tr><th>标题</th><td><code>{{ figure_options.get("show_title", true) }}</code></td></tr>
+      <tr><th>图例</th><td><code>{{ figure_options.get("show_legend", true) }}</code> / <code>{{ figure_options.get("legend_position", "outside_right") }}</code></td></tr>
+      <tr><th>网格</th><td><code>{{ figure_options.get("show_grid", true) }}</code></td></tr>
+      <tr><th>色条</th><td><code>{{ figure_options.get("show_colorbar", true) }}</code></td></tr>
+    </tbody>
+  </table>
+  <p class="warn">正式交付会读取图表清单和 layout_qc；空图、缺图或明显布局风险会被 delivery-check 阻断。</p>
 
   <h2>复现信息</h2>
   {% set repro = manifest.get("reproducible_package") or {} %}

@@ -265,13 +265,14 @@ def _write_placeholder_png(path: Path, title: str) -> None:
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from ultimate.plot_style import save_figure
 
     fig, ax = plt.subplots(figsize=(5.5, 3.5))
     ax.text(0.5, 0.55, title, ha="center", va="center", fontsize=11)
     ax.text(0.5, 0.4, "See de_backend_status.tsv", ha="center", va="center", fontsize=9)
     ax.set_axis_off()
     fig.tight_layout()
-    fig.savefig(path, dpi=160)
+    save_figure(path, close=False)
     plt.close(fig)
 
 

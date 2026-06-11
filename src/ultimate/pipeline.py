@@ -13,7 +13,7 @@ from ultimate.approval_gate import load_production_approval
 from ultimate.config import dump_yaml, enabled_modules, load_analysis_request, load_config, load_samples, output_dir
 from ultimate.manifest_schema import build_delivery_gate
 from ultimate.modules import run_module
-from ultimate.plot_style import generate_style_review, set_active_style_from_config
+from ultimate.plot_style import generate_run_figure_qc, generate_style_review, set_active_figure_options_from_config, set_active_style_from_config
 from ultimate.preflight import run_preflight
 from ultimate.raw_qc import run_raw_qc
 from ultimate.report import build_report
@@ -36,6 +36,7 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
     for directory in ("results/figures", "results/tables", "objects", "reports", "logs", "raw_qc"):
         (out_dir / directory).mkdir(parents=True, exist_ok=True)
     active_style = set_active_style_from_config(config)
+    active_figure_options = set_active_figure_options_from_config(config)
     config_snapshot = dump_yaml(config, out_dir / "config_snapshot.yaml")
     preflight = run_preflight(config, write=True)
     if str(preflight.get("status", "")).startswith("blocked"):
@@ -94,6 +95,7 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
         production_approval=approval_summary,
         run_status=run_summary["status"],
     )
+    figure_qc = generate_run_figure_qc(out_dir, style=active_style)
     advanced_backend_execution = _write_advanced_backend_execution(out_dir, module_manifests)
     run_level_fields = _aggregate_run_level_fields(module_manifests, delivery_gate)
     manifest = {
@@ -116,6 +118,8 @@ def run_pipeline(config: dict[str, Any], *, config_path: Path | None = None, pro
         },
         "preflight": preflight,
         "figure_style": active_style,
+        "figure_options": active_figure_options,
+        "figure_qc": figure_qc,
         "style_review": style_review,
         "production_approval": approval_summary,
         "delivery_gate": delivery_gate,
@@ -146,13 +150,25 @@ def _write_advanced_backend_execution(run_dir: Path, module_manifests: list[dict
     tables_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    default_warning = "Backend outputs are statistical or computational evidence and must be interpreted with module-specific method boundaries; they are not standalone mechanism proof."
     for module in module_manifests:
         if not isinstance(module, dict):
             continue
         module_name = str(module.get("module") or "")
+        plan = module.get("backend_plan") if isinstance(module.get("backend_plan"), dict) else {}
+        active = plan.get("active_backends") if isinstance(plan.get("active_backends"), list) else []
+        warnings = plan.get("interpretation_warnings") if isinstance(plan.get("interpretation_warnings"), list) else []
+        warning_text = "; ".join(map(str, warnings))
+        warning_by_backend = {
+            str(backend.get("backend_id") or ""): str(backend.get("interpretation_warning") or warning_text)
+            for backend in active
+            if isinstance(backend, dict)
+        }
         backend_rows = []
         if isinstance(module.get("backend_execution_rows"), list):
             backend_rows = module.get("backend_execution_rows") or []
+        elif isinstance(module.get("backend_execution"), list):
+            backend_rows = module.get("backend_execution") or []
         elif isinstance(module.get("backend_status"), list):
             backend_rows = module.get("backend_status") or []
         for row in backend_rows:
@@ -172,15 +188,11 @@ def _write_advanced_backend_execution(run_dir: Path, module_manifests: list[dict
                     "analysis_level": str(row.get("analysis_level") or module.get("analysis_level") or "not_recorded"),
                     "delivery_allowed": str(bool(row.get("delivery_allowed") is True)).lower(),
                     "validation_evidence_allowed": str(bool(row.get("validation_evidence_allowed") is True)).lower(),
-                    "skip_reason": str(row.get("reason") or ""),
+                    "skip_reason": str(row.get("skip_reason") or row.get("reason") or ""),
                     "slurm_job_id": str(row.get("backend_slurm_job_id") or module.get("backend_slurm_job_id") or ""),
-                    "interpretation_warning": "",
+                    "interpretation_warning": str(row.get("interpretation_warning") or warning_by_backend.get(backend_id) or warning_text or default_warning),
                 }
             )
-        plan = module.get("backend_plan") if isinstance(module.get("backend_plan"), dict) else {}
-        active = plan.get("active_backends") if isinstance(plan.get("active_backends"), list) else []
-        warnings = plan.get("interpretation_warnings") if isinstance(plan.get("interpretation_warnings"), list) else []
-        warning_text = "; ".join(map(str, warnings))
         for backend in active:
             if not isinstance(backend, dict):
                 continue
@@ -188,19 +200,24 @@ def _write_advanced_backend_execution(run_dir: Path, module_manifests: list[dict
             if not backend_id or (module_name, backend_id) in seen:
                 continue
             seen.add((module_name, backend_id))
+            module_status = str(module.get("status") or "")
+            selected_backend_id = str(module.get("backend_id") or (module.get("backend") or {}).get("selected_backend_id") or "")
+            primary_backend_completed = backend_id == selected_backend_id and not module_status.startswith(("partial", "missing", "failed"))
+            execution_status = "ready" if primary_backend_completed else "registered_active"
+            skip_reason = "" if primary_backend_completed else str(backend.get("skip_reason") or module.get("backend_skip_reason") or "")
             rows.append(
                 {
                     "module": module_name,
                     "backend_id": backend_id,
                     "backend_role": str(backend.get("backend_role") or ""),
                     "backend_registry_status": str(backend.get("backend_status") or ""),
-                    "execution_status": "registered_active",
+                    "execution_status": execution_status,
                     "analysis_level": str(module.get("analysis_level") or "not_recorded"),
                     "delivery_allowed": str(bool(module.get("delivery_allowed") is True)).lower(),
                     "validation_evidence_allowed": str(bool(module.get("validation_evidence_allowed") is True)).lower(),
-                    "skip_reason": str(backend.get("skip_reason") or module.get("backend_skip_reason") or ""),
+                    "skip_reason": skip_reason,
                     "slurm_job_id": str(module.get("backend_slurm_job_id") or ""),
-                    "interpretation_warning": str(backend.get("interpretation_warning") or warning_text),
+                    "interpretation_warning": str(backend.get("interpretation_warning") or warning_text or default_warning),
                 }
             )
     columns = [
@@ -368,6 +385,7 @@ def _approval_summary(approval: dict[str, Any] | None) -> dict[str, Any]:
         "input_path": str(approval.get("input_path", "")),
         "output_dir": str(approval.get("output_dir", "")),
         "delivery_scope": str(approval.get("delivery_scope", "")),
+        "delivery_mode": str(approval.get("delivery_mode", "")),
         "reason": str(approval.get("reason", "")),
         "approval_path": str(approval.get("_approval_path", "")),
     }
@@ -441,6 +459,7 @@ def _aggregate_run_level_fields(module_manifests: list[dict[str, Any]], delivery
     gate_reason = str(delivery_gate.get("non_delivery_reason") or "")
     non_delivery_reason = "" if delivery_allowed else (gate_reason or ";".join(sorted(set(reasons))) or "not_marked_for_delivery")
     delivery_scope = str(delivery_gate.get("delivery_scope") or "not_applicable")
+    delivery_mode = str(delivery_gate.get("delivery_mode") or "not_applicable")
     return {
         "analysis_level": analysis_level,
         "is_demo": is_demo,
@@ -449,4 +468,5 @@ def _aggregate_run_level_fields(module_manifests: list[dict[str, Any]], delivery
         "validation_evidence_allowed": validation_evidence_allowed,
         "non_delivery_reason": non_delivery_reason,
         "delivery_scope": delivery_scope,
+        "delivery_mode": delivery_mode,
     }

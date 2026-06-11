@@ -6,8 +6,11 @@ from pathlib import Path
 import click
 
 from ultimate.approval_gate import load_production_approval
+from ultimate.batch import prepare_batch
+from ultimate.batch_status import build_batch_status
 from ultimate.config import load_config
 from ultimate.constants import PROJECT_TYPES
+from ultimate.customer_package import build_customer_package
 from ultimate.demo import init_project
 from ultimate.delivery_check import run_delivery_check
 from ultimate.handoff_check import run_handoff_check
@@ -16,6 +19,7 @@ from ultimate.pipeline import run_pipeline_from_config
 from ultimate.plot_style import available_styles, generate_style_review, set_active_style
 from ultimate.preflight import run_preflight
 from ultimate.production_audit import run_production_audit
+from ultimate.raw_upstream import run_raw_upstream_evidence
 from ultimate.report import build_report
 from ultimate.reproducibility import export_reproducible_package
 from ultimate.singlecell_audit import run_singlecell_audit
@@ -67,6 +71,20 @@ def prepare_job_command(
             run_mode=run_mode,
         )
     except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("prepare-batch")
+@click.option("--batch", "batch_path", type=click.Path(path_type=Path, exists=True, dir_okay=False), required=True)
+@click.option("--root", type=click.Path(path_type=Path), default=None, help="Override batch root. Defaults to the root declared in the batch file.")
+@click.option("--output-dir", type=click.Path(path_type=Path), default=None, help="Where batch scaffold artifacts should be written.")
+@click.option("--run-mode", type=click.Choice(["production", "interactive"]), default=None, help="Override run_mode for all jobs unless a job overrides it.")
+def prepare_batch_command(batch_path: Path, root: Path | None, output_dir: Path | None, run_mode: str | None) -> None:
+    """Scaffold multiple prepared jobs from a batch request without running analysis."""
+    try:
+        manifest = prepare_batch(batch_path=batch_path, root=root, output_dir=output_dir, run_mode=run_mode)
+    except (OSError, ValueError, TypeError) as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
@@ -148,6 +166,26 @@ def delivery_check_command(run_dir: Path) -> None:
         raise click.ClickException("delivery-check blocked: " + ",".join(manifest.get("blockers") or []))
 
 
+@main.command("customer-package")
+@click.option("--run-dir", type=click.Path(path_type=Path, exists=True, file_okay=False), required=True, help="Production run directory or prepared job directory.")
+@click.option("--output-dir", type=click.Path(path_type=Path), default=None, help="Where sanitized customer-facing files should be written.")
+def customer_package_command(run_dir: Path, output_dir: Path | None) -> None:
+    """Build a sanitized customer-facing package from a production run."""
+    manifest = build_customer_package(run_dir=run_dir, output_dir=output_dir)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+    if manifest.get("status") != "ready":
+        raise click.ClickException("customer-package blocked: sanitization checks failed")
+
+
+@main.command("batch-status")
+@click.option("--batch-dir", type=click.Path(path_type=Path, exists=True, file_okay=False), required=True, help="Batch output directory or directory containing prepared jobs.")
+@click.option("--output-dir", type=click.Path(path_type=Path), default=None, help="Where batch status artifacts should be written. Defaults to --batch-dir.")
+def batch_status_command(batch_dir: Path, output_dir: Path | None) -> None:
+    """Summarize raw-upstream, run, customer-package, and delivery-check status for a batch."""
+    manifest = build_batch_status(batch_dir=batch_dir, output_dir=output_dir)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
 @main.command("handoff-check")
 @click.option(
     "--root",
@@ -168,6 +206,38 @@ def handoff_check_command(root: Path, output_dir: Path | None) -> None:
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
     if manifest.get("status") != "ready":
         raise click.ClickException("handoff-check blocked: " + ",".join(manifest.get("blockers") or []))
+
+
+@main.command("raw-upstream-evidence")
+@click.option("--module", "module_name", type=click.Choice(["rnaseq", "scrna"]), required=True)
+@click.option("--input-path", type=click.Path(path_type=Path), required=True)
+@click.option("--samplesheet", type=click.Path(path_type=Path), default=None)
+@click.option("--output-dir", type=click.Path(path_type=Path), required=True)
+@click.option("--stage", default=None, help="Optional stage label recorded in the raw upstream manifest.")
+@click.option("--tiny-reference", type=click.Path(path_type=Path), default=None, help="Tiny FASTA/reference required for rnaseq_fastq_tiny_counts.")
+@click.option("--quant-tool", default=None, help="Quant/count command to require for rnaseq_fastq_tiny_counts: salmon, featureCounts, or subread.")
+def raw_upstream_evidence_command(
+    module_name: str,
+    input_path: Path,
+    samplesheet: Path | None,
+    output_dir: Path,
+    stage: str | None,
+    tiny_reference: Path | None,
+    quant_tool: str | None,
+) -> None:
+    """Write lightweight Slurm evidence that raw/semi-raw inputs are importable."""
+    manifest = run_raw_upstream_evidence(
+        module=module_name,
+        input_path=input_path,
+        samplesheet=samplesheet,
+        output_dir=output_dir,
+        stage=stage,
+        tiny_reference=tiny_reference,
+        quant_tool=quant_tool,
+    )
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+    if manifest.get("status") != "ready":
+        raise click.ClickException("raw-upstream-evidence blocked: " + str(manifest.get("blocked_reason") or "unknown"))
 
 
 @main.command("audit-singlecell")
@@ -312,6 +382,48 @@ def audit_backends_command(root: Path, output_dir: Path | None) -> None:
     from ultimate.backend_registry import run_audit_backends
 
     manifest = run_audit_backends(root=root, output_dir=output_dir)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("tool-completeness")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    default=Path("/shared/shen/2026/ultimate"),
+    show_default=True,
+    help="Ultimate project root on shared storage.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Where V4.1 tool completeness artifacts should be written.",
+)
+def tool_completeness_command(root: Path, output_dir: Path | None) -> None:
+    from ultimate.completeness import run_tool_completeness
+
+    manifest = run_tool_completeness(root=root, output_dir=output_dir)
+    click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+@main.command("order-readiness")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    default=Path("/shared/shen/2026/ultimate"),
+    show_default=True,
+    help="Ultimate project root on shared storage.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Where V4.1 module order-readiness artifacts should be written.",
+)
+def order_readiness_command(root: Path, output_dir: Path | None) -> None:
+    from ultimate.completeness import run_module_order_readiness
+
+    manifest = run_module_order_readiness(root=root, output_dir=output_dir)
     click.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 
