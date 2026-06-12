@@ -25,7 +25,9 @@ bash "$PROJECT_ROOT/slurm/v4_2_raw_to_customer_trial.sbatch"
 
 # Pilot B: module breadth coverage through existing lightweight rehearsal suites.
 ULTIMATE_V38_REHEARSAL_STAMP="$STAMP" bash "$PROJECT_ROOT/slurm/v3_8_multiomics_publication_rehearsal.sbatch"
-ULTIMATE_V41_REHEARSAL_STAMP="$STAMP" bash "$PROJECT_ROOT/slurm/v4_1_order_readiness_rehearsal.sbatch"
+ULTIMATE_V41_REHEARSAL_STAMP="$STAMP" \
+ULTIMATE_SKIP_STORAGE_AUDIT=1 \
+bash "$PROJECT_ROOT/slurm/v4_1_order_readiness_rehearsal.sbatch"
 
 "$CORE_ENV/bin/python" -m ultimate.cli validation-index \
   --root "$PROJECT_ROOT" \

@@ -388,7 +388,7 @@ write_matrix_job functional_state
   --root "$PROJECT_ROOT" \
   --output-dir "$PROJECT_ROOT/audits/order_readiness_latest"
 
-if [[ -f "$PROJECT_ROOT/01_tools/storage_audit.py" ]]; then
+if [[ "${ULTIMATE_SKIP_STORAGE_AUDIT:-0}" != "1" && -f "$PROJECT_ROOT/01_tools/storage_audit.py" ]]; then
   "$CORE_ENV/bin/python" "$PROJECT_ROOT/01_tools/storage_audit.py" \
     --root "$PROJECT_ROOT" \
     --output-dir "$PROJECT_ROOT/audits/storage_v4_1_latest" \

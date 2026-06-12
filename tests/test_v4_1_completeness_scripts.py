@@ -37,6 +37,7 @@ def test_v4_1_order_readiness_rehearsal_covers_next_six_modules() -> None:
     assert "v4_1_order_readiness_report.md" in text
     assert "storage_audit.py" in text
     assert "--budget-gb 500" in text
+    assert "ULTIMATE_SKIP_STORAGE_AUDIT" in text
     assert "delivery_scope: customer_delivery" not in text
 
 

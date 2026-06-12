@@ -5,6 +5,7 @@ import argparse
 import csv
 import json
 import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -224,6 +225,17 @@ def path_size(path: Path) -> int:
         return stat.st_size
     if not path.is_dir():
         return stat.st_size
+
+    try:
+        completed = subprocess.run(
+            ["du", "-sb", str(path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return int(completed.stdout.split()[0])
+    except Exception:
+        pass
 
     total = 0
     for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
