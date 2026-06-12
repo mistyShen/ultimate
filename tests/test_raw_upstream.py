@@ -39,9 +39,17 @@ def test_raw_upstream_rnaseq_tiny_counts_requires_tool_and_reference(tmp_path: P
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     salmon = bin_dir / "salmon"
-    salmon.write_text("#!/usr/bin/env bash\necho salmon-test\n", encoding="utf-8")
+    salmon.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "if [[ \"${1:-}\" == \"--version\" ]]; then echo salmon-test; exit 0; fi\n"
+        "if [[ \"${1:-}\" == \"index\" ]]; then while [[ $# -gt 0 ]]; do if [[ \"$1\" == \"-i\" ]]; then shift; mkdir -p \"$1\"; fi; shift || true; done; exit 0; fi\n"
+        "if [[ \"${1:-}\" == \"quant\" ]]; then out=''; min_assigned=''; while [[ $# -gt 0 ]]; do if [[ \"$1\" == \"-o\" ]]; then shift; out=\"$1\"; elif [[ \"$1\" == \"--minAssignedFrags\" ]]; then shift; min_assigned=\"$1\"; fi; shift || true; done; if [[ \"$min_assigned\" != \"1\" ]]; then echo missing-minAssignedFrags >&2; exit 3; fi; mkdir -p \"$out\"; printf 'Name\\tLength\\tEffectiveLength\\tTPM\\tNumReads\\nGENE_A\\t4\\t4\\t50\\t2\\nGENE_B\\t4\\t4\\t50\\t1\\n' > \"$out/quant.sf\"; exit 0; fi\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
     salmon.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}")
+    monkeypatch.setenv("PATH", f"{bin_dir}:/bin:/usr/bin")
     monkeypatch.setenv("SLURM_JOB_ID", "999")
 
     manifest = run_raw_upstream_evidence(
@@ -58,8 +66,10 @@ def test_raw_upstream_rnaseq_tiny_counts_requires_tool_and_reference(tmp_path: P
     assert manifest["slurm_job_id"] == "999"
     assert manifest["quant_tool"] == "salmon"
     matrix = Path(manifest["artifacts"]["output_matrix"]).read_text(encoding="utf-8")
-    assert "GENE_A" in matrix
-    assert "GENE_B" in matrix
+    assert "GENE_A\t2.0" in matrix
+    assert "GENE_B\t1.0" in matrix
+    assert (tmp_path / "tiny_out" / "logs" / "salmon_index.log").exists()
+    assert (tmp_path / "tiny_out" / "logs" / "salmon_quant_S1.log").exists()
 
 
 def test_raw_upstream_rnaseq_tiny_counts_blocks_missing_reference(tmp_path: Path, monkeypatch) -> None:
@@ -70,7 +80,7 @@ def test_raw_upstream_rnaseq_tiny_counts_blocks_missing_reference(tmp_path: Path
     salmon = bin_dir / "salmon"
     salmon.write_text("#!/usr/bin/env bash\necho salmon-test\n", encoding="utf-8")
     salmon.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}")
+    monkeypatch.setenv("PATH", f"{bin_dir}:/bin:/usr/bin")
 
     manifest = run_raw_upstream_evidence(
         module="rnaseq",

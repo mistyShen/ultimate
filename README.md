@@ -557,6 +557,25 @@ manifest and `failure_recovery.md`; it must not silently fall back to fake
 evidence. V4.2 remains a controlled customer-delivery rehearsal, not a real
 customer data release.
 
+### Realistic Pilot Suite
+
+The realistic pilot keeps the V4.2 delivery boundary but runs two layers in one
+Slurm job: a deep raw/standard-input customer package closure, followed by
+multi-module lightweight coverage using existing V3.8 and V4.1 rehearsal
+scripts.
+
+```bash
+hpc-sbatch /shared/shen/2026/ultimate/slurm/v4_pilot_realistic_suite.sbatch
+```
+
+The suite writes `/shared/shen/2026/ultimate/reports/v4_pilot_realistic_report.md`,
+`reports/batch_status_v4_pilot/`, `audits/storage_v4_pilot_latest/`, and
+`audits/order_readiness_v4_pilot_latest/`. The pilot report must separate
+`ready`, `blocked`, `handoff-required`, `license-required`,
+`raw-upstream-validated`, `customer-package-ready`, and `delivery-check-ready`
+counts. It uses only controlled public/internal data and does not make nf-core,
+Cell Ranger, or Space Ranger fully automatic.
+
 ## SCEPI Matrix Backend
 
 The SCEPI module is a matrix-level single-cell epigenomics MVP, not a full

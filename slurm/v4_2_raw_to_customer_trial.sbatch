@@ -18,6 +18,7 @@ DELIVERY_CHECK_FAILURES=0
 mkdir -p "$PROJECT_ROOT/logs" "$PROJECT_ROOT/jobs" "$PROJECT_ROOT/reports"
 cd "$PROJECT_ROOT"
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+export PATH="$PROJECT_ROOT/tools/bin:$CORE_ENV/bin:$SCRNA_ENV/bin:$PATH"
 
 write_job_manifest() {
   local job_dir="$1"

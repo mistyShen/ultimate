@@ -5,6 +5,7 @@ import gzip
 import json
 import os
 import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -72,6 +73,8 @@ def run_raw_upstream_evidence(
                 output_matrix=output_matrix,
                 tiny_reference=tiny_reference,
                 quant_tool=quant_tool,
+                work_dir=output_dir,
+                logs_dir=logs_dir,
             )
         elif module == "rnaseq":
             _write_rnaseq_fastq_matrix(input_path=input_path, samplesheet=samplesheet, output_matrix=output_matrix)
@@ -230,6 +233,8 @@ def _write_rnaseq_tiny_count_matrix(
     output_matrix: Path,
     tiny_reference: Path | None,
     quant_tool: str,
+    work_dir: Path,
+    logs_dir: Path,
 ) -> None:
     if tiny_reference is None:
         raise FileNotFoundError("tiny_reference is required for rnaseq_fastq_tiny_counts")
@@ -249,6 +254,18 @@ def _write_rnaseq_tiny_count_matrix(
         raise ValueError(f"tiny_reference contains no FASTA feature ids: {tiny_reference}")
     sample_rows = _read_samples(samplesheet) if samplesheet else []
     sample_ids = [row.get("sample_id") or Path(row.get("fastq_1") or "").stem for row in sample_rows] or [path.name.split(".")[0] for path in fastqs]
+    if selected_tool == "salmon":
+        _write_rnaseq_salmon_quant_matrix(
+            fastqs=fastqs,
+            sample_rows=sample_rows,
+            sample_ids=sample_ids,
+            tiny_reference=tiny_reference,
+            output_matrix=output_matrix,
+            work_dir=work_dir,
+            logs_dir=logs_dir,
+            salmon_bin=tool_path,
+        )
+        return
     read_counts = []
     for idx, sample_id in enumerate(sample_ids):
         fastq = fastqs[min(idx, len(fastqs) - 1)]
@@ -258,6 +275,92 @@ def _write_rnaseq_tiny_count_matrix(
         writer.writerow(["feature_id", *[sample_id for sample_id, _ in read_counts]])
         for feature_idx, feature in enumerate(reference_features, start=1):
             writer.writerow([feature, *[max(0, count - feature_idx + 1) for _, count in read_counts]])
+
+
+def _write_rnaseq_salmon_quant_matrix(
+    *,
+    fastqs: list[Path],
+    sample_rows: list[dict[str, str]],
+    sample_ids: list[str],
+    tiny_reference: Path,
+    output_matrix: Path,
+    work_dir: Path,
+    logs_dir: Path,
+    salmon_bin: str,
+) -> None:
+    salmon_dir = work_dir / "salmon_tiny_quant"
+    index_dir = salmon_dir / "index"
+    quant_root = salmon_dir / "quant"
+    salmon_dir.mkdir(parents=True, exist_ok=True)
+    quant_root.mkdir(parents=True, exist_ok=True)
+    _run_command([salmon_bin, "--version"], log_path=logs_dir / "salmon_version.log")
+    _run_command([salmon_bin, "index", "-t", str(tiny_reference), "-i", str(index_dir), "--kmerLen", "5"], log_path=logs_dir / "salmon_index.log")
+    feature_counts: dict[str, list[float]] = {}
+    feature_order = _reference_feature_ids(tiny_reference)
+    for idx, sample_id in enumerate(sample_ids):
+        fastq = _fastq_for_sample(idx=idx, fastqs=fastqs, sample_rows=sample_rows)
+        sample_quant_dir = quant_root / sample_id
+        _run_command(
+            [
+                salmon_bin,
+                "quant",
+                "-i",
+                str(index_dir),
+                "-l",
+                "A",
+                "-r",
+                str(fastq),
+                "-o",
+                str(sample_quant_dir),
+                "--validateMappings",
+                "--minAssignedFrags",
+                "1",
+                "--threads",
+                "1",
+            ],
+            log_path=logs_dir / f"salmon_quant_{sample_id}.log",
+        )
+        quant_sf = sample_quant_dir / "quant.sf"
+        if not quant_sf.exists() or quant_sf.stat().st_size == 0:
+            raise FileNotFoundError(f"salmon quant did not create quant.sf for sample {sample_id}: {quant_sf}")
+        for feature, count in _read_salmon_quant_counts(quant_sf).items():
+            feature_counts.setdefault(feature, [0.0] * len(sample_ids))[idx] = count
+    if not feature_counts:
+        raise ValueError("salmon quant produced no transcript counts")
+    ordered = [feature for feature in feature_order if feature in feature_counts] + [feature for feature in feature_counts if feature not in feature_order]
+    with output_matrix.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t")
+        writer.writerow(["feature_id", *sample_ids])
+        for feature in ordered:
+            writer.writerow([feature, *[round(value, 6) for value in feature_counts[feature]]])
+
+
+def _fastq_for_sample(*, idx: int, fastqs: list[Path], sample_rows: list[dict[str, str]]) -> Path:
+    if idx < len(sample_rows):
+        for column in ("fastq_1", "fastq", "fq1", "read1"):
+            value = sample_rows[idx].get(column)
+            if value:
+                path = Path(value).expanduser().resolve()
+                if path.exists():
+                    return path
+    return fastqs[min(idx, len(fastqs) - 1)]
+
+
+def _read_salmon_quant_counts(path: Path) -> dict[str, float]:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if not reader.fieldnames or "Name" not in reader.fieldnames or "NumReads" not in reader.fieldnames:
+            raise ValueError(f"salmon quant.sf missing Name/NumReads columns: {path}")
+        return {row["Name"]: float(row.get("NumReads") or 0.0) for row in reader}
+
+
+def _run_command(command: list[str], *, log_path: Path) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w", encoding="utf-8") as log:
+        log.write("$ " + " ".join(command) + "\n\n")
+        completed = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, text=True)
+    if completed.returncode != 0:
+        raise RuntimeError(f"command failed with exit code {completed.returncode}: {' '.join(command)}; see {log_path}")
 
 
 def _first_available_command(commands: tuple[str, ...]) -> str:

@@ -79,3 +79,14 @@ def test_readme_documents_v4_2_raw_to_customer_path() -> None:
     assert "v4_2_raw_to_customer_trial.sbatch" in text
     assert "rnaseq_fastq_tiny_counts" in text
     assert "must write a blocked" in text
+
+
+def test_readme_documents_realistic_pilot_suite() -> None:
+    readme = Path(__file__).resolve().parents[1] / "README.md"
+    text = readme.read_text(encoding="utf-8")
+
+    assert "Realistic Pilot Suite" in text
+    assert "v4_pilot_realistic_suite.sbatch" in text
+    assert "v4_pilot_realistic_report.md" in text
+    assert "raw-upstream-validated" in text
+    assert "delivery-check-ready" in text
