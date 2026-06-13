@@ -14,6 +14,8 @@ def test_v4_pilot_suite_runs_deep_and_breadth_layers() -> None:
     assert "v3_8_multiomics_publication_rehearsal.sbatch" in text
     assert "v4_1_order_readiness_rehearsal.sbatch" in text
     assert "ULTIMATE_SKIP_STORAGE_AUDIT=1" in text
+    assert "customer-package --run-dir" in text
+    assert "delivery-check --run-dir" in text
     assert "v4_pilot_realistic_report.md" in text
 
 

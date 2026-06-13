@@ -30,6 +30,16 @@ ULTIMATE_V41_REHEARSAL_STAMP="$STAMP" \
 ULTIMATE_SKIP_STORAGE_AUDIT=1 \
 bash "$PROJECT_ROOT/slurm/v4_1_order_readiness_rehearsal.sbatch"
 
+# Normalize delivery artifacts across both layers. Older internal rehearsal
+# suites may only write run-level deliverables; the realistic pilot requires a
+# customer-package status for every stamped job, even when the package is a
+# controlled rehearsal artifact rather than a true customer release.
+while IFS= read -r job_dir; do
+  [[ -n "$job_dir" ]] || continue
+  "$CORE_ENV/bin/python" -m ultimate.cli customer-package --run-dir "$job_dir"
+  "$CORE_ENV/bin/python" -m ultimate.cli delivery-check --run-dir "$job_dir"
+done < <(find "$PROJECT_ROOT/jobs" -maxdepth 1 -type d -name "v*_*$STAMP" | sort)
+
 "$CORE_ENV/bin/python" -m ultimate.cli validation-index \
   --root "$PROJECT_ROOT" \
   --output-dir "$PROJECT_ROOT/reports/validation_index_v4_pilot"
@@ -53,6 +63,11 @@ if [[ -f "$PROJECT_ROOT/01_tools/storage_audit.py" ]]; then
     --budget-gb 500
 fi
 
+"$CORE_ENV/bin/python" -m ultimate.cli batch-status \
+  --batch-dir "$PROJECT_ROOT/jobs" \
+  --job-glob "v*_*$STAMP" \
+  --output-dir "$PROJECT_ROOT/reports/batch_status_v4_pilot"
+
 "$CORE_ENV/bin/python" - "$PROJECT_ROOT" "$STAMP" "$PILOT_REPORT" <<'PY'
 import csv
 import json
@@ -65,7 +80,7 @@ report = Path(sys.argv[3])
 validation_path = root / "reports" / "validation_index_v4_pilot" / "validation_index.tsv"
 rows = list(csv.DictReader(validation_path.open("r", encoding="utf-8"), delimiter="\t")) if validation_path.exists() else []
 raw_report = root / "reports" / "v4_pilot_raw_to_customer_report.md"
-batch_manifest = root / "reports" / "batch_status_v4_2" / "batch_status_manifest.json"
+batch_manifest = root / "reports" / "batch_status_v4_pilot" / "batch_status_manifest.json"
 storage_path = root / "audits" / "storage_v4_pilot_latest" / "storage_audit_summary.json"
 order_path = root / "audits" / "order_readiness_v4_pilot_latest" / "module_order_readiness_matrix.tsv"
 
@@ -77,7 +92,8 @@ blocked_rows = [r for r in pilot_rows if r.get("order_readiness_status") not in 
 
 batch = json.loads(batch_manifest.read_text()) if batch_manifest.exists() else {"rows": []}
 batch_rows = [r for r in batch.get("rows", []) if stamp in r.get("job_id", "")]
-customer_ready = [r for r in batch_rows if r.get("delivery_check_status") == "ready"]
+customer_package_ready = [r for r in batch_rows if r.get("customer_package_status") == "ready"]
+delivery_ready = [r for r in batch_rows if r.get("delivery_check_status") == "ready"]
 raw_ready = [r for r in batch_rows if r.get("raw_upstream_status") == "ready"]
 raw_blocked = [r for r in batch_rows if r.get("raw_upstream_status") == "blocked"]
 storage = json.loads(storage_path.read_text()) if storage_path.exists() else {}
@@ -100,8 +116,8 @@ lines = [
     f"- handoff-required: {len(handoff_required)} module/backend row(s) mention handoff routes.",
     f"- license-required: {len(license_required)} module/backend row(s) mention licensed routes.",
     f"- raw-upstream-validated: {len(raw_ready)} pilot raw/semi-raw job(s) are ready.",
-    f"- customer-package-ready: {len(customer_ready)} pilot customer package(s) passed package/status checks.",
-    f"- delivery-check-ready: {len(customer_ready)} pilot customer package(s) passed delivery-check.",
+    f"- customer-package-ready: {len(customer_package_ready)} pilot customer package(s) passed package/status checks.",
+    f"- delivery-check-ready: {len(delivery_ready)} pilot job(s) passed delivery-check.",
     f"- high-frequency modules covered: {len(covered)} / {len(high_freq_modules)} ({', '.join(covered)})",
     f"- storage: {storage.get('total_gb', 'missing')}G; under_500G={storage.get('under_budget', 'missing')}",
     "",
@@ -124,8 +140,3 @@ for module in sorted(high_freq_modules):
 report.write_text("\n".join(lines) + "\n", encoding="utf-8")
 print(report)
 PY
-
-"$CORE_ENV/bin/python" -m ultimate.cli batch-status \
-  --batch-dir "$PROJECT_ROOT/jobs" \
-  --job-glob "v*_*$STAMP" \
-  --output-dir "$PROJECT_ROOT/reports/batch_status_v4_pilot"

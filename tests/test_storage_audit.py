@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -10,7 +11,7 @@ TOOLS_DIR = Path(__file__).parents[1] / "01_tools"
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
-from storage_audit import run_storage_audit
+from storage_audit import path_size, run_storage_audit
 
 
 def test_storage_audit_writes_outputs_and_categories(tmp_path: Path) -> None:
@@ -87,6 +88,26 @@ def test_storage_audit_cli(tmp_path: Path, capsys) -> None:
     captured = capsys.readouterr()
     assert "storage_audit_summary" in captured.out
     assert (output_dir / "storage_audit.tsv").exists()
+
+
+def test_path_size_uses_cached_audit_when_du_times_out(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "ultimate"
+    env_path = root / ".conda"
+    _write(env_path / "envs" / "core" / "python", "env")
+    audit_path = root / "audits" / "storage_latest" / "storage_audit.tsv"
+    audit_path.parent.mkdir(parents=True)
+    audit_path.write_text(
+        "path\tcategory\tbytes\tsize_gb\n"
+        f"{env_path}\tenvironments\t123456789\t0.114978\n",
+        encoding="utf-8",
+    )
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout"))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert path_size(env_path) == 123456789
 
 
 def _write(path: Path, text: str) -> None:
