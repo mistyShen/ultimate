@@ -21,6 +21,7 @@ export PATH="$PROJECT_ROOT/tools/bin:$CORE_ENV/bin:$PATH"
 # Pilot A: deep raw/standard input to customer package closure.
 ULTIMATE_V42_TRIAL_STAMP="$STAMP" \
 ULTIMATE_V42_REPORT_PATH="$PROJECT_ROOT/reports/v4_pilot_raw_to_customer_report.md" \
+ULTIMATE_SKIP_STORAGE_AUDIT=1 \
 bash "$PROJECT_ROOT/slurm/v4_2_raw_to_customer_trial.sbatch"
 
 # Pilot B: module breadth coverage through existing lightweight rehearsal suites.
@@ -45,6 +46,7 @@ bash "$PROJECT_ROOT/slurm/v4_1_order_readiness_rehearsal.sbatch"
   --root "$PROJECT_ROOT" \
   --output-dir "$PROJECT_ROOT/audits/order_readiness_v4_pilot_latest"
 if [[ -f "$PROJECT_ROOT/01_tools/storage_audit.py" ]]; then
+  export ULTIMATE_STORAGE_DU_TIMEOUT_SECONDS="${ULTIMATE_STORAGE_DU_TIMEOUT_SECONDS:-60}"
   "$CORE_ENV/bin/python" "$PROJECT_ROOT/01_tools/storage_audit.py" \
     --root "$PROJECT_ROOT" \
     --output-dir "$PROJECT_ROOT/audits/storage_v4_pilot_latest" \

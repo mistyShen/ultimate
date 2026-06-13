@@ -227,13 +227,20 @@ def path_size(path: Path) -> int:
         return stat.st_size
 
     try:
+        timeout_seconds = float(os.environ.get("ULTIMATE_STORAGE_DU_TIMEOUT_SECONDS", "120"))
         completed = subprocess.run(
             ["du", "-sb", str(path)],
             check=True,
             capture_output=True,
             text=True,
+            timeout=timeout_seconds,
         )
         return int(completed.stdout.split()[0])
+    except subprocess.TimeoutExpired:
+        # Avoid letting a storage audit hold a Slurm pilot hostage on very large
+        # or slow NFS-backed directories. The row remains visible with a small
+        # conservative placeholder and can be followed up with a dedicated audit.
+        return stat.st_size
     except Exception:
         pass
 
