@@ -42,6 +42,33 @@ def test_create_scrna_demo_inputs_cli(tmp_path: Path) -> None:
     assert (Path(payload["tenx_mtx"]) / "matrix.mtx.gz").exists()
 
 
+def test_scrublet_backend_skips_inputs_too_small_for_pca(tmp_path: Path) -> None:
+    class SmallAdata:
+        n_obs = 16
+        n_vars = 12
+        shape = (16, 12)
+
+    tables = tmp_path / "tables"
+    figures = tmp_path / "figures"
+    tables.mkdir()
+    figures.mkdir()
+
+    row, artifacts = scrna_smoke._run_scrublet_backend(
+        counts_adata=SmallAdata(),
+        adata=SmallAdata(),
+        tables=tables,
+        figures=figures,
+        analysis_level="production_backend",
+        random_seed=1,
+    )
+
+    assert row["status"] == "skipped"
+    assert row["reason"].startswith("input_too_small_for_scrublet")
+    assert "backend_failed" not in row["reason"]
+    assert Path(artifacts["doublet_scores"]).exists()
+    assert Path(artifacts["doublet_summary"]).exists()
+
+
 def test_validate_scrna_h5ad_outputs_scrna_mvp_artifacts(tmp_path: Path) -> None:
     _require_scrna_runtime()
     demo = create_demo_inputs(tmp_path / "demo_h5ad", n_cells=48, n_genes=60, seed=11)

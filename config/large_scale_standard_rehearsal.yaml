@@ -1,0 +1,59 @@
+project:
+  name: v4_4_large_scale_standard_rehearsal
+  organism: human
+  run_mode: production
+  analysis_level: production_backend
+  delivery_scope: internal_rehearsal
+  controlled_rehearsal: true
+
+batch:
+  root: /shared/shen/2026/ultimate
+  job_prefix: v4_4
+  slurm_suite: slurm/v4_4_large_scale_standard_rehearsal.sbatch
+  storage_budget_gb: 500
+
+allowed_scope:
+  - rnaseq standard matrix
+  - scrna standard h5ad/10x matrix
+  - proteomics standard abundance table
+  - methylation matrix-level
+  - scepi matrix-level
+  - functional_state signature scoring
+  - single_gene table-level
+  - publicdb table-level
+
+manual_review_required:
+  - CellChat/NicheNet communication inference
+  - inferCNV/CopyKAT malignant inference
+  - RNA velocity
+  - complex spatial communication
+  - clinical survival/risk model
+  - full FASTQ/BCL upstream production
+
+rehearsal_jobs:
+  - job_class: rnaseq_50_sample_matrix
+    module: rnaseq
+    preset: standard
+    input_type: count_matrix
+    sample_count: 50
+    feature_count: 2000
+  - job_class: scrna_multisample_10x
+    module: scrna
+    preset: standard
+    input_type: 10x_mtx
+    sample_count: 4
+    cell_count: 240
+    feature_count: 120
+  - job_class: proteomics_50_sample_abundance
+    module: proteomics
+    preset: standard
+    input_type: abundance_table
+    sample_count: 50
+    feature_count: 1200
+
+delivery_policy:
+  production_approval_required: true
+  customer_package_required: true
+  delivery_check_required: true
+  customer_delivery: false
+  internal_rehearsal_only: true

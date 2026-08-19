@@ -1,0 +1,176 @@
+project:
+  name: v4_5_100_job_rehearsal
+  organism: human
+  run_mode: production
+  analysis_level: production_backend
+  delivery_scope: internal_rehearsal
+  delivery_mode: customer_delivery_rehearsal
+  controlled_rehearsal: true
+  customer_delivery_actual: false
+  real_customer_delivery: false
+
+batch:
+  root: /shared/shen/2026/ultimate
+  job_prefix: v4_5
+  total_runnable_jobs: 100
+  chunk_size: 10
+  chunk_count: 10
+  storage_budget_gb: 500
+
+requested_distribution:
+  rnaseq: 20
+  scrna: 15
+  proteomics: 15
+  methylation: 10
+  scatac: 10
+  spatial: 10
+  multiome: 8
+  cite_seq: 5
+  vdj: 4
+  functional_state: 3
+
+allowed_scope:
+  - rnaseq controlled count-matrix rehearsal
+  - scrna controlled h5ad/10x matrix rehearsal
+  - proteomics controlled abundance-table rehearsal
+  - methylation controlled beta-matrix rehearsal
+  - scatac controlled peak-matrix rehearsal
+  - spatial controlled Visium-matrix rehearsal
+  - multiome controlled h5mu/paired-matrix rehearsal
+  - cite_seq controlled feature-barcode rehearsal
+  - vdj controlled Cell Ranger VDJ table rehearsal
+  - functional_state controlled signature-scoring rehearsal
+
+excluded_scope:
+  - heavy algorithms
+  - raw upstream production
+  - FASTQ/BCL processing
+  - atlas-scale downloads
+  - CellChat/NicheNet communication inference
+  - inferCNV/CopyKAT malignant inference
+  - RNA velocity
+  - full WNN/multiVI integration
+  - clinical survival/risk model
+  - real customer delivery
+
+rehearsal_jobs:
+  - {job_id: v4_5_rnaseq_001, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_01, chunk_local_index: 1, runnable: true}
+  - {job_id: v4_5_rnaseq_002, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_01, chunk_local_index: 2, runnable: true}
+  - {job_id: v4_5_rnaseq_003, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_01, chunk_local_index: 3, runnable: true}
+  - {job_id: v4_5_rnaseq_004, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_01, chunk_local_index: 4, runnable: true}
+  - {job_id: v4_5_rnaseq_005, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_01, chunk_local_index: 5, runnable: true}
+  - {job_id: v4_5_rnaseq_006, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_01, chunk_local_index: 6, runnable: true}
+  - {job_id: v4_5_rnaseq_007, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_01, chunk_local_index: 7, runnable: true}
+  - {job_id: v4_5_rnaseq_008, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_01, chunk_local_index: 8, runnable: true}
+  - {job_id: v4_5_rnaseq_009, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_01, chunk_local_index: 9, runnable: true}
+  - {job_id: v4_5_rnaseq_010, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_01, chunk_local_index: 10, runnable: true}
+  - {job_id: v4_5_rnaseq_011, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_02, chunk_local_index: 1, runnable: true}
+  - {job_id: v4_5_rnaseq_012, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_02, chunk_local_index: 2, runnable: true}
+  - {job_id: v4_5_rnaseq_013, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_02, chunk_local_index: 3, runnable: true}
+  - {job_id: v4_5_rnaseq_014, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_02, chunk_local_index: 4, runnable: true}
+  - {job_id: v4_5_rnaseq_015, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_02, chunk_local_index: 5, runnable: true}
+  - {job_id: v4_5_rnaseq_016, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_02, chunk_local_index: 6, runnable: true}
+  - {job_id: v4_5_rnaseq_017, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_02, chunk_local_index: 7, runnable: true}
+  - {job_id: v4_5_rnaseq_018, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_02, chunk_local_index: 8, runnable: true}
+  - {job_id: v4_5_rnaseq_019, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_02, chunk_local_index: 9, runnable: true}
+  - {job_id: v4_5_rnaseq_020, module: rnaseq, preset: standard, input_type: count_matrix, job_class: rnaseq_controlled_rehearsal, chunk_id: chunk_02, chunk_local_index: 10, runnable: true}
+  - {job_id: v4_5_scrna_001, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_03, chunk_local_index: 1, runnable: true}
+  - {job_id: v4_5_scrna_002, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_03, chunk_local_index: 2, runnable: true}
+  - {job_id: v4_5_scrna_003, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_03, chunk_local_index: 3, runnable: true}
+  - {job_id: v4_5_scrna_004, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_03, chunk_local_index: 4, runnable: true}
+  - {job_id: v4_5_scrna_005, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_03, chunk_local_index: 5, runnable: true}
+  - {job_id: v4_5_scrna_006, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_03, chunk_local_index: 6, runnable: true}
+  - {job_id: v4_5_scrna_007, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_03, chunk_local_index: 7, runnable: true}
+  - {job_id: v4_5_scrna_008, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_03, chunk_local_index: 8, runnable: true}
+  - {job_id: v4_5_scrna_009, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_03, chunk_local_index: 9, runnable: true}
+  - {job_id: v4_5_scrna_010, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_03, chunk_local_index: 10, runnable: true}
+  - {job_id: v4_5_scrna_011, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_04, chunk_local_index: 1, runnable: true}
+  - {job_id: v4_5_scrna_012, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_04, chunk_local_index: 2, runnable: true}
+  - {job_id: v4_5_scrna_013, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_04, chunk_local_index: 3, runnable: true}
+  - {job_id: v4_5_scrna_014, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_04, chunk_local_index: 4, runnable: true}
+  - {job_id: v4_5_scrna_015, module: scrna, preset: standard, input_type: h5ad_or_10x_matrix, job_class: scrna_controlled_rehearsal, chunk_id: chunk_04, chunk_local_index: 5, runnable: true}
+  - {job_id: v4_5_proteomics_001, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_04, chunk_local_index: 6, runnable: true}
+  - {job_id: v4_5_proteomics_002, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_04, chunk_local_index: 7, runnable: true}
+  - {job_id: v4_5_proteomics_003, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_04, chunk_local_index: 8, runnable: true}
+  - {job_id: v4_5_proteomics_004, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_04, chunk_local_index: 9, runnable: true}
+  - {job_id: v4_5_proteomics_005, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_04, chunk_local_index: 10, runnable: true}
+  - {job_id: v4_5_proteomics_006, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_05, chunk_local_index: 1, runnable: true}
+  - {job_id: v4_5_proteomics_007, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_05, chunk_local_index: 2, runnable: true}
+  - {job_id: v4_5_proteomics_008, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_05, chunk_local_index: 3, runnable: true}
+  - {job_id: v4_5_proteomics_009, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_05, chunk_local_index: 4, runnable: true}
+  - {job_id: v4_5_proteomics_010, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_05, chunk_local_index: 5, runnable: true}
+  - {job_id: v4_5_proteomics_011, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_05, chunk_local_index: 6, runnable: true}
+  - {job_id: v4_5_proteomics_012, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_05, chunk_local_index: 7, runnable: true}
+  - {job_id: v4_5_proteomics_013, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_05, chunk_local_index: 8, runnable: true}
+  - {job_id: v4_5_proteomics_014, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_05, chunk_local_index: 9, runnable: true}
+  - {job_id: v4_5_proteomics_015, module: proteomics, preset: standard, input_type: abundance_table, job_class: proteomics_controlled_rehearsal, chunk_id: chunk_05, chunk_local_index: 10, runnable: true}
+  - {job_id: v4_5_methylation_001, module: methylation, preset: standard, input_type: beta_matrix, job_class: methylation_controlled_rehearsal, chunk_id: chunk_06, chunk_local_index: 1, runnable: true}
+  - {job_id: v4_5_methylation_002, module: methylation, preset: standard, input_type: beta_matrix, job_class: methylation_controlled_rehearsal, chunk_id: chunk_06, chunk_local_index: 2, runnable: true}
+  - {job_id: v4_5_methylation_003, module: methylation, preset: standard, input_type: beta_matrix, job_class: methylation_controlled_rehearsal, chunk_id: chunk_06, chunk_local_index: 3, runnable: true}
+  - {job_id: v4_5_methylation_004, module: methylation, preset: standard, input_type: beta_matrix, job_class: methylation_controlled_rehearsal, chunk_id: chunk_06, chunk_local_index: 4, runnable: true}
+  - {job_id: v4_5_methylation_005, module: methylation, preset: standard, input_type: beta_matrix, job_class: methylation_controlled_rehearsal, chunk_id: chunk_06, chunk_local_index: 5, runnable: true}
+  - {job_id: v4_5_methylation_006, module: methylation, preset: standard, input_type: beta_matrix, job_class: methylation_controlled_rehearsal, chunk_id: chunk_06, chunk_local_index: 6, runnable: true}
+  - {job_id: v4_5_methylation_007, module: methylation, preset: standard, input_type: beta_matrix, job_class: methylation_controlled_rehearsal, chunk_id: chunk_06, chunk_local_index: 7, runnable: true}
+  - {job_id: v4_5_methylation_008, module: methylation, preset: standard, input_type: beta_matrix, job_class: methylation_controlled_rehearsal, chunk_id: chunk_06, chunk_local_index: 8, runnable: true}
+  - {job_id: v4_5_methylation_009, module: methylation, preset: standard, input_type: beta_matrix, job_class: methylation_controlled_rehearsal, chunk_id: chunk_06, chunk_local_index: 9, runnable: true}
+  - {job_id: v4_5_methylation_010, module: methylation, preset: standard, input_type: beta_matrix, job_class: methylation_controlled_rehearsal, chunk_id: chunk_06, chunk_local_index: 10, runnable: true}
+  - {job_id: v4_5_scatac_001, module: scatac, preset: standard, input_type: peak_matrix, job_class: scatac_controlled_rehearsal, chunk_id: chunk_07, chunk_local_index: 1, runnable: true}
+  - {job_id: v4_5_scatac_002, module: scatac, preset: standard, input_type: peak_matrix, job_class: scatac_controlled_rehearsal, chunk_id: chunk_07, chunk_local_index: 2, runnable: true}
+  - {job_id: v4_5_scatac_003, module: scatac, preset: standard, input_type: peak_matrix, job_class: scatac_controlled_rehearsal, chunk_id: chunk_07, chunk_local_index: 3, runnable: true}
+  - {job_id: v4_5_scatac_004, module: scatac, preset: standard, input_type: peak_matrix, job_class: scatac_controlled_rehearsal, chunk_id: chunk_07, chunk_local_index: 4, runnable: true}
+  - {job_id: v4_5_scatac_005, module: scatac, preset: standard, input_type: peak_matrix, job_class: scatac_controlled_rehearsal, chunk_id: chunk_07, chunk_local_index: 5, runnable: true}
+  - {job_id: v4_5_scatac_006, module: scatac, preset: standard, input_type: peak_matrix, job_class: scatac_controlled_rehearsal, chunk_id: chunk_07, chunk_local_index: 6, runnable: true}
+  - {job_id: v4_5_scatac_007, module: scatac, preset: standard, input_type: peak_matrix, job_class: scatac_controlled_rehearsal, chunk_id: chunk_07, chunk_local_index: 7, runnable: true}
+  - {job_id: v4_5_scatac_008, module: scatac, preset: standard, input_type: peak_matrix, job_class: scatac_controlled_rehearsal, chunk_id: chunk_07, chunk_local_index: 8, runnable: true}
+  - {job_id: v4_5_scatac_009, module: scatac, preset: standard, input_type: peak_matrix, job_class: scatac_controlled_rehearsal, chunk_id: chunk_07, chunk_local_index: 9, runnable: true}
+  - {job_id: v4_5_scatac_010, module: scatac, preset: standard, input_type: peak_matrix, job_class: scatac_controlled_rehearsal, chunk_id: chunk_07, chunk_local_index: 10, runnable: true}
+  - {job_id: v4_5_spatial_001, module: spatial, preset: standard, input_type: visium_matrix, job_class: spatial_controlled_rehearsal, chunk_id: chunk_08, chunk_local_index: 1, runnable: true}
+  - {job_id: v4_5_spatial_002, module: spatial, preset: standard, input_type: visium_matrix, job_class: spatial_controlled_rehearsal, chunk_id: chunk_08, chunk_local_index: 2, runnable: true}
+  - {job_id: v4_5_spatial_003, module: spatial, preset: standard, input_type: visium_matrix, job_class: spatial_controlled_rehearsal, chunk_id: chunk_08, chunk_local_index: 3, runnable: true}
+  - {job_id: v4_5_spatial_004, module: spatial, preset: standard, input_type: visium_matrix, job_class: spatial_controlled_rehearsal, chunk_id: chunk_08, chunk_local_index: 4, runnable: true}
+  - {job_id: v4_5_spatial_005, module: spatial, preset: standard, input_type: visium_matrix, job_class: spatial_controlled_rehearsal, chunk_id: chunk_08, chunk_local_index: 5, runnable: true}
+  - {job_id: v4_5_spatial_006, module: spatial, preset: standard, input_type: visium_matrix, job_class: spatial_controlled_rehearsal, chunk_id: chunk_08, chunk_local_index: 6, runnable: true}
+  - {job_id: v4_5_spatial_007, module: spatial, preset: standard, input_type: visium_matrix, job_class: spatial_controlled_rehearsal, chunk_id: chunk_08, chunk_local_index: 7, runnable: true}
+  - {job_id: v4_5_spatial_008, module: spatial, preset: standard, input_type: visium_matrix, job_class: spatial_controlled_rehearsal, chunk_id: chunk_08, chunk_local_index: 8, runnable: true}
+  - {job_id: v4_5_spatial_009, module: spatial, preset: standard, input_type: visium_matrix, job_class: spatial_controlled_rehearsal, chunk_id: chunk_08, chunk_local_index: 9, runnable: true}
+  - {job_id: v4_5_spatial_010, module: spatial, preset: standard, input_type: visium_matrix, job_class: spatial_controlled_rehearsal, chunk_id: chunk_08, chunk_local_index: 10, runnable: true}
+  - {job_id: v4_5_multiome_001, module: multiome, preset: standard, input_type: h5mu_or_paired_matrices, job_class: multiome_controlled_rehearsal, chunk_id: chunk_09, chunk_local_index: 1, runnable: true}
+  - {job_id: v4_5_multiome_002, module: multiome, preset: standard, input_type: h5mu_or_paired_matrices, job_class: multiome_controlled_rehearsal, chunk_id: chunk_09, chunk_local_index: 2, runnable: true}
+  - {job_id: v4_5_multiome_003, module: multiome, preset: standard, input_type: h5mu_or_paired_matrices, job_class: multiome_controlled_rehearsal, chunk_id: chunk_09, chunk_local_index: 3, runnable: true}
+  - {job_id: v4_5_multiome_004, module: multiome, preset: standard, input_type: h5mu_or_paired_matrices, job_class: multiome_controlled_rehearsal, chunk_id: chunk_09, chunk_local_index: 4, runnable: true}
+  - {job_id: v4_5_multiome_005, module: multiome, preset: standard, input_type: h5mu_or_paired_matrices, job_class: multiome_controlled_rehearsal, chunk_id: chunk_09, chunk_local_index: 5, runnable: true}
+  - {job_id: v4_5_multiome_006, module: multiome, preset: standard, input_type: h5mu_or_paired_matrices, job_class: multiome_controlled_rehearsal, chunk_id: chunk_09, chunk_local_index: 6, runnable: true}
+  - {job_id: v4_5_multiome_007, module: multiome, preset: standard, input_type: h5mu_or_paired_matrices, job_class: multiome_controlled_rehearsal, chunk_id: chunk_09, chunk_local_index: 7, runnable: true}
+  - {job_id: v4_5_multiome_008, module: multiome, preset: standard, input_type: h5mu_or_paired_matrices, job_class: multiome_controlled_rehearsal, chunk_id: chunk_09, chunk_local_index: 8, runnable: true}
+  - {job_id: v4_5_cite_seq_001, module: cite_seq, preset: standard, input_type: feature_barcode_matrix, job_class: cite_seq_controlled_rehearsal, chunk_id: chunk_09, chunk_local_index: 9, runnable: true}
+  - {job_id: v4_5_cite_seq_002, module: cite_seq, preset: standard, input_type: feature_barcode_matrix, job_class: cite_seq_controlled_rehearsal, chunk_id: chunk_09, chunk_local_index: 10, runnable: true}
+  - {job_id: v4_5_cite_seq_003, module: cite_seq, preset: standard, input_type: feature_barcode_matrix, job_class: cite_seq_controlled_rehearsal, chunk_id: chunk_10, chunk_local_index: 1, runnable: true}
+  - {job_id: v4_5_cite_seq_004, module: cite_seq, preset: standard, input_type: feature_barcode_matrix, job_class: cite_seq_controlled_rehearsal, chunk_id: chunk_10, chunk_local_index: 2, runnable: true}
+  - {job_id: v4_5_cite_seq_005, module: cite_seq, preset: standard, input_type: feature_barcode_matrix, job_class: cite_seq_controlled_rehearsal, chunk_id: chunk_10, chunk_local_index: 3, runnable: true}
+  - {job_id: v4_5_vdj_001, module: vdj, preset: standard, input_type: cellranger_vdj_tables, job_class: vdj_controlled_rehearsal, chunk_id: chunk_10, chunk_local_index: 4, runnable: true}
+  - {job_id: v4_5_vdj_002, module: vdj, preset: standard, input_type: cellranger_vdj_tables, job_class: vdj_controlled_rehearsal, chunk_id: chunk_10, chunk_local_index: 5, runnable: true}
+  - {job_id: v4_5_vdj_003, module: vdj, preset: standard, input_type: cellranger_vdj_tables, job_class: vdj_controlled_rehearsal, chunk_id: chunk_10, chunk_local_index: 6, runnable: true}
+  - {job_id: v4_5_vdj_004, module: vdj, preset: standard, input_type: cellranger_vdj_tables, job_class: vdj_controlled_rehearsal, chunk_id: chunk_10, chunk_local_index: 7, runnable: true}
+  - {job_id: v4_5_functional_state_001, module: functional_state, preset: standard, input_type: expression_matrix_gmt, job_class: functional_state_controlled_rehearsal, chunk_id: chunk_10, chunk_local_index: 8, runnable: true}
+  - {job_id: v4_5_functional_state_002, module: functional_state, preset: standard, input_type: expression_matrix_gmt, job_class: functional_state_controlled_rehearsal, chunk_id: chunk_10, chunk_local_index: 9, runnable: true}
+  - {job_id: v4_5_functional_state_003, module: functional_state, preset: standard, input_type: expression_matrix_gmt, job_class: functional_state_controlled_rehearsal, chunk_id: chunk_10, chunk_local_index: 10, runnable: true}
+
+negative_controls:
+  - {control_id: v4_5_negative_missing_metadata, module: rnaseq, scenario: missing_required_metadata, expected_status: needs_metadata, counts_toward_100: false}
+  - {control_id: v4_5_negative_unreplicated_design, module: rnaseq, scenario: no_biological_replicates, expected_status: manual_review_required, counts_toward_100: false}
+  - {control_id: v4_5_negative_scrna_raw_fastq, module: scrna, scenario: raw_upstream_fastq_input, expected_status: handoff_only, counts_toward_100: false}
+  - {control_id: v4_5_negative_scatac_no_fragments, module: scatac, scenario: tss_frip_requested_without_fragments, expected_status: manual_review_required, counts_toward_100: false}
+  - {control_id: v4_5_negative_spatial_no_image, module: spatial, scenario: visium_coordinates_without_image, expected_status: needs_metadata, counts_toward_100: false}
+  - {control_id: v4_5_negative_multiome_barcode_mismatch, module: multiome, scenario: low_rna_atac_barcode_overlap, expected_status: manual_review_required, counts_toward_100: false}
+  - {control_id: v4_5_negative_cite_seq_no_panel, module: cite_seq, scenario: missing_antibody_panel, expected_status: needs_metadata, counts_toward_100: false}
+  - {control_id: v4_5_negative_vdj_antigen_claim, module: vdj, scenario: antigen_specificity_claim_without_evidence, expected_status: manual_review_required, counts_toward_100: false}
+  - {control_id: v4_5_negative_functional_state_drug_claim, module: functional_state, scenario: drug_sensitivity_claim_without_backend, expected_status: manual_review_required, counts_toward_100: false}
+  - {control_id: v4_5_negative_customer_delivery_scope, module: method_tools, scenario: real_customer_delivery_requested, expected_status: blocked_not_customer_delivery, counts_toward_100: false}
+
+delivery_policy:
+  production_approval_required: true
+  customer_package_required: true
+  delivery_check_required: true
+  customer_delivery: false
+  internal_rehearsal_only: true
+  negative_controls_counted_as_runnable_jobs: false

@@ -1,0 +1,5 @@
+sample_id	condition	batch	input_path	module	preset	input_type
+SAMPLE_001	control	B1	/path/to/matrix_or_object	rnaseq	standard	count_matrix
+SAMPLE_002	case	B1	/path/to/matrix_or_object	rnaseq	standard	count_matrix
+SAMPLE_003	control	B2	/path/to/h5ad_or_10x	scrna	standard	10x_mtx
+SAMPLE_004	case	B2	/path/to/abundance_table	proteomics	standard	abundance_table

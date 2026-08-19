@@ -1,5 +1,7 @@
 # Ultimate Bioinfo Workbench
 
+Current status: [V4.5 service-readiness freeze](docs/status/V4_5_SERVICE_READINESS_FREEZE.md).
+
 `ultimate` is a CLI-first, HPC-ready workbench for Codex-assisted reproducible
 human/mouse multi-omics analysis delivery under the formal remote project root:
 

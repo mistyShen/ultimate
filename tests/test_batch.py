@@ -195,12 +195,23 @@ def test_batch_status_summarizes_raw_run_customer_and_delivery(tmp_path: Path) -
     )
     prepare_batch(batch_path=batch_path)
     job_dir = root / "jobs" / "STATUS001"
+    (job_dir / "config" / "project.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "samples": {"samplesheet": str(job_dir / "samples" / "samples.tsv")},
+                "modules": {"rnaseq": {"enabled": True, "preset": "standard", "input_matrix": str(raw_counts)}},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (job_dir / "samples" / "samples.tsv").write_text(f"sample_id\tcondition\tinput_path\nS1\tcase\t{raw_counts}\n", encoding="utf-8")
     raw_dir = job_dir / "raw_upstream" / "rnaseq"
     raw_dir.mkdir(parents=True)
     (raw_dir / "raw_upstream_manifest.json").write_text('{"status": "ready"}', encoding="utf-8")
     run_dir = job_dir / "runs" / "STATUS001"
     run_dir.mkdir(parents=True)
-    (run_dir / "run_manifest.json").write_text('{"status": "ready"}', encoding="utf-8")
+    (run_dir / "run_manifest.json").write_text('{"status": "ready", "slurm_job_id": "12345"}', encoding="utf-8")
     (job_dir / "deliverables" / "latest_run_pointer.json").write_text(json.dumps({"latest_run_dir": str(run_dir)}), encoding="utf-8")
     customer_dir = job_dir / "deliverables" / "customer"
     customer_dir.mkdir(parents=True)
@@ -216,8 +227,48 @@ def test_batch_status_summarizes_raw_run_customer_and_delivery(tmp_path: Path) -
     assert row["run_status"] == "ready"
     assert row["customer_package_status"] == "ready"
     assert row["delivery_check_status"] == "ready"
-    assert row["overall_status"] == "ready_for_customer_delivery_rehearsal"
+    assert row["overall_status"] == "ready"
+    assert row["module"] == "rnaseq"
+    assert row["preset"] == "standard"
+    assert row["input_type"] == "raw_or_semiraw_import"
+    assert row["sample_count"] == "1"
+    assert row["feature_count"] == "1"
+    assert row["slurm_job_id"] == "12345"
+    assert row["failure_recovery_file"] == row["failure_recovery"]
     assert Path(manifest["artifacts"]["batch_status_tsv"]).exists()
+
+
+def test_batch_status_keeps_blocked_job_from_breaking_ready_summary(tmp_path: Path) -> None:
+    jobs_root = tmp_path / "jobs"
+    ready_dir = jobs_root / "READY001"
+    blocked_dir = jobs_root / "BLOCKED001"
+    ready_dir.mkdir(parents=True)
+    blocked_dir.mkdir(parents=True)
+    (ready_dir / "job_manifest.json").write_text('{"job_id": "READY001"}', encoding="utf-8")
+    (blocked_dir / "job_manifest.json").write_text('{"job_id": "BLOCKED001"}', encoding="utf-8")
+    run_dir = ready_dir / "runs" / "READY001"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_manifest.json").write_text('{"status": "ready", "slurm_job_id": "222"}', encoding="utf-8")
+    (ready_dir / "deliverables").mkdir()
+    (ready_dir / "deliverables" / "latest_run_pointer.json").write_text(json.dumps({"latest_run_dir": str(run_dir)}), encoding="utf-8")
+    customer_dir = ready_dir / "deliverables" / "customer"
+    customer_dir.mkdir()
+    for name in ("report.html", "methods.md", "delivery_index.tsv", "sanitization.tsv", "customer_package_manifest.tsv", "readme_for_customer.md"):
+        (customer_dir / name).write_text("ok\n", encoding="utf-8")
+    (ready_dir / "deliverables" / "latest_delivery_check.json").write_text('{"status": "ready"}', encoding="utf-8")
+    raw_dir = blocked_dir / "raw_upstream" / "rnaseq"
+    raw_dir.mkdir(parents=True)
+    (raw_dir / "raw_upstream_manifest.json").write_text('{"status": "blocked", "blocked_reason": "dependency_missing"}', encoding="utf-8")
+
+    manifest = build_batch_status(batch_dir=jobs_root, output_dir=tmp_path / "status")
+
+    assert manifest["job_count"] == 2
+    assert manifest["status_counts"]["ready"] == 1
+    assert manifest["status_counts"]["blocked"] == 1
+    rows = {row["job_id"]: row for row in manifest["rows"]}
+    assert rows["READY001"]["overall_status"] == "ready"
+    assert rows["BLOCKED001"]["overall_status"] == "blocked"
+    assert Path(rows["BLOCKED001"]["failure_recovery_file"]).exists()
 
 
 def test_batch_status_cli(tmp_path: Path) -> None:

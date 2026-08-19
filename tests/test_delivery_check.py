@@ -333,6 +333,24 @@ def test_customer_package_cli_builds_sanitized_package_from_job(tmp_path: Path) 
     assert check["status"] == "ready"
 
 
+def test_customer_package_does_not_copy_raw_or_big_object_trees(tmp_path: Path) -> None:
+    job_dir, run_dir = _write_delivery_ready_job(tmp_path, delivery_scope="customer_delivery")
+    raw_dir = job_dir / "raw_links"
+    raw_dir.mkdir(exist_ok=True)
+    (raw_dir / "customer_raw.fastq").write_text("@r1\nACGT\n+\n!!!!\n", encoding="utf-8")
+    objects_dir = run_dir / "objects"
+    objects_dir.mkdir(exist_ok=True)
+    (objects_dir / "large_internal_object.h5ad").write_bytes(b"0" * 1024)
+
+    build_customer_package(run_dir=job_dir)
+
+    customer_dir = job_dir / "deliverables" / "customer"
+    assert not (customer_dir / "raw_links").exists()
+    assert not (customer_dir / "objects").exists()
+    assert not list(customer_dir.rglob("*.fastq"))
+    assert not list(customer_dir.rglob("*.h5ad"))
+
+
 def test_customer_package_cli_command(tmp_path: Path) -> None:
     job_dir, _ = _write_delivery_ready_job(tmp_path, delivery_scope="customer_delivery")
 

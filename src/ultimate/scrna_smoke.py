@@ -498,6 +498,16 @@ def _run_scrublet_backend(
     score_path = tables / "doublet_scores.tsv"
     summary_path = tables / "doublet_summary.tsv"
     figure_path = figures / "doublet_score_histogram.png"
+    n_cells = int(getattr(counts_adata, "n_obs", counts_adata.shape[0]))
+    n_features = int(getattr(counts_adata, "n_vars", counts_adata.shape[1]))
+    if min(n_cells, n_features) <= 30:
+        reason = f"input_too_small_for_scrublet:n_cells={n_cells},n_features={n_features},min_required=31"
+        _write_skip_table(score_path, backend_id, analysis_level, reason)
+        _write_skip_table(summary_path, backend_id, analysis_level, reason)
+        return _backend_row(backend_id, "skipped", analysis_level, reason), {
+            "doublet_scores": str(score_path),
+            "doublet_summary": str(summary_path),
+        }
     if importlib.util.find_spec("scrublet") is None:
         reason = "dependency_missing:scrublet"
         _write_skip_table(score_path, backend_id, analysis_level, reason)
@@ -548,6 +558,14 @@ def _run_scrublet_backend(
             "doublet_score_histogram": str(figure_path),
         }
     except Exception as exc:
+        if isinstance(exc, ValueError) and "n_components" in str(exc):
+            reason = f"input_too_small_for_scrublet_after_filtering:{exc}"
+            _write_skip_table(score_path, backend_id, analysis_level, reason)
+            _write_skip_table(summary_path, backend_id, analysis_level, reason)
+            return _backend_row(backend_id, "skipped", analysis_level, reason), {
+                "doublet_scores": str(score_path),
+                "doublet_summary": str(summary_path),
+            }
         reason = f"backend_failed:{type(exc).__name__}:{exc}"
         _write_skip_table(score_path, backend_id, analysis_level, reason)
         _write_skip_table(summary_path, backend_id, analysis_level, reason)
